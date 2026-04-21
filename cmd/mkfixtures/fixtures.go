@@ -1,19 +1,50 @@
-package proof
+package main
 
 import (
+	"bytes"
 	"crypto/ecdsa"
+	"encoding/json"
 	"fmt"
 	"math/big"
+	"sort"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb/memorydb"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/holiman/uint256"
+	"github.com/islishude/ethproof/proof"
 )
+
+type StateProofPackage = proof.StateProofPackage
+type ReceiptProofPackage = proof.ReceiptProofPackage
+type TransactionProofPackage = proof.TransactionProofPackage
+type StateAccountClaim = proof.StateAccountClaim
+type EventClaim = proof.EventClaim
+type SourceConsensus = proof.SourceConsensus
+type ConsensusDigest = proof.ConsensusDigest
+type ConsensusField = proof.ConsensusField
+
+type OfflineFixtures struct {
+	State       *StateProofPackage       `json:"state"`
+	Receipt     *ReceiptProofPackage     `json:"receipt"`
+	Transaction *TransactionProofPackage `json:"transaction"`
+}
+
+type blockSnapshotHeader struct {
+	ChainID          *uint256.Int `json:"chainId"`
+	BlockNumber      uint64       `json:"blockNumber"`
+	BlockHash        common.Hash  `json:"blockHash"`
+	ParentHash       common.Hash  `json:"parentHash"`
+	StateRoot        common.Hash  `json:"stateRoot"`
+	TransactionsRoot common.Hash  `json:"transactionsRoot"`
+	ReceiptsRoot     common.Hash  `json:"receiptsRoot"`
+}
 
 func BuildOfflineFixtures() (*OfflineFixtures, error) {
 	txReceiptHeader, txs, receipts, txIndex, receiptConsensus, err := buildOfflineTransactionReceiptFixture()
@@ -457,5 +488,197 @@ func offlineTransactionDigests(header blockSnapshotHeader, blockTransactions []h
 		{Name: "header", Digest: headerDigest},
 		{Name: "blockTransactions", Digest: blockTransactionsDigest},
 		{Name: "targetTransaction", Digest: targetTransactionDigest},
+	}, nil
+}
+
+func makeProofTrie() *trie.Trie {
+	tdb := triedb.NewDatabase(rawdb.NewMemoryDatabase(), triedb.HashDefaults)
+	return trie.NewEmpty(tdb)
+}
+
+func trieIndexKey(index uint64) []byte {
+	return rlp.AppendUint64(nil, index)
+}
+
+func canonicalBytes(data []byte) hexutil.Bytes {
+	return hexutil.Bytes(common.CopyBytes(data))
+}
+
+func chainIDString(v *uint256.Int) string {
+	if v == nil {
+		return "0"
+	}
+	return v.String()
+}
+
+func dumpProofNodes(db *memorydb.Database) ([]hexutil.Bytes, error) {
+	it := db.NewIterator(nil, nil)
+	defer it.Release()
+
+	type item struct {
+		key []byte
+		val []byte
+	}
+	var items []item
+	for it.Next() {
+		items = append(items, item{
+			key: append([]byte(nil), it.Key()...),
+			val: append([]byte(nil), it.Value()...),
+		})
+	}
+	if err := it.Error(); err != nil {
+		return nil, fmt.Errorf("iterate proof db: %w", err)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return bytes.Compare(items[i].key, items[j].key) < 0
+	})
+	out := make([]hexutil.Bytes, len(items))
+	for i, item := range items {
+		out[i] = canonicalBytes(item.val)
+	}
+	return out, nil
+}
+
+func encodeTransaction(tx *types.Transaction) (hexutil.Bytes, error) {
+	b, err := tx.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	return canonicalBytes(b), nil
+}
+
+func encodeReceipt(receipt *types.Receipt) (hexutil.Bytes, error) {
+	b, err := receipt.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	return canonicalBytes(b), nil
+}
+
+func decodeTransaction(raw []byte) (*types.Transaction, []byte, error) {
+	var tx types.Transaction
+	if err := tx.UnmarshalBinary(raw); err != nil {
+		return nil, nil, err
+	}
+	return &tx, common.CopyBytes(raw), nil
+}
+
+func canonicalDigest(value any) (common.Hash, error) {
+	b, err := json.Marshal(value)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return crypto.Keccak256Hash(b), nil
+}
+
+func balanceHex(v *big.Int) string {
+	if v == nil {
+		return hexutil.EncodeBig(big.NewInt(0))
+	}
+	return hexutil.EncodeBig(v)
+}
+
+func encodeStorageProofValue(value common.Hash) ([]byte, error) {
+	if value == (common.Hash{}) {
+		return nil, nil
+	}
+	return rlp.EncodeToBytes(common.TrimLeftZeroes(value[:]))
+}
+
+func buildBlockContext(header blockSnapshotHeader, consensus SourceConsensus) proof.BlockContext {
+	return proof.BlockContext{
+		ChainID:          header.ChainID.Clone(),
+		BlockNumber:      header.BlockNumber,
+		BlockHash:        header.BlockHash,
+		ParentHash:       header.ParentHash,
+		StateRoot:        header.StateRoot,
+		TransactionsRoot: header.TransactionsRoot,
+		ReceiptsRoot:     header.ReceiptsRoot,
+		SourceConsensus:  consensus,
+	}
+}
+
+func sourceConsensus(mode string, rpcs []string, digests []ConsensusDigest, fields []ConsensusField) SourceConsensus {
+	outRPCs := append([]string{}, rpcs...)
+	outDigests := append([]ConsensusDigest{}, digests...)
+	outFields := append([]ConsensusField{}, fields...)
+	return SourceConsensus{
+		Mode:    mode,
+		RPCs:    outRPCs,
+		Digests: outDigests,
+		Fields:  outFields,
+	}
+}
+
+func buildReceiptTrieAndProof(receipts []hexutil.Bytes, targetIndex uint64, expectedRoot common.Hash) (hexutil.Bytes, []hexutil.Bytes, error) {
+	tr := makeProofTrie()
+	for i, receiptHex := range receipts {
+		if err := tr.Update(trieIndexKey(uint64(i)), receiptHex); err != nil {
+			return nil, nil, fmt.Errorf("receipt trie update %d: %w", i, err)
+		}
+	}
+	root := tr.Hash()
+	if root != expectedRoot {
+		return nil, nil, fmt.Errorf("derived receiptsRoot mismatch: local=%s expected=%s", root, expectedRoot)
+	}
+	proofDB := memorydb.New()
+	if err := tr.Prove(trieIndexKey(targetIndex), proofDB); err != nil {
+		return nil, nil, fmt.Errorf("prove receipt inclusion: %w", err)
+	}
+	nodes, err := dumpProofNodes(proofDB)
+	if err != nil {
+		return nil, nil, err
+	}
+	return receipts[targetIndex], nodes, nil
+}
+
+func buildTransactionTrieAndProof(transactions []hexutil.Bytes, targetIndex uint64, expectedRoot common.Hash) (hexutil.Bytes, []hexutil.Bytes, error) {
+	tr := makeProofTrie()
+	for i, txHex := range transactions {
+		if err := tr.Update(trieIndexKey(uint64(i)), txHex); err != nil {
+			return nil, nil, fmt.Errorf("transaction trie update %d: %w", i, err)
+		}
+	}
+	root := tr.Hash()
+	if root != expectedRoot {
+		return nil, nil, fmt.Errorf("derived transactionsRoot mismatch: local=%s expected=%s", root, expectedRoot)
+	}
+	proofDB := memorydb.New()
+	if err := tr.Prove(trieIndexKey(targetIndex), proofDB); err != nil {
+		return nil, nil, fmt.Errorf("prove transaction inclusion: %w", err)
+	}
+	nodes, err := dumpProofNodes(proofDB)
+	if err != nil {
+		return nil, nil, err
+	}
+	return transactions[targetIndex], nodes, nil
+}
+
+func transactionSnapshotFromBlock(header blockSnapshotHeader, txs types.Transactions, txIndex uint64, consensus SourceConsensus) (*TransactionProofPackage, error) {
+	if int(txIndex) >= len(txs) {
+		return nil, fmt.Errorf("transaction index %d out of range", txIndex)
+	}
+	blockTransactions := make([]hexutil.Bytes, len(txs))
+	for i, tx := range txs {
+		encoded, err := encodeTransaction(tx)
+		if err != nil {
+			return nil, fmt.Errorf("encode transaction %d: %w", i, err)
+		}
+		blockTransactions[i] = encoded
+	}
+	transactionRLP, proofNodes, err := buildTransactionTrieAndProof(blockTransactions, txIndex, header.TransactionsRoot)
+	if err != nil {
+		return nil, err
+	}
+	targetTx, _, err := decodeTransaction(transactionRLP)
+	if err != nil {
+		return nil, err
+	}
+	return &TransactionProofPackage{
+		Block:          buildBlockContext(header, consensus),
+		TxHash:         targetTx.Hash(),
+		TxIndex:        txIndex,
+		TransactionRLP: transactionRLP,
+		ProofNodes:     proofNodes,
 	}, nil
 }

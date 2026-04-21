@@ -13,7 +13,7 @@ func main() {
 	outDir := flag.String("out-dir", "proof/testdata", "output directory for offline fixtures")
 	flag.Parse()
 
-	fixtures, err := proof.BuildOfflineFixtures()
+	fixtures, err := BuildOfflineFixtures()
 	if err != nil {
 		log.Fatalf("build offline fixtures: %v", err)
 	}

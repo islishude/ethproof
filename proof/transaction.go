@@ -143,32 +143,3 @@ func decodeTransactionList(hexTransactions []hexutil.Bytes) (types.Transactions,
 	}
 	return out, nil
 }
-
-func transactionSnapshotFromBlock(header blockSnapshotHeader, txs types.Transactions, txIndex uint64, consensus SourceConsensus) (*TransactionProofPackage, error) {
-	if int(txIndex) >= len(txs) {
-		return nil, fmt.Errorf("transaction index %d out of range", txIndex)
-	}
-	blockTransactions := make([]hexutil.Bytes, len(txs))
-	for i, tx := range txs {
-		encoded, err := encodeTransaction(tx)
-		if err != nil {
-			return nil, fmt.Errorf("encode transaction %d: %w", i, err)
-		}
-		blockTransactions[i] = encoded
-	}
-	transactionRLP, proofNodes, err := buildTransactionTrieAndProof(blockTransactions, txIndex, header.TransactionsRoot)
-	if err != nil {
-		return nil, err
-	}
-	targetTx, _, err := decodeTransaction(transactionRLP)
-	if err != nil {
-		return nil, err
-	}
-	return &TransactionProofPackage{
-		Block:          buildBlockContext(header, consensus),
-		TxHash:         targetTx.Hash(),
-		TxIndex:        txIndex,
-		TransactionRLP: transactionRLP,
-		ProofNodes:     proofNodes,
-	}, nil
-}

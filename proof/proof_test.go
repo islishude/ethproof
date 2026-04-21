@@ -2,8 +2,11 @@ package proof
 
 import (
 	"bytes"
-	"encoding/json"
+	"context"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -11,43 +14,27 @@ import (
 )
 
 func TestOfflineFixturesMatchGoldenFiles(t *testing.T) {
-	fixtures, err := BuildOfflineFixtures()
-	if err != nil {
-		t.Fatalf("BuildOfflineFixtures: %v", err)
-	}
+	root := repoRoot(t)
+	outDir := t.TempDir()
+	runMkfixtures(t, root, outDir)
+
 	cases := []struct {
 		name string
 		path string
-		got  any
 	}{
-		{name: "state", path: fixturePath("state_fixture.json"), got: fixtures.State},
-		{name: "receipt", path: fixturePath("receipt_fixture.json"), got: fixtures.Receipt},
-		{name: "transaction", path: fixturePath("transaction_fixture.json"), got: fixtures.Transaction},
+		{name: "state", path: fixturePath("state_fixture.json")},
+		{name: "receipt", path: fixturePath("receipt_fixture.json")},
+		{name: "transaction", path: fixturePath("transaction_fixture.json")},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			want, err := json.MarshalIndent(tc.got, "", "  ")
+			want, err := os.ReadFile(filepath.Join(outDir, filepath.Base(tc.path)))
 			if err != nil {
-				t.Fatalf("marshal %s fixture: %v", tc.name, err)
+				t.Fatalf("read generated %s fixture: %v", tc.name, err)
 			}
-			var loaded any
-			switch tc.name {
-			case "state":
-				var pkg StateProofPackage
-				loaded = &pkg
-			case "receipt":
-				var pkg ReceiptProofPackage
-				loaded = &pkg
-			default:
-				var pkg TransactionProofPackage
-				loaded = &pkg
-			}
-			if err := LoadJSON(tc.path, loaded); err != nil {
-				t.Fatalf("LoadJSON(%s): %v", tc.path, err)
-			}
-			have, err := json.MarshalIndent(loaded, "", "  ")
+			have, err := os.ReadFile(filepath.Join(root, "proof", tc.path))
 			if err != nil {
-				t.Fatalf("marshal loaded %s fixture: %v", tc.name, err)
+				t.Fatalf("read checked-in %s fixture: %v", tc.name, err)
 			}
 			if !bytes.Equal(have, want) {
 				t.Fatalf("%s fixture file is out of date", tc.name)
@@ -256,4 +243,19 @@ func cloneHexBytesList(in []hexutil.Bytes) []hexutil.Bytes {
 		out[i] = canonicalBytes(in[i])
 	}
 	return out
+}
+
+func runMkfixtures(t *testing.T, root, outDir string) {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cmdArgs := []string{"run", "./cmd/mkfixtures", "--out-dir", outDir}
+	cmd := exec.CommandContext(ctx, "go", cmdArgs...)
+	cmd.Dir = root
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("command failed: go %s\n%s", strings.Join(cmdArgs, " "), string(output))
+	}
 }

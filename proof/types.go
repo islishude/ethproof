@@ -107,12 +107,6 @@ type ReceiptExpectations struct {
 	Data    []byte
 }
 
-type OfflineFixtures struct {
-	State       *StateProofPackage       `json:"state"`
-	Receipt     *ReceiptProofPackage     `json:"receipt"`
-	Transaction *TransactionProofPackage `json:"transaction"`
-}
-
 type accountSnapshot struct {
 	Header       blockSnapshotHeader `json:"header"`
 	Account      common.Address      `json:"account"`

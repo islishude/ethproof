@@ -10,13 +10,10 @@ import (
 )
 
 func TestEncodeAndValidateBlockReceipts(t *testing.T) {
-	header, txs, receipts, _, _, err := buildOfflineTransactionReceiptFixture()
-	if err != nil {
-		t.Fatalf("buildOfflineTransactionReceiptFixture: %v", err)
-	}
+	blockHash, receipts := testBlockReceipts()
 
-	blockReceipts := receiptsWithInclusionInfo(header.BlockHash, txs, receipts)
-	got, err := encodeAndValidateBlockReceipts(blockReceipts, header.BlockHash, len(receipts))
+	blockReceipts := receiptsWithInclusionInfo(blockHash, receipts)
+	got, err := encodeAndValidateBlockReceipts(blockReceipts, blockHash, len(receipts))
 	if err != nil {
 		t.Fatalf("encodeAndValidateBlockReceipts: %v", err)
 	}
@@ -35,15 +32,12 @@ func TestEncodeAndValidateBlockReceipts(t *testing.T) {
 }
 
 func TestEncodeAndValidateBlockReceiptsRejectsMismatchedIndex(t *testing.T) {
-	header, txs, receipts, _, _, err := buildOfflineTransactionReceiptFixture()
-	if err != nil {
-		t.Fatalf("buildOfflineTransactionReceiptFixture: %v", err)
-	}
+	blockHash, receipts := testBlockReceipts()
 
-	blockReceipts := receiptsWithInclusionInfo(header.BlockHash, txs, receipts)
+	blockReceipts := receiptsWithInclusionInfo(blockHash, receipts)
 	blockReceipts[1].TransactionIndex = 0
 
-	_, err = encodeAndValidateBlockReceipts(blockReceipts, header.BlockHash, len(receipts))
+	_, err := encodeAndValidateBlockReceipts(blockReceipts, blockHash, len(receipts))
 	if err == nil {
 		t.Fatal("expected mismatched transaction index to fail")
 	}
@@ -52,13 +46,37 @@ func TestEncodeAndValidateBlockReceiptsRejectsMismatchedIndex(t *testing.T) {
 	}
 }
 
-func receiptsWithInclusionInfo(blockHash common.Hash, txs types.Transactions, receipts types.Receipts) []*types.Receipt {
+func testBlockReceipts() (common.Hash, types.Receipts) {
+	receipts := types.Receipts{
+		{
+			Type:              types.LegacyTxType,
+			Status:            types.ReceiptStatusSuccessful,
+			CumulativeGasUsed: 21_000,
+			Logs: []*types.Log{{
+				Address: common.HexToAddress("0x1000000000000000000000000000000000000001"),
+			}},
+		},
+		{
+			Type:              types.DynamicFeeTxType,
+			Status:            types.ReceiptStatusSuccessful,
+			CumulativeGasUsed: 42_000,
+			Logs: []*types.Log{{
+				Address: common.HexToAddress("0x2000000000000000000000000000000000000002"),
+			}},
+		},
+	}
+	for _, receipt := range receipts {
+		receipt.Bloom = types.CreateBloom(receipt)
+	}
+	return common.HexToHash("0x1234"), receipts
+}
+
+func receiptsWithInclusionInfo(blockHash common.Hash, receipts types.Receipts) []*types.Receipt {
 	out := make([]*types.Receipt, len(receipts))
 	for i, receipt := range receipts {
 		cloned := *receipt
 		cloned.BlockHash = blockHash
 		cloned.TransactionIndex = uint(i)
-		cloned.TxHash = txs[i].Hash()
 		out[i] = &cloned
 	}
 	return out

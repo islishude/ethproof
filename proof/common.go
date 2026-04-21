@@ -218,13 +218,6 @@ func decodeStorageProofValue(raw []byte) (common.Hash, error) {
 	return common.BytesToHash(content), nil
 }
 
-func encodeStorageProofValue(value common.Hash) ([]byte, error) {
-	if value == (common.Hash{}) {
-		return nil, nil
-	}
-	return rlp.EncodeToBytes(common.TrimLeftZeroes(value[:]))
-}
-
 func buildBlockContext(header blockSnapshotHeader, consensus SourceConsensus) BlockContext {
 	return BlockContext{
 		ChainID:          cloneChainID(header.ChainID),
