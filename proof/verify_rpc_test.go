@@ -16,8 +16,8 @@ func TestVerifyStateProofPackageAgainstRPCs(t *testing.T) {
 		MinRPCSources: 3,
 	}
 
-	if err := verifyStateProofPackageAgainstRPCs(context.Background(), &pkg, req, fixedBlockHeaderFetcher(pkg.Block)); err != nil {
-		t.Fatalf("verifyStateProofPackageAgainstRPCs: %v", err)
+	if err := verifyStateProofPackageAgainstRPCsWithFetcher(context.Background(), &pkg, req, fixedBlockHeaderFetcher(pkg.Block)); err != nil {
+		t.Fatalf("verifyStateProofPackageAgainstRPCsWithFetcher: %v", err)
 	}
 }
 
@@ -33,8 +33,8 @@ func TestVerifyReceiptProofPackageWithExpectationsAgainstRPCs(t *testing.T) {
 		Data:    append([]byte(nil), pkg.Event.Data...),
 	}
 
-	if err := verifyReceiptProofPackageWithExpectationsAgainstRPCs(context.Background(), &pkg, expect, req, fixedBlockHeaderFetcher(pkg.Block)); err != nil {
-		t.Fatalf("verifyReceiptProofPackageWithExpectationsAgainstRPCs: %v", err)
+	if err := verifyReceiptProofPackageWithExpectationsAgainstRPCsWithFetcher(context.Background(), &pkg, expect, req, fixedBlockHeaderFetcher(pkg.Block)); err != nil {
+		t.Fatalf("verifyReceiptProofPackageWithExpectationsAgainstRPCsWithFetcher: %v", err)
 	}
 }
 
@@ -46,8 +46,8 @@ func TestVerifyTransactionProofPackageAgainstRPCsIgnoresGenerationRPCMetadata(t 
 		MinRPCSources: 3,
 	}
 
-	if err := verifyTransactionProofPackageAgainstRPCs(context.Background(), &pkg, req, fixedBlockHeaderFetcher(pkg.Block)); err != nil {
-		t.Fatalf("verifyTransactionProofPackageAgainstRPCs: %v", err)
+	if err := verifyTransactionProofPackageAgainstRPCsWithFetcher(context.Background(), &pkg, req, fixedBlockHeaderFetcher(pkg.Block)); err != nil {
+		t.Fatalf("verifyTransactionProofPackageAgainstRPCsWithFetcher: %v", err)
 	}
 }
 
@@ -61,7 +61,7 @@ func TestVerifyTransactionProofPackageAgainstRPCsRejectsTamperedBlockHash(t *tes
 		MinRPCSources: 3,
 	}
 
-	err := verifyTransactionProofPackageAgainstRPCs(context.Background(), &pkg, req, func(_ context.Context, urls []string, blockHash common.Hash) ([]blockHeaderSource, error) {
+	err := verifyTransactionProofPackageAgainstRPCsWithFetcher(context.Background(), &pkg, req, func(_ context.Context, urls []string, blockHash common.Hash) ([]blockHeaderSource, error) {
 		if blockHash != originalHash {
 			return nil, fmt.Errorf("fetch header: block %s not found", blockHash)
 		}
@@ -81,11 +81,11 @@ func TestVerifyTransactionProofPackageAgainstRPCsRejectsVerifyRPCMismatch(t *tes
 		RPCURLs:       []string{"https://verify-1.example", "https://verify-2.example", "https://verify-3.example"},
 		MinRPCSources: 3,
 	}
-	base := blockContextHeader(pkg.Block)
+	base := blockSnapshotHeaderFromBlockContext(pkg.Block)
 	mismatch := cloneBlockSnapshotHeader(base)
 	mismatch.ParentHash = common.HexToHash("0xbeef")
 
-	err := verifyTransactionProofPackageAgainstRPCs(context.Background(), &pkg, req, func(_ context.Context, urls []string, blockHash common.Hash) ([]blockHeaderSource, error) {
+	err := verifyTransactionProofPackageAgainstRPCsWithFetcher(context.Background(), &pkg, req, func(_ context.Context, urls []string, blockHash common.Hash) ([]blockHeaderSource, error) {
 		if blockHash != pkg.Block.BlockHash {
 			return nil, fmt.Errorf("fetch header: block %s not found", blockHash)
 		}
@@ -112,7 +112,7 @@ func TestVerifyTransactionProofPackageAgainstRPCsRejectsVerifyRPCMismatch(t *tes
 
 func fixedBlockHeaderFetcher(block BlockContext) blockHeaderFetcher {
 	expectedHash := block.BlockHash
-	template := blockContextHeader(block)
+	template := blockSnapshotHeaderFromBlockContext(block)
 	return func(_ context.Context, urls []string, blockHash common.Hash) ([]blockHeaderSource, error) {
 		if blockHash != expectedHash {
 			return nil, fmt.Errorf("fetch header: block %s not found", blockHash)
@@ -125,6 +125,18 @@ func fixedBlockHeaderFetcher(block BlockContext) blockHeaderFetcher {
 			})
 		}
 		return out, nil
+	}
+}
+
+func blockSnapshotHeaderFromBlockContext(block BlockContext) blockSnapshotHeader {
+	return blockSnapshotHeader{
+		ChainID:          cloneChainID(block.ChainID),
+		BlockNumber:      block.BlockNumber,
+		BlockHash:        block.BlockHash,
+		ParentHash:       block.ParentHash,
+		StateRoot:        block.StateRoot,
+		TransactionsRoot: block.TransactionsRoot,
+		ReceiptsRoot:     block.ReceiptsRoot,
 	}
 }
 

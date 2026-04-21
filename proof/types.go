@@ -1,8 +1,6 @@
 package proof
 
 import (
-	"context"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/holiman/uint256"
@@ -151,44 +149,4 @@ type blockSnapshotHeader struct {
 	StateRoot        common.Hash  `json:"stateRoot"`
 	TransactionsRoot common.Hash  `json:"transactionsRoot"`
 	ReceiptsRoot     common.Hash  `json:"receiptsRoot"`
-}
-
-func GenerateStateProof(ctx context.Context, req StateProofRequest) (*StateProofPackage, error) {
-	return generateStateProof(ctx, req)
-}
-
-func GenerateReceiptProof(ctx context.Context, req ReceiptProofRequest) (*ReceiptProofPackage, error) {
-	return generateReceiptProof(ctx, req)
-}
-
-func GenerateTransactionProof(ctx context.Context, req TransactionProofRequest) (*TransactionProofPackage, error) {
-	return generateTransactionProof(ctx, req)
-}
-
-func VerifyStateProofPackage(pkg *StateProofPackage) error {
-	return verifyStateProofPackage(pkg)
-}
-
-func VerifyStateProofPackageAgainstRPCs(ctx context.Context, pkg *StateProofPackage, req VerifyRPCRequest) error {
-	return verifyStateProofPackageAgainstRPCs(ctx, pkg, req, fetchBlockHeadersFromRPCs)
-}
-
-func VerifyReceiptProofPackage(pkg *ReceiptProofPackage) error {
-	return verifyReceiptProofPackage(pkg, nil)
-}
-
-func VerifyReceiptProofPackageWithExpectations(pkg *ReceiptProofPackage, expect *ReceiptExpectations) error {
-	return verifyReceiptProofPackage(pkg, expect)
-}
-
-func VerifyReceiptProofPackageWithExpectationsAgainstRPCs(ctx context.Context, pkg *ReceiptProofPackage, expect *ReceiptExpectations, req VerifyRPCRequest) error {
-	return verifyReceiptProofPackageWithExpectationsAgainstRPCs(ctx, pkg, expect, req, fetchBlockHeadersFromRPCs)
-}
-
-func VerifyTransactionProofPackage(pkg *TransactionProofPackage) error {
-	return verifyTransactionProofPackage(pkg)
-}
-
-func VerifyTransactionProofPackageAgainstRPCs(ctx context.Context, pkg *TransactionProofPackage, req VerifyRPCRequest) error {
-	return verifyTransactionProofPackageAgainstRPCs(ctx, pkg, req, fetchBlockHeadersFromRPCs)
 }

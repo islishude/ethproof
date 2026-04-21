@@ -9,7 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-func generateStateProof(ctx context.Context, req StateProofRequest) (*StateProofPackage, error) {
+func GenerateStateProof(ctx context.Context, req StateProofRequest) (*StateProofPackage, error) {
 	rpcs, err := normalizeRPCURLs(req.RPCURLs, req.MinRPCSources)
 	if err != nil {
 		return nil, err
@@ -44,7 +44,7 @@ func generateStateProof(ctx context.Context, req StateProofRequest) (*StateProof
 	}, nil
 }
 
-func verifyStateProofPackage(pkg *StateProofPackage) error {
+func VerifyStateProofPackage(pkg *StateProofPackage) error {
 	accountRLP, err := verifyAccountProof(pkg.Block.StateRoot, pkg.Account, pkg.AccountProofNodes, pkg.AccountClaim)
 	if err != nil {
 		return err

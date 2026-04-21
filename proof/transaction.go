@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 )
 
-func generateTransactionProof(ctx context.Context, req TransactionProofRequest) (*TransactionProofPackage, error) {
+func GenerateTransactionProof(ctx context.Context, req TransactionProofRequest) (*TransactionProofPackage, error) {
 	rpcs, err := normalizeRPCURLs(req.RPCURLs, req.MinRPCSources)
 	if err != nil {
 		return nil, err
@@ -55,7 +55,7 @@ func generateTransactionProof(ctx context.Context, req TransactionProofRequest) 
 	}, nil
 }
 
-func verifyTransactionProofPackage(pkg *TransactionProofPackage) error {
+func VerifyTransactionProofPackage(pkg *TransactionProofPackage) error {
 	proofDB, err := proofDBFromHexNodes(pkg.ProofNodes)
 	if err != nil {
 		return err

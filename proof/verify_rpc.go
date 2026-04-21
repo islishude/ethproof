@@ -14,22 +14,34 @@ type blockHeaderSource struct {
 
 type blockHeaderFetcher func(ctx context.Context, urls []string, blockHash common.Hash) ([]blockHeaderSource, error)
 
-func verifyStateProofPackageAgainstRPCs(ctx context.Context, pkg *StateProofPackage, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
-	if err := verifyStateProofPackage(pkg); err != nil {
+func VerifyStateProofPackageAgainstRPCs(ctx context.Context, pkg *StateProofPackage, req VerifyRPCRequest) error {
+	return verifyStateProofPackageAgainstRPCsWithFetcher(ctx, pkg, req, fetchBlockHeadersFromRPCs)
+}
+
+func verifyStateProofPackageAgainstRPCsWithFetcher(ctx context.Context, pkg *StateProofPackage, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
+	if err := VerifyStateProofPackage(pkg); err != nil {
 		return err
 	}
 	return verifyBlockContextAgainstRPCs(ctx, pkg.Block, req, fetcher)
 }
 
-func verifyReceiptProofPackageWithExpectationsAgainstRPCs(ctx context.Context, pkg *ReceiptProofPackage, expect *ReceiptExpectations, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
-	if err := verifyReceiptProofPackage(pkg, expect); err != nil {
+func VerifyReceiptProofPackageWithExpectationsAgainstRPCs(ctx context.Context, pkg *ReceiptProofPackage, expect *ReceiptExpectations, req VerifyRPCRequest) error {
+	return verifyReceiptProofPackageWithExpectationsAgainstRPCsWithFetcher(ctx, pkg, expect, req, fetchBlockHeadersFromRPCs)
+}
+
+func verifyReceiptProofPackageWithExpectationsAgainstRPCsWithFetcher(ctx context.Context, pkg *ReceiptProofPackage, expect *ReceiptExpectations, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
+	if err := VerifyReceiptProofPackageWithExpectations(pkg, expect); err != nil {
 		return err
 	}
 	return verifyBlockContextAgainstRPCs(ctx, pkg.Block, req, fetcher)
 }
 
-func verifyTransactionProofPackageAgainstRPCs(ctx context.Context, pkg *TransactionProofPackage, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
-	if err := verifyTransactionProofPackage(pkg); err != nil {
+func VerifyTransactionProofPackageAgainstRPCs(ctx context.Context, pkg *TransactionProofPackage, req VerifyRPCRequest) error {
+	return verifyTransactionProofPackageAgainstRPCsWithFetcher(ctx, pkg, req, fetchBlockHeadersFromRPCs)
+}
+
+func verifyTransactionProofPackageAgainstRPCsWithFetcher(ctx context.Context, pkg *TransactionProofPackage, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
+	if err := VerifyTransactionProofPackage(pkg); err != nil {
 		return err
 	}
 	return verifyBlockContextAgainstRPCs(ctx, pkg.Block, req, fetcher)
@@ -57,14 +69,7 @@ func verifyBlockContextAgainstRPCs(ctx context.Context, block BlockContext, req 
 			return err
 		}
 	}
-	if err := combineMismatch("proof package", base.source, compareHeader(blockContextHeader(block), base.header)); err != nil {
-		return err
-	}
-	return nil
-}
-
-func blockContextHeader(block BlockContext) blockSnapshotHeader {
-	return blockSnapshotHeader{
+	if err := combineMismatch("proof package", base.source, compareHeader(blockSnapshotHeader{
 		ChainID:          cloneChainID(block.ChainID),
 		BlockNumber:      block.BlockNumber,
 		BlockHash:        block.BlockHash,
@@ -72,5 +77,8 @@ func blockContextHeader(block BlockContext) blockSnapshotHeader {
 		StateRoot:        block.StateRoot,
 		TransactionsRoot: block.TransactionsRoot,
 		ReceiptsRoot:     block.ReceiptsRoot,
+	}, base.header)); err != nil {
+		return err
 	}
+	return nil
 }

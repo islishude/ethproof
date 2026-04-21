@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 )
 
-func generateReceiptProof(ctx context.Context, req ReceiptProofRequest) (*ReceiptProofPackage, error) {
+func GenerateReceiptProof(ctx context.Context, req ReceiptProofRequest) (*ReceiptProofPackage, error) {
 	rpcs, err := normalizeRPCURLs(req.RPCURLs, req.MinRPCSources)
 	if err != nil {
 		return nil, err
@@ -57,7 +57,11 @@ func generateReceiptProof(ctx context.Context, req ReceiptProofRequest) (*Receip
 	}, nil
 }
 
-func verifyReceiptProofPackage(pkg *ReceiptProofPackage, expect *ReceiptExpectations) error {
+func VerifyReceiptProofPackage(pkg *ReceiptProofPackage) error {
+	return VerifyReceiptProofPackageWithExpectations(pkg, nil)
+}
+
+func VerifyReceiptProofPackageWithExpectations(pkg *ReceiptProofPackage, expect *ReceiptExpectations) error {
 	proofDB, err := proofDBFromHexNodes(pkg.ProofNodes)
 	if err != nil {
 		return err
