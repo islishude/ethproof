@@ -1,10 +1,43 @@
 package main
 
 import (
+	"io"
+	"os"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 )
+
+func TestRunMainHelpPrintsUsageToStdout(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "root short help", args: []string{"-h"}},
+		{name: "root long help", args: []string{"--help"}},
+		{name: "generate help", args: []string{"generate", "-h"}},
+		{name: "subcommand help", args: []string{"generate", "state", "--help"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var exit int
+			stdout, stderr := captureCommandOutput(t, func() {
+				exit = runMain(tt.args)
+			})
+
+			if exit != 0 {
+				t.Fatalf("expected exit code 0, got %d", exit)
+			}
+			if stdout != usageText {
+				t.Fatalf("unexpected stdout:\n%s", stdout)
+			}
+			if stderr != "" {
+				t.Fatalf("expected empty stderr, got %q", stderr)
+			}
+		})
+	}
+}
 
 func TestParseGenerateStateArgsPassesMinRPCs(t *testing.T) {
 	cfg, err := parseGenerateStateArgs([]string{
@@ -73,4 +106,46 @@ func TestParseGenerateTransactionArgsPassesMinRPCs(t *testing.T) {
 	if cfg.Out != "tx.json" {
 		t.Fatalf("unexpected output path: %s", cfg.Out)
 	}
+}
+
+func captureCommandOutput(t *testing.T, fn func()) (string, string) {
+	t.Helper()
+
+	originalStdout := os.Stdout
+	originalStderr := os.Stderr
+
+	stdoutReader, stdoutWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create stdout pipe: %v", err)
+	}
+	stderrReader, stderrWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create stderr pipe: %v", err)
+	}
+
+	os.Stdout = stdoutWriter
+	os.Stderr = stderrWriter
+
+	fn()
+
+	if err := stdoutWriter.Close(); err != nil {
+		t.Fatalf("close stdout writer: %v", err)
+	}
+	if err := stderrWriter.Close(); err != nil {
+		t.Fatalf("close stderr writer: %v", err)
+	}
+
+	os.Stdout = originalStdout
+	os.Stderr = originalStderr
+
+	stdout, err := io.ReadAll(stdoutReader)
+	if err != nil {
+		t.Fatalf("read stdout: %v", err)
+	}
+	stderr, err := io.ReadAll(stderrReader)
+	if err != nil {
+		t.Fatalf("read stderr: %v", err)
+	}
+
+	return string(stdout), string(stderr)
 }

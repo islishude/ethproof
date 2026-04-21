@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 )
@@ -18,6 +17,9 @@ func run(args []string) error {
 	if len(args) == 0 {
 		return newUsageError("missing command")
 	}
+	if isHelpArg(args[0]) {
+		return newHelpError()
+	}
 
 	switch args[0] {
 	case "generate":
@@ -30,7 +32,11 @@ func run(args []string) error {
 }
 
 func renderError(err error) {
-	if usageErr, ok := errors.AsType[usageError](err); ok {
+	if usageErr, ok := asUsageError(err); ok {
+		if usageErr.help {
+			_, _ = fmt.Fprint(os.Stdout, usageText)
+			return
+		}
 		if usageErr.message != "" {
 			fmt.Fprintf(os.Stderr, "error: %s\n\n", usageErr.message)
 		}
@@ -42,7 +48,10 @@ func renderError(err error) {
 }
 
 func exitCode(err error) int {
-	if _, ok := errors.AsType[usageError](err); ok {
+	if usageErr, ok := asUsageError(err); ok {
+		if usageErr.help {
+			return 0
+		}
 		return 2
 	}
 	return 1

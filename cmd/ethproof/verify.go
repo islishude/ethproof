@@ -10,6 +10,9 @@ func runVerify(args []string) error {
 	if len(args) == 0 {
 		return newUsageError("missing verify subcommand")
 	}
+	if isHelpArg(args[0]) {
+		return newHelpError()
+	}
 
 	switch args[0] {
 	case "state":

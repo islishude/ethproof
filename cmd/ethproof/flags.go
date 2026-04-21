@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -58,7 +59,10 @@ func parseGenerateStateArgs(args []string) (generateStateConfig, error) {
 	accountHex := fs.String("account", "", "account address")
 	slotHex := fs.String("slot", "", "32-byte storage slot key")
 	out := fs.String("out", "state.json", "output proof json")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagSet(fs, args); err != nil {
+		if _, ok := asUsageError(err); ok {
+			return generateStateConfig{}, err
+		}
 		return generateStateConfig{}, newUsageError("parse generate state args: %v", err)
 	}
 	if err := ensureNoPositionalArgs(fs); err != nil {
@@ -94,7 +98,10 @@ func parseGenerateReceiptArgs(args []string) (generateReceiptConfig, error) {
 	txHashHex := fs.String("tx", "", "transaction hash")
 	logIndex := fs.Uint("log-index", 0, "log index within receipt")
 	out := fs.String("out", "receipt.json", "output proof json")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagSet(fs, args); err != nil {
+		if _, ok := asUsageError(err); ok {
+			return generateReceiptConfig{}, err
+		}
 		return generateReceiptConfig{}, newUsageError("parse generate receipt args: %v", err)
 	}
 	if err := ensureNoPositionalArgs(fs); err != nil {
@@ -125,7 +132,10 @@ func parseGenerateTransactionArgs(args []string) (generateTransactionConfig, err
 	minRPCs := fs.Int("min-rpcs", proofMinRPCsDefault(), "minimum distinct RPC sources required")
 	txHashHex := fs.String("tx", "", "transaction hash")
 	out := fs.String("out", "tx.json", "output proof json")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagSet(fs, args); err != nil {
+		if _, ok := asUsageError(err); ok {
+			return generateTransactionConfig{}, err
+		}
 		return generateTransactionConfig{}, newUsageError("parse generate tx args: %v", err)
 	}
 	if err := ensureNoPositionalArgs(fs); err != nil {
@@ -151,7 +161,10 @@ func parseGenerateTransactionArgs(args []string) (generateTransactionConfig, err
 func parseVerifyStateArgs(args []string) (verifyStateConfig, error) {
 	fs := newFlagSet("verify state")
 	proofPath := fs.String("proof", "state.json", "proof json file")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagSet(fs, args); err != nil {
+		if _, ok := asUsageError(err); ok {
+			return verifyStateConfig{}, err
+		}
 		return verifyStateConfig{}, newUsageError("parse verify state args: %v", err)
 	}
 	if err := ensureNoPositionalArgs(fs); err != nil {
@@ -168,7 +181,10 @@ func parseVerifyReceiptArgs(args []string) (verifyReceiptConfig, error) {
 	expectDataHex := fs.String("expect-data", "", "optional expected event data hex")
 	var topics multiStringFlag
 	fs.Var(&topics, "expect-topic", "optional expected topic (repeatable)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagSet(fs, args); err != nil {
+		if _, ok := asUsageError(err); ok {
+			return verifyReceiptConfig{}, err
+		}
 		return verifyReceiptConfig{}, newUsageError("parse verify receipt args: %v", err)
 	}
 	if err := ensureNoPositionalArgs(fs); err != nil {
@@ -189,7 +205,10 @@ func parseVerifyReceiptArgs(args []string) (verifyReceiptConfig, error) {
 func parseVerifyTransactionArgs(args []string) (verifyTransactionConfig, error) {
 	fs := newFlagSet("verify tx")
 	proofPath := fs.String("proof", "tx.json", "proof json file")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagSet(fs, args); err != nil {
+		if _, ok := asUsageError(err); ok {
+			return verifyTransactionConfig{}, err
+		}
 		return verifyTransactionConfig{}, newUsageError("parse verify tx args: %v", err)
 	}
 	if err := ensureNoPositionalArgs(fs); err != nil {
@@ -221,6 +240,16 @@ func newFlagSet(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	return fs
+}
+
+func parseFlagSet(fs *flag.FlagSet, args []string) error {
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return newHelpError()
+		}
+		return err
+	}
+	return nil
 }
 
 func ensureNoPositionalArgs(fs *flag.FlagSet) error {
