@@ -6,16 +6,18 @@ import (
 )
 
 const usageText = `Usage:
-  ethproof generate state   [--config config.json] [--rpc URL ...] [--min-rpcs N] [--block N] [--account 0xADDR] [--slot 0xSLOT] [--out state.json]
-  ethproof generate receipt [--config config.json] [--rpc URL ...] [--min-rpcs N] [--tx 0xHASH] [--log-index N] [--out receipt.json]
-  ethproof generate tx      [--config config.json] [--rpc URL ...] [--min-rpcs N] [--tx 0xHASH] [--out tx.json]
+  ethproof generate state   [--config config.json] [--rpc URL ...] [--min-rpcs N] [--block N] [--account 0xADDR] [--slot 0xSLOT] [--out state.json] [--log-level LEVEL] [--log-format text|json]
+  ethproof generate receipt [--config config.json] [--rpc URL ...] [--min-rpcs N] [--tx 0xHASH] [--log-index N] [--out receipt.json] [--log-level LEVEL] [--log-format text|json]
+  ethproof generate tx      [--config config.json] [--rpc URL ...] [--min-rpcs N] [--tx 0xHASH] [--out tx.json] [--log-level LEVEL] [--log-format text|json]
 
-  ethproof verify state   [--config config.json] [--rpc URL ...] [--min-rpcs N] [--proof state.json]
-  ethproof verify receipt [--config config.json] [--rpc URL ...] [--min-rpcs N] [--proof receipt.json] [--expect-emitter 0xADDR] [--expect-topic 0xHASH] [--expect-data 0xDATA]
-  ethproof verify tx      [--config config.json] [--rpc URL ...] [--min-rpcs N] [--proof tx.json]
+  ethproof verify state   [--config config.json] [--rpc URL ...] [--min-rpcs N] [--proof state.json] [--log-level LEVEL] [--log-format text|json]
+  ethproof verify receipt [--config config.json] [--rpc URL ...] [--min-rpcs N] [--proof receipt.json] [--expect-emitter 0xADDR] [--expect-topic 0xHASH] [--expect-data 0xDATA] [--log-level LEVEL] [--log-format text|json]
+  ethproof verify tx      [--config config.json] [--rpc URL ...] [--min-rpcs N] [--proof tx.json] [--log-level LEVEL] [--log-format text|json]
 
 Options:
-  -h, --help  Show this help message.
+  -h, --help                  Show this help message.
+  --log-level LEVEL           Runtime log level: debug, info, warn, error.
+  --log-format text|json      Runtime log format.
 `
 
 type usageError struct {

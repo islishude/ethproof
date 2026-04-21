@@ -1,4 +1,8 @@
 {
+  "logging": {
+    "level": "info",
+    "format": "text"
+  },
   "generate": {
     "state": {
       "rpcs": [

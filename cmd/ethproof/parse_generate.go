@@ -2,22 +2,26 @@ package main
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/islishude/ethproof/internal/logutil"
 	"github.com/islishude/ethproof/proof"
 )
 
 type generateStateConfig struct {
 	Request proof.StateProofRequest
 	Out     string
+	Logging logutil.Config
 }
 
 type generateReceiptConfig struct {
 	Request proof.ReceiptProofRequest
 	Out     string
+	Logging logutil.Config
 }
 
 type generateTransactionConfig struct {
 	Request proof.TransactionProofRequest
 	Out     string
+	Logging logutil.Config
 }
 
 func parseGenerateStateArgs(args []string) (generateStateConfig, error) {
@@ -30,6 +34,7 @@ func parseGenerateStateArgs(args []string) (generateStateConfig, error) {
 	accountHex := fs.String("account", "", "account address")
 	slotHex := fs.String("slot", "", "32-byte storage slot key")
 	out := fs.String("out", "state.json", "output proof json")
+	logFlags := addLoggingFlags(fs)
 
 	parseCtx, err := prepareParse(fs, args, configPath, "parse generate state args")
 	if err != nil {
@@ -57,6 +62,10 @@ func parseGenerateStateArgs(args []string) (generateStateConfig, error) {
 		rawSlot = mergeString(parseCtx.seen, "slot", *slotHex, section.Slot, "")
 		cfg.Out = mergeString(parseCtx.seen, "out", *out, section.Out, "state.json")
 	}
+	cfg.Logging, err = resolveLoggingConfig(parseCtx.seen, logFlags, configLoggingSection(parseCtx.fileCfg))
+	if err != nil {
+		return generateStateConfig{}, err
+	}
 	if err := validateRPCInputs(cfg.Request.RPCURLs, cfg.Request.MinRPCSources, "generate state requires at least one RPC via --rpc or generate.state.rpcs in --config"); err != nil {
 		return generateStateConfig{}, err
 	}
@@ -80,6 +89,7 @@ func parseGenerateReceiptArgs(args []string) (generateReceiptConfig, error) {
 	txHashHex := fs.String("tx", "", "transaction hash")
 	logIndex := fs.Uint("log-index", 0, "log index within receipt")
 	out := fs.String("out", "receipt.json", "output proof json")
+	logFlags := addLoggingFlags(fs)
 
 	parseCtx, err := prepareParse(fs, args, configPath, "parse generate receipt args")
 	if err != nil {
@@ -105,6 +115,10 @@ func parseGenerateReceiptArgs(args []string) (generateReceiptConfig, error) {
 		rawTxHash = mergeString(parseCtx.seen, "tx", *txHashHex, section.Tx, "")
 		cfg.Out = mergeString(parseCtx.seen, "out", *out, section.Out, "receipt.json")
 	}
+	cfg.Logging, err = resolveLoggingConfig(parseCtx.seen, logFlags, configLoggingSection(parseCtx.fileCfg))
+	if err != nil {
+		return generateReceiptConfig{}, err
+	}
 	if err := validateRPCInputs(cfg.Request.RPCURLs, cfg.Request.MinRPCSources, "generate receipt requires at least one RPC via --rpc or generate.receipt.rpcs in --config"); err != nil {
 		return generateReceiptConfig{}, err
 	}
@@ -123,6 +137,7 @@ func parseGenerateTransactionArgs(args []string) (generateTransactionConfig, err
 	minRPCs := fs.Int("min-rpcs", proofMinRPCsDefault(), "minimum distinct RPC sources required")
 	txHashHex := fs.String("tx", "", "transaction hash")
 	out := fs.String("out", "tx.json", "output proof json")
+	logFlags := addLoggingFlags(fs)
 
 	parseCtx, err := prepareParse(fs, args, configPath, "parse generate tx args")
 	if err != nil {
@@ -144,6 +159,10 @@ func parseGenerateTransactionArgs(args []string) (generateTransactionConfig, err
 		rawTxHash = mergeString(parseCtx.seen, "tx", *txHashHex, section.Tx, "")
 		cfg.Out = mergeString(parseCtx.seen, "out", *out, section.Out, "tx.json")
 	}
+	cfg.Logging, err = resolveLoggingConfig(parseCtx.seen, logFlags, configLoggingSection(parseCtx.fileCfg))
+	if err != nil {
+		return generateTransactionConfig{}, err
+	}
 	if err := validateRPCInputs(cfg.Request.RPCURLs, cfg.Request.MinRPCSources, "generate tx requires at least one RPC via --rpc or generate.tx.rpcs in --config"); err != nil {
 		return generateTransactionConfig{}, err
 	}
@@ -152,4 +171,11 @@ func parseGenerateTransactionArgs(args []string) (generateTransactionConfig, err
 	}
 	cfg.Request.TxHash = common.HexToHash(rawTxHash)
 	return cfg, nil
+}
+
+func configLoggingSection(fileCfg *cliConfig) *cliLoggingConfigFile {
+	if fileCfg == nil {
+		return nil
+	}
+	return &fileCfg.Logging
 }

@@ -107,3 +107,48 @@ func TestParseVerifyTransactionArgsFlagRPCOverridesConfig(t *testing.T) {
 		t.Fatalf("expected MinRPCSources=1, got %d", cfg.VerifyRequest.MinRPCSources)
 	}
 }
+
+func TestParseVerifyTransactionArgsUsesLoggingConfigAndFlagOverrides(t *testing.T) {
+	configPath := writeTestConfig(t, `{
+  "logging": {
+    "level": "error",
+    "format": "text"
+  },
+  "verify": {
+    "tx": {
+      "rpcs": ["http://127.0.0.1:9545"],
+      "minRpcs": 1,
+      "proof": "from-config.json"
+    }
+  }
+}`)
+
+	cfg, err := parseVerifyTransactionArgs([]string{
+		"--config", configPath,
+		"--log-format", "json",
+	})
+	if err != nil {
+		t.Fatalf("parseVerifyTransactionArgs: %v", err)
+	}
+	if cfg.Logging.Level != "error" {
+		t.Fatalf("expected config log level error, got %s", cfg.Logging.Level)
+	}
+	if cfg.Logging.Format != "json" {
+		t.Fatalf("expected log format override json, got %s", cfg.Logging.Format)
+	}
+}
+
+func TestParseVerifyTransactionArgsRejectsInvalidLogFormat(t *testing.T) {
+	_, err := parseVerifyTransactionArgs([]string{
+		"--rpc", "http://127.0.0.1:8545",
+		"--min-rpcs", "1",
+		"--proof", "tx.json",
+		"--log-format", "yaml",
+	})
+	if err == nil {
+		t.Fatal("expected invalid log format to fail")
+	}
+	if !strings.Contains(err.Error(), "unsupported log format") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

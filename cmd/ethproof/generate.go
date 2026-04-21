@@ -39,20 +39,30 @@ func runGenerateState(args []string) error {
 	if err != nil {
 		return err
 	}
+	logger := newCommandLogger(cfg.Logging).With(
+		"command", "generate",
+		"proof_type", "state",
+	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), stateProofTimeout)
 	defer cancel()
+	ctx = proof.WithLogger(ctx, logger)
 
 	pkg, err := proof.GenerateStateProof(ctx, cfg.Request)
 	if err != nil {
-		return fmt.Errorf("generate state proof: %w", err)
+		return wrapRuntimeError(logger, fmt.Errorf("generate state proof: %w", err))
 	}
 	if err := proof.SaveJSON(cfg.Out, pkg); err != nil {
-		return fmt.Errorf("write state proof: %w", err)
+		return wrapRuntimeError(logger, fmt.Errorf("write state proof: %w", err))
 	}
 
-	fmt.Printf("state proof written to %s\n", cfg.Out)
-	fmt.Printf("block=%d account=%s slot=%s stateRoot=%s\n", pkg.Block.BlockNumber, pkg.Account, pkg.Slot, pkg.Block.StateRoot)
+	logger.Info("state proof written",
+		"out_path", cfg.Out,
+		"block_number", pkg.Block.BlockNumber,
+		"account", pkg.Account,
+		"slot", pkg.Slot,
+		"state_root", pkg.Block.StateRoot,
+	)
 	return nil
 }
 
@@ -61,20 +71,29 @@ func runGenerateReceipt(args []string) error {
 	if err != nil {
 		return err
 	}
+	logger := newCommandLogger(cfg.Logging).With(
+		"command", "generate",
+		"proof_type", "receipt",
+	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), receiptProofTimeout)
 	defer cancel()
+	ctx = proof.WithLogger(ctx, logger)
 
 	pkg, err := proof.GenerateReceiptProof(ctx, cfg.Request)
 	if err != nil {
-		return fmt.Errorf("generate receipt proof: %w", err)
+		return wrapRuntimeError(logger, fmt.Errorf("generate receipt proof: %w", err))
 	}
 	if err := proof.SaveJSON(cfg.Out, pkg); err != nil {
-		return fmt.Errorf("write receipt proof: %w", err)
+		return wrapRuntimeError(logger, fmt.Errorf("write receipt proof: %w", err))
 	}
 
-	fmt.Printf("receipt proof written to %s\n", cfg.Out)
-	fmt.Printf("block=%d txIndex=%d receiptsRoot=%s\n", pkg.Block.BlockNumber, pkg.TxIndex, pkg.Block.ReceiptsRoot)
+	logger.Info("receipt proof written",
+		"out_path", cfg.Out,
+		"block_number", pkg.Block.BlockNumber,
+		"tx_index", pkg.TxIndex,
+		"receipts_root", pkg.Block.ReceiptsRoot,
+	)
 	return nil
 }
 
@@ -83,19 +102,28 @@ func runGenerateTransaction(args []string) error {
 	if err != nil {
 		return err
 	}
+	logger := newCommandLogger(cfg.Logging).With(
+		"command", "generate",
+		"proof_type", "transaction",
+	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), transactionProofTimeout)
 	defer cancel()
+	ctx = proof.WithLogger(ctx, logger)
 
 	pkg, err := proof.GenerateTransactionProof(ctx, cfg.Request)
 	if err != nil {
-		return fmt.Errorf("generate transaction proof: %w", err)
+		return wrapRuntimeError(logger, fmt.Errorf("generate transaction proof: %w", err))
 	}
 	if err := proof.SaveJSON(cfg.Out, pkg); err != nil {
-		return fmt.Errorf("write transaction proof: %w", err)
+		return wrapRuntimeError(logger, fmt.Errorf("write transaction proof: %w", err))
 	}
 
-	fmt.Printf("transaction proof written to %s\n", cfg.Out)
-	fmt.Printf("block=%d txIndex=%d transactionsRoot=%s\n", pkg.Block.BlockNumber, pkg.TxIndex, pkg.Block.TransactionsRoot)
+	logger.Info("transaction proof written",
+		"out_path", cfg.Out,
+		"block_number", pkg.Block.BlockNumber,
+		"tx_index", pkg.TxIndex,
+		"transactions_root", pkg.Block.TransactionsRoot,
+	)
 	return nil
 }

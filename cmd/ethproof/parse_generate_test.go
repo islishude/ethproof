@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/islishude/ethproof/internal/logutil"
 )
 
 func TestParseGenerateStateArgsPassesMinRPCs(t *testing.T) {
@@ -142,5 +143,70 @@ func TestParseGenerateStateArgsFlagsOverrideConfig(t *testing.T) {
 	}
 	if cfg.Request.BlockNumber != 99 {
 		t.Fatalf("expected config block number 99, got %d", cfg.Request.BlockNumber)
+	}
+}
+
+func TestParseGenerateStateArgsUsesLoggingConfigAndFlagOverrides(t *testing.T) {
+	configPath := writeTestConfig(t, `{
+  "logging": {
+    "level": "warn",
+    "format": "json"
+  },
+  "generate": {
+    "state": {
+      "rpcs": ["http://127.0.0.1:9545"],
+      "minRpcs": 1,
+      "block": 99,
+      "account": "0x1111111111111111111111111111111111111111",
+      "slot": "0x04"
+    }
+  }
+}`)
+
+	cfg, err := parseGenerateStateArgs([]string{
+		"--config", configPath,
+		"--log-level", "debug",
+	})
+	if err != nil {
+		t.Fatalf("parseGenerateStateArgs: %v", err)
+	}
+	if cfg.Logging.Level != "debug" {
+		t.Fatalf("expected log level override debug, got %s", cfg.Logging.Level)
+	}
+	if cfg.Logging.Format != "json" {
+		t.Fatalf("expected config log format json, got %s", cfg.Logging.Format)
+	}
+}
+
+func TestParseGenerateStateArgsRejectsInvalidLogLevel(t *testing.T) {
+	_, err := parseGenerateStateArgs([]string{
+		"--rpc", "http://127.0.0.1:8545",
+		"--min-rpcs", "1",
+		"--block", "12",
+		"--account", "0x1111111111111111111111111111111111111111",
+		"--slot", "0x01",
+		"--log-level", "verbose",
+	})
+	if err == nil {
+		t.Fatal("expected invalid log level to fail")
+	}
+	if !strings.Contains(err.Error(), "unsupported log level") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseGenerateStateArgsDefaultsLogging(t *testing.T) {
+	cfg, err := parseGenerateStateArgs([]string{
+		"--rpc", "http://127.0.0.1:8545",
+		"--min-rpcs", "1",
+		"--block", "12",
+		"--account", "0x1111111111111111111111111111111111111111",
+		"--slot", "0x01",
+	})
+	if err != nil {
+		t.Fatalf("parseGenerateStateArgs: %v", err)
+	}
+	if cfg.Logging != logutil.DefaultConfig() {
+		t.Fatalf("unexpected default logging config: %+v", cfg.Logging)
 	}
 }

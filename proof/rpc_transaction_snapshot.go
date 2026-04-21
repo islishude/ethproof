@@ -11,6 +11,8 @@ import (
 )
 
 func fetchTransactionSnapshot(ctx context.Context, source *rpcSource, txHash common.Hash) (*transactionSnapshot, error) {
+	logger := loggerFromContext(ctx)
+	logger.Debug("fetching transaction snapshot", "rpc_url", source.url, "tx_hash", txHash)
 	chainID, err := source.eth.ChainID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("chain id: %w", err)
@@ -69,6 +71,7 @@ func fetchTransactionSnapshot(ctx context.Context, source *rpcSource, txHash com
 	if !bytes.Equal(blockTransactions[targetIndex], transactionRLP) {
 		return nil, fmt.Errorf("transaction bytes mismatch between block body and tx lookup")
 	}
+	logger.Debug("validated transaction snapshot locally", "rpc_url", source.url, "block_hash", headerSnapshot.BlockHash, "tx_index", targetIndex)
 
 	return &transactionSnapshot{
 		Header:            headerSnapshot,

@@ -10,6 +10,8 @@ import (
 )
 
 func fetchStateSnapshot(ctx context.Context, source *rpcSource, blockNumber uint64, account common.Address, slot common.Hash) (*accountSnapshot, error) {
+	logger := loggerFromContext(ctx)
+	logger.Debug("fetching state snapshot", "rpc_url", source.url, "block_number", blockNumber, "account", account, "slot", slot)
 	chainID, err := source.eth.ChainID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("chain id: %w", err)
@@ -29,6 +31,7 @@ func fetchStateSnapshot(ctx context.Context, source *rpcSource, blockNumber uint
 	if len(proof.StorageProof) != 1 {
 		return nil, fmt.Errorf("expected exactly one storage proof, got %d", len(proof.StorageProof))
 	}
+	logger.Debug("fetched state rpc payloads", "rpc_url", source.url, "block_hash", header.Hash())
 
 	// Normalize proof node ordering before consensus comparison. Different RPCs can return
 	// equivalent node sets in different orders.
@@ -71,6 +74,7 @@ func fetchStateSnapshot(ctx context.Context, source *rpcSource, blockNumber uint
 	if _, err := verifyStorageProof(proof.StorageHash, slot, storageProof, expectedStorageValue); err != nil {
 		return nil, fmt.Errorf("verify source storage proof: %w", err)
 	}
+	logger.Debug("validated state snapshot locally", "rpc_url", source.url, "block_hash", header.Hash())
 
 	return &accountSnapshot{
 		Header:       headerSnapshot,

@@ -73,10 +73,15 @@ The default minimum is `3` distinct RPC sources. This can be overridden per requ
 
 The CLI is now primarily config-driven. Start from [config.example.json](/Users/sudoless/codespace/coding/eth-proof/config.example.json) and pass `--config`; explicit flags still override the matching config fields.
 
+Runtime logs use the standard library `log/slog`. By default the CLI writes `info`-level text logs to `stderr`; `--log-level` and `--log-format` override the top-level `logging.level` / `logging.format` config values. Help text still prints to `stdout`, and usage errors still print to `stderr` without going through the logger.
+
 ### Generate state proof
 
 ```bash
 go run ./cmd/ethproof generate state --config ./config.example.json
+
+# or override runtime logging for a single invocation
+go run ./cmd/ethproof generate state --config ./config.example.json --log-level debug --log-format json
 ```
 
 ### Generate receipt / event proof
@@ -111,7 +116,8 @@ go run ./cmd/ethproof verify tx \
   --rpc https://verify-rpc-1.example \
   --rpc https://verify-rpc-2.example \
   --rpc https://verify-rpc-3.example \
-  --min-rpcs 3
+  --min-rpcs 3 \
+  --log-level warn
 ```
 
 `verify receipt` always validates all fields embedded in the proof package. `--expect-*` flags add extra assertions on top of the package’s own claims, and CLI verify also re-fetches the block header from the independent verify RPC set to anchor the included roots.
@@ -129,7 +135,7 @@ These are deterministic synthetic Ethereum examples built with real Ethereum enc
 Regenerate them with:
 
 ```bash
-go run ./cmd/mkfixtures --out-dir ./proof/testdata
+go run ./cmd/mkfixtures --out-dir ./proof/testdata --log-level info
 ```
 
 ## Make targets

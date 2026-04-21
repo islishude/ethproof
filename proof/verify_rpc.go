@@ -3,6 +3,7 @@ package proof
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/islishude/ethproof/internal/proofutil"
 )
@@ -14,8 +15,9 @@ func VerifyStateProofPackageAgainstRPCs(ctx context.Context, pkg *StateProofPack
 }
 
 func verifyStateProofPackageAgainstRPCsWithFetcher(ctx context.Context, pkg *StateProofPackage, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
-	return verifyPackageAgainstRPCs(ctx, pkg.Block, req, func() error {
-		return VerifyStateProofPackage(pkg)
+	logger := loggerFromContext(ctx).With("proof_type", "state")
+	return verifyPackageAgainstRPCs(ctx, logger, pkg.Block, req, func() error {
+		return verifyStateProofPackageWithLogger(logger, pkg)
 	}, fetcher)
 }
 
@@ -27,8 +29,9 @@ func VerifyReceiptProofPackageWithExpectationsAgainstRPCs(ctx context.Context, p
 }
 
 func verifyReceiptProofPackageWithExpectationsAgainstRPCsWithFetcher(ctx context.Context, pkg *ReceiptProofPackage, expect *ReceiptExpectations, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
-	return verifyPackageAgainstRPCs(ctx, pkg.Block, req, func() error {
-		return VerifyReceiptProofPackageWithExpectations(pkg, expect)
+	logger := loggerFromContext(ctx).With("proof_type", "receipt")
+	return verifyPackageAgainstRPCs(ctx, logger, pkg.Block, req, func() error {
+		return verifyReceiptProofPackageWithExpectationsWithLogger(logger, pkg, expect)
 	}, fetcher)
 }
 
@@ -39,26 +42,34 @@ func VerifyTransactionProofPackageAgainstRPCs(ctx context.Context, pkg *Transact
 }
 
 func verifyTransactionProofPackageAgainstRPCsWithFetcher(ctx context.Context, pkg *TransactionProofPackage, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
-	return verifyPackageAgainstRPCs(ctx, pkg.Block, req, func() error {
-		return VerifyTransactionProofPackage(pkg)
+	logger := loggerFromContext(ctx).With("proof_type", "transaction")
+	return verifyPackageAgainstRPCs(ctx, logger, pkg.Block, req, func() error {
+		return verifyTransactionProofPackageWithLogger(logger, pkg)
 	}, fetcher)
 }
 
-func verifyPackageAgainstRPCs(ctx context.Context, block BlockContext, req VerifyRPCRequest, verifyLocal func() error, fetcher blockHeaderFetcher) error {
+func verifyPackageAgainstRPCs(ctx context.Context, logger *slog.Logger, block BlockContext, req VerifyRPCRequest, verifyLocal func() error, fetcher blockHeaderFetcher) error {
 	// Always verify the package locally before touching independent RPCs so malformed proofs fail
 	// fast even if the block header itself still exists on chain.
+	logger.Info("verify proof started", "block_hash", block.BlockHash, "block_number", block.BlockNumber)
 	if err := verifyLocal(); err != nil {
 		return err
 	}
-	return verifyBlockContextAgainstRPCs(ctx, block, req, fetcher)
+	logger.Debug("local proof verification completed", "block_hash", block.BlockHash)
+	if err := verifyBlockContextAgainstRPCs(ctx, logger, block, req, fetcher); err != nil {
+		return err
+	}
+	logger.Info("verify proof completed", "block_hash", block.BlockHash, "block_number", block.BlockNumber)
+	return nil
 }
 
-func verifyBlockContextAgainstRPCs(ctx context.Context, block BlockContext, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
+func verifyBlockContextAgainstRPCs(ctx context.Context, logger *slog.Logger, block BlockContext, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
 	// Verify uses its own independent RPC set; it does not trust generation metadata.
 	rpcs, err := normalizeRPCURLs(req.RPCURLs, req.MinRPCSources)
 	if err != nil {
 		return err
 	}
+	logger.Debug("verifying block context against independent rpcs", "rpc_count", len(rpcs), "block_hash", block.BlockHash)
 	headers, err := fetcher(ctx, rpcs, block.BlockHash)
 	if err != nil {
 		return err
@@ -69,6 +80,7 @@ func verifyBlockContextAgainstRPCs(ctx context.Context, block BlockContext, req 
 	if len(headers) != len(rpcs) {
 		return fmt.Errorf("expected %d rpc headers, got %d", len(rpcs), len(headers))
 	}
+	logger.Debug("fetched verify rpc headers", "header_count", len(headers))
 
 	// First require the verify RPC sources to agree with each other.
 	base := headers[0]
@@ -77,6 +89,7 @@ func verifyBlockContextAgainstRPCs(ctx context.Context, block BlockContext, req 
 			return err
 		}
 	}
+	logger.Debug("independent rpc consensus established", "rpc_count", len(rpcs), "block_hash", base.header.BlockHash)
 
 	// Then compare the proof package's embedded block context against that agreed independent view.
 	if err := combineMismatch("proof package", base.source, compareHeader(blockSnapshotHeader{

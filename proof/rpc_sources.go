@@ -17,8 +17,10 @@ type rpcSource struct {
 }
 
 func openRPCSources(ctx context.Context, urls []string) ([]*rpcSource, error) {
+	logger := loggerFromContext(ctx)
 	sources := make([]*rpcSource, 0, len(urls))
 	for _, url := range urls {
+		logger.Debug("dialing rpc source", "rpc_url", url)
 		raw, err := rpc.DialContext(ctx, url)
 		if err != nil {
 			closeRPCSources(sources)
@@ -30,6 +32,7 @@ func openRPCSources(ctx context.Context, urls []string) ([]*rpcSource, error) {
 			eth:  ethclient.NewClient(raw),
 			geth: gethclient.New(raw),
 		})
+		logger.Debug("rpc source connected", "rpc_url", url)
 	}
 	return sources, nil
 }
@@ -45,6 +48,7 @@ func closeRPCSources(sources []*rpcSource) {
 func collectFromRPCs[T any](ctx context.Context, urls []string, fetch func(context.Context, *rpcSource) (T, error)) ([]T, error) {
 	// Open and close the full source set in one place so callers only describe how to fetch a
 	// single-source snapshot and do not repeat lifecycle/error-wrapping code.
+	logger := loggerFromContext(ctx)
 	sources, err := openRPCSources(ctx, urls)
 	if err != nil {
 		return nil, err
@@ -54,11 +58,13 @@ func collectFromRPCs[T any](ctx context.Context, urls []string, fetch func(conte
 	out := make([]T, 0, len(sources))
 	for _, source := range sources {
 		// Prefix every fetch error with the source URL so strict multi-RPC failures are actionable.
+		logger.Debug("fetching normalized snapshot", "rpc_url", source.url)
 		value, fetchErr := fetch(ctx, source)
 		if fetchErr != nil {
 			return nil, fmt.Errorf("%s: %w", source.url, fetchErr)
 		}
 		out = append(out, value)
+		logger.Debug("fetched normalized snapshot", "rpc_url", source.url)
 	}
 	return out, nil
 }

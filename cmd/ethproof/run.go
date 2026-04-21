@@ -7,7 +7,11 @@ import (
 
 func runMain(args []string) int {
 	if err := run(args); err != nil {
-		renderError(err)
+		if _, ok := asUsageError(err); ok {
+			renderError(err)
+		} else {
+			loggerForError(err).Error(err.Error())
+		}
 		return exitCode(err)
 	}
 	return 0
@@ -43,8 +47,6 @@ func renderError(err error) {
 		fmt.Fprint(os.Stderr, usageText)
 		return
 	}
-
-	fmt.Fprintf(os.Stderr, "error: %v\n", err)
 }
 
 func exitCode(err error) int {

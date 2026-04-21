@@ -1,21 +1,27 @@
 package main
 
-import "github.com/islishude/ethproof/proof"
+import (
+	"github.com/islishude/ethproof/internal/logutil"
+	"github.com/islishude/ethproof/proof"
+)
 
 type verifyStateConfig struct {
 	ProofPath     string
 	VerifyRequest proof.VerifyRPCRequest
+	Logging       logutil.Config
 }
 
 type verifyReceiptConfig struct {
 	ProofPath     string
 	Expectations  *proof.ReceiptExpectations
 	VerifyRequest proof.VerifyRPCRequest
+	Logging       logutil.Config
 }
 
 type verifyTransactionConfig struct {
 	ProofPath     string
 	VerifyRequest proof.VerifyRPCRequest
+	Logging       logutil.Config
 }
 
 func parseVerifyStateArgs(args []string) (verifyStateConfig, error) {
@@ -25,6 +31,7 @@ func parseVerifyStateArgs(args []string) (verifyStateConfig, error) {
 	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
 	minRPCs := fs.Int("min-rpcs", proofMinRPCsDefault(), "minimum distinct RPC sources required")
 	proofPath := fs.String("proof", "state.json", "proof json file")
+	logFlags := addLoggingFlags(fs)
 
 	parseCtx, err := prepareParse(fs, args, configPath, "parse verify state args")
 	if err != nil {
@@ -44,6 +51,10 @@ func parseVerifyStateArgs(args []string) (verifyStateConfig, error) {
 		cfg.ProofPath = mergeString(parseCtx.seen, "proof", *proofPath, section.Proof, "state.json")
 		cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, section.RPCs, section.MinRPCs)
 	}
+	cfg.Logging, err = resolveLoggingConfig(parseCtx.seen, logFlags, configLoggingSection(parseCtx.fileCfg))
+	if err != nil {
+		return verifyStateConfig{}, err
+	}
 	if err := validateRPCInputs(cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources, "verify state requires independent RPCs via --rpc or verify.state.rpcs in --config"); err != nil {
 		return verifyStateConfig{}, err
 	}
@@ -61,6 +72,7 @@ func parseVerifyReceiptArgs(args []string) (verifyReceiptConfig, error) {
 	expectDataHex := fs.String("expect-data", "", "optional expected event data hex")
 	var topics multiStringFlag
 	fs.Var(&topics, "expect-topic", "optional expected topic (repeatable)")
+	logFlags := addLoggingFlags(fs)
 
 	parseCtx, err := prepareParse(fs, args, configPath, "parse verify receipt args")
 	if err != nil {
@@ -86,6 +98,10 @@ func parseVerifyReceiptArgs(args []string) (verifyReceiptConfig, error) {
 		rawData = mergeString(parseCtx.seen, "expect-data", *expectDataHex, section.ExpectData, "")
 		rawTopics = mergeStringSlice(parseCtx.seen, "expect-topic", topics, section.ExpectTopics)
 	}
+	cfg.Logging, err = resolveLoggingConfig(parseCtx.seen, logFlags, configLoggingSection(parseCtx.fileCfg))
+	if err != nil {
+		return verifyReceiptConfig{}, err
+	}
 	if err := validateRPCInputs(cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources, "verify receipt requires independent RPCs via --rpc or verify.receipt.rpcs in --config"); err != nil {
 		return verifyReceiptConfig{}, err
 	}
@@ -104,6 +120,7 @@ func parseVerifyTransactionArgs(args []string) (verifyTransactionConfig, error) 
 	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
 	minRPCs := fs.Int("min-rpcs", proofMinRPCsDefault(), "minimum distinct RPC sources required")
 	proofPath := fs.String("proof", "tx.json", "proof json file")
+	logFlags := addLoggingFlags(fs)
 
 	parseCtx, err := prepareParse(fs, args, configPath, "parse verify tx args")
 	if err != nil {
@@ -122,6 +139,10 @@ func parseVerifyTransactionArgs(args []string) (verifyTransactionConfig, error) 
 	if section != nil {
 		cfg.ProofPath = mergeString(parseCtx.seen, "proof", *proofPath, section.Proof, "tx.json")
 		cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, section.RPCs, section.MinRPCs)
+	}
+	cfg.Logging, err = resolveLoggingConfig(parseCtx.seen, logFlags, configLoggingSection(parseCtx.fileCfg))
+	if err != nil {
+		return verifyTransactionConfig{}, err
 	}
 	if err := validateRPCInputs(cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources, "verify tx requires independent RPCs via --rpc or verify.tx.rpcs in --config"); err != nil {
 		return verifyTransactionConfig{}, err

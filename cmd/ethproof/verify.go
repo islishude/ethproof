@@ -35,18 +35,23 @@ func runVerifyState(args []string) error {
 	if err != nil {
 		return err
 	}
+	logger := newCommandLogger(cfg.Logging).With(
+		"command", "verify",
+		"proof_type", "state",
+	)
 	ctx, cancel := context.WithTimeout(context.Background(), verifyProofTimeout)
 	defer cancel()
+	ctx = proof.WithLogger(ctx, logger)
 
 	var pkg proof.StateProofPackage
 	if err := proof.LoadJSON(cfg.ProofPath, &pkg); err != nil {
-		return fmt.Errorf("read state proof json: %w", err)
+		return wrapRuntimeError(logger, fmt.Errorf("read state proof json: %w", err))
 	}
 	if err := proof.VerifyStateProofPackageAgainstRPCs(ctx, &pkg, cfg.VerifyRequest); err != nil {
-		return fmt.Errorf("verify state proof: %w", err)
+		return wrapRuntimeError(logger, fmt.Errorf("verify state proof: %w", err))
 	}
 
-	fmt.Println("state proof verification succeeded")
+	logger.Info("state proof verification succeeded", "proof_path", cfg.ProofPath, "block_number", pkg.Block.BlockNumber)
 	return nil
 }
 
@@ -55,18 +60,23 @@ func runVerifyReceipt(args []string) error {
 	if err != nil {
 		return err
 	}
+	logger := newCommandLogger(cfg.Logging).With(
+		"command", "verify",
+		"proof_type", "receipt",
+	)
 	ctx, cancel := context.WithTimeout(context.Background(), verifyProofTimeout)
 	defer cancel()
+	ctx = proof.WithLogger(ctx, logger)
 
 	var pkg proof.ReceiptProofPackage
 	if err := proof.LoadJSON(cfg.ProofPath, &pkg); err != nil {
-		return fmt.Errorf("read receipt proof json: %w", err)
+		return wrapRuntimeError(logger, fmt.Errorf("read receipt proof json: %w", err))
 	}
 	if err := proof.VerifyReceiptProofPackageWithExpectationsAgainstRPCs(ctx, &pkg, cfg.Expectations, cfg.VerifyRequest); err != nil {
-		return fmt.Errorf("verify receipt proof: %w", err)
+		return wrapRuntimeError(logger, fmt.Errorf("verify receipt proof: %w", err))
 	}
 
-	fmt.Println("receipt proof verification succeeded")
+	logger.Info("receipt proof verification succeeded", "proof_path", cfg.ProofPath, "block_number", pkg.Block.BlockNumber)
 	return nil
 }
 
@@ -75,17 +85,22 @@ func runVerifyTransaction(args []string) error {
 	if err != nil {
 		return err
 	}
+	logger := newCommandLogger(cfg.Logging).With(
+		"command", "verify",
+		"proof_type", "transaction",
+	)
 	ctx, cancel := context.WithTimeout(context.Background(), verifyProofTimeout)
 	defer cancel()
+	ctx = proof.WithLogger(ctx, logger)
 
 	var pkg proof.TransactionProofPackage
 	if err := proof.LoadJSON(cfg.ProofPath, &pkg); err != nil {
-		return fmt.Errorf("read transaction proof json: %w", err)
+		return wrapRuntimeError(logger, fmt.Errorf("read transaction proof json: %w", err))
 	}
 	if err := proof.VerifyTransactionProofPackageAgainstRPCs(ctx, &pkg, cfg.VerifyRequest); err != nil {
-		return fmt.Errorf("verify transaction proof: %w", err)
+		return wrapRuntimeError(logger, fmt.Errorf("verify transaction proof: %w", err))
 	}
 
-	fmt.Println("transaction proof verification succeeded")
+	logger.Info("transaction proof verification succeeded", "proof_path", cfg.ProofPath, "block_number", pkg.Block.BlockNumber)
 	return nil
 }

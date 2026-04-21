@@ -12,6 +12,7 @@ import (
 type cliConfig struct {
 	Generate generateConfigSections `json:"generate"`
 	Verify   verifyConfigSections   `json:"verify"`
+	Logging  cliLoggingConfigFile   `json:"logging"`
 }
 
 type generateConfigSections struct {
@@ -69,6 +70,11 @@ type verifyTransactionConfigFile struct {
 	RPCs    []string `json:"rpcs"`
 	MinRPCs *int     `json:"minRpcs"`
 	Proof   string   `json:"proof"`
+}
+
+type cliLoggingConfigFile struct {
+	Level  string `json:"level"`
+	Format string `json:"format"`
 }
 
 func loadCLIConfig(path string) (*cliConfig, error) {

@@ -14,6 +14,8 @@ import (
 )
 
 func fetchReceiptSnapshot(ctx context.Context, source *rpcSource, txHash common.Hash, logIndex uint) (*receiptSnapshot, error) {
+	logger := loggerFromContext(ctx)
+	logger.Debug("fetching receipt snapshot", "rpc_url", source.url, "tx_hash", txHash, "log_index", logIndex)
 	// Reuse the normalized transaction snapshot so receipt proof generation inherits the exact
 	// transaction bytes and block context that transaction proof generation would see.
 	txSnapshot, err := fetchTransactionSnapshot(ctx, source, txHash)
@@ -50,6 +52,7 @@ func fetchReceiptSnapshot(ctx context.Context, source *rpcSource, txHash common.
 	if !bytes.Equal(blockReceipts[txSnapshot.TxIndex], receiptRLP) {
 		return nil, fmt.Errorf("receipt bytes mismatch between block receipts and target receipt lookup")
 	}
+	logger.Debug("validated receipt snapshot locally", "rpc_url", source.url, "block_hash", txSnapshot.Header.BlockHash)
 
 	// Persist the claimed event as simple address/topics/data fields so package verification does
 	// not depend on any geth-specific receipt representation.
@@ -77,11 +80,23 @@ func fetchBlockReceipts(ctx context.Context, source *rpcSource, blockHash common
 		// Some providers do not implement eth_getBlockReceipts. Fall back to scanning each tx so
 		// receipt proof generation still works while remaining strict about normalized results.
 		if isRPCMethodNotFound(err) {
-			return fetchBlockReceiptsByTransactionScan(ctx, source, blockHash, expectedCount)
+			return fetchBlockReceiptsWithFallback(ctx, source, blockHash, expectedCount, func() ([]hexutil.Bytes, error) {
+				return fetchBlockReceiptsByTransactionScan(ctx, source, blockHash, expectedCount)
+			})
 		}
 		return nil, fmt.Errorf("fetch block receipts: %w", err)
 	}
 	return encodeAndValidateBlockReceipts(receipts, blockHash, expectedCount)
+}
+
+func fetchBlockReceiptsWithFallback(ctx context.Context, source *rpcSource, blockHash common.Hash, expectedCount int, fallback func() ([]hexutil.Bytes, error)) ([]hexutil.Bytes, error) {
+	logger := loggerFromContext(ctx)
+	logger.Warn("eth_getBlockReceipts unavailable; falling back to transaction scan",
+		"rpc_url", source.url,
+		"block_hash", blockHash,
+		"expected_count", expectedCount,
+	)
+	return fallback()
 }
 
 func fetchBlockReceiptsByTransactionScan(ctx context.Context, source *rpcSource, blockHash common.Hash, expectedCount int) ([]hexutil.Bytes, error) {
