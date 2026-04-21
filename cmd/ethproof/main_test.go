@@ -7,7 +7,7 @@ import (
 )
 
 func TestParseGenerateStateArgsPassesMinRPCs(t *testing.T) {
-	cfg := parseGenerateStateArgs([]string{
+	cfg, err := parseGenerateStateArgs([]string{
 		"--rpc", "http://127.0.0.1:8545",
 		"--min-rpcs", "1",
 		"--block", "12",
@@ -15,6 +15,9 @@ func TestParseGenerateStateArgsPassesMinRPCs(t *testing.T) {
 		"--slot", "0x01",
 		"--out", "state.json",
 	})
+	if err != nil {
+		t.Fatalf("parseGenerateStateArgs: %v", err)
+	}
 	if cfg.Request.MinRPCSources != 1 {
 		t.Fatalf("expected MinRPCSources=1, got %d", cfg.Request.MinRPCSources)
 	}
@@ -33,11 +36,16 @@ func TestParseGenerateStateArgsPassesMinRPCs(t *testing.T) {
 }
 
 func TestParseGenerateReceiptArgsDefaultsMinRPCs(t *testing.T) {
-	cfg := parseGenerateReceiptArgs([]string{
+	cfg, err := parseGenerateReceiptArgs([]string{
 		"--rpc", "http://127.0.0.1:8545",
+		"--rpc", "http://127.0.0.1:8546",
+		"--rpc", "http://127.0.0.1:8547",
 		"--tx", "0x02",
 		"--log-index", "3",
 	})
+	if err != nil {
+		t.Fatalf("parseGenerateReceiptArgs: %v", err)
+	}
 	if cfg.Request.MinRPCSources != proofMinRPCsDefault() {
 		t.Fatalf("expected default MinRPCSources=%d, got %d", proofMinRPCsDefault(), cfg.Request.MinRPCSources)
 	}
@@ -47,12 +55,15 @@ func TestParseGenerateReceiptArgsDefaultsMinRPCs(t *testing.T) {
 }
 
 func TestParseGenerateTransactionArgsPassesMinRPCs(t *testing.T) {
-	cfg := parseGenerateTransactionArgs([]string{
+	cfg, err := parseGenerateTransactionArgs([]string{
 		"--rpc", "http://127.0.0.1:8545",
 		"--min-rpcs", "1",
 		"--tx", "0x03",
 		"--out", "tx.json",
 	})
+	if err != nil {
+		t.Fatalf("parseGenerateTransactionArgs: %v", err)
+	}
 	if cfg.Request.MinRPCSources != 1 {
 		t.Fatalf("expected MinRPCSources=1, got %d", cfg.Request.MinRPCSources)
 	}
