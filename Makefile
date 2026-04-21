@@ -1,5 +1,8 @@
 .PHONY: build test fixtures live-test bindings e2e-up e2e-down e2e-test e2e fmt-check lint ci
 
+install:
+	go install ./cmd/ethproof
+
 build:
 	mkdir -p bin && go build -o ./bin ./cmd/...
 
