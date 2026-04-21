@@ -13,7 +13,7 @@ test:
 
 fmt-check:
 	gofmt -d .
-	go fix -diff .
+	go fix -diff ./...
 	forge fmt --check
 
 lint:
