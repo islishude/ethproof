@@ -4,7 +4,7 @@ WORKDIR /app
 COPY . ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build -o gotgz -trimpath -ldflags="-s -w" ./cmd/...
+    mkdir -p bin && go build -o bin/ethproof -trimpath -ldflags="-s -w" ./cmd/ethproof
 
 FROM alpine:latest AS certs
 RUN apk --no-cache add ca-certificates
