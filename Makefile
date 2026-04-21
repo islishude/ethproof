@@ -1,9 +1,9 @@
 .PHONY: build test fixtures live-test bindings e2e-up e2e-down e2e-test e2e fmt-check lint ci
 
-all: build test fmt-check lint
+all: build e2e-test fmt-check lint
 
 install:
-	go install ./cmd/ethproof
+	go install -trimpath -ldflags="-s -w" ./cmd/ethproof
 
 build:
 	mkdir -p bin && go build -o ./bin ./cmd/...
@@ -13,13 +13,16 @@ test:
 
 fmt-check:
 	gofmt -d .
+	go fix -diff .
 	forge fmt --check
 
 lint:
+	go vet ./...
 	golangci-lint run ./...
 
 fmt: 
-	gofmt -w .
+	gofmt -w -s .
+	go fix ./...
 	forge fmt
 
 fixtures:
