@@ -1,5 +1,7 @@
 .PHONY: build test fixtures live-test bindings e2e-up e2e-down e2e-test e2e fmt-check lint ci
 
+all: build test fmt-check lint
+
 install:
 	go install ./cmd/ethproof
 
@@ -19,8 +21,6 @@ lint:
 fmt: 
 	gofmt -w .
 	forge fmt
-
-ci: fmt-check lint test
 
 fixtures:
 	go run ./cmd/mkfixtures --out-dir ./proof/testdata

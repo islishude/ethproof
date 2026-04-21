@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/islishude/ethproof/proof"
 )
+
+const verifyProofTimeout = 2 * time.Minute
 
 func runVerify(args []string) error {
 	if len(args) == 0 {
@@ -31,12 +35,14 @@ func runVerifyState(args []string) error {
 	if err != nil {
 		return err
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), verifyProofTimeout)
+	defer cancel()
 
 	var pkg proof.StateProofPackage
 	if err := proof.LoadJSON(cfg.ProofPath, &pkg); err != nil {
 		return fmt.Errorf("read state proof json: %w", err)
 	}
-	if err := proof.VerifyStateProofPackage(&pkg); err != nil {
+	if err := proof.VerifyStateProofPackageAgainstRPCs(ctx, &pkg, cfg.VerifyRequest); err != nil {
 		return fmt.Errorf("verify state proof: %w", err)
 	}
 
@@ -49,12 +55,14 @@ func runVerifyReceipt(args []string) error {
 	if err != nil {
 		return err
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), verifyProofTimeout)
+	defer cancel()
 
 	var pkg proof.ReceiptProofPackage
 	if err := proof.LoadJSON(cfg.ProofPath, &pkg); err != nil {
 		return fmt.Errorf("read receipt proof json: %w", err)
 	}
-	if err := proof.VerifyReceiptProofPackageWithExpectations(&pkg, cfg.Expectations); err != nil {
+	if err := proof.VerifyReceiptProofPackageWithExpectationsAgainstRPCs(ctx, &pkg, cfg.Expectations, cfg.VerifyRequest); err != nil {
 		return fmt.Errorf("verify receipt proof: %w", err)
 	}
 
@@ -67,12 +75,14 @@ func runVerifyTransaction(args []string) error {
 	if err != nil {
 		return err
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), verifyProofTimeout)
+	defer cancel()
 
 	var pkg proof.TransactionProofPackage
 	if err := proof.LoadJSON(cfg.ProofPath, &pkg); err != nil {
 		return fmt.Errorf("read transaction proof json: %w", err)
 	}
-	if err := proof.VerifyTransactionProofPackage(&pkg); err != nil {
+	if err := proof.VerifyTransactionProofPackageAgainstRPCs(ctx, &pkg, cfg.VerifyRequest); err != nil {
 		return fmt.Errorf("verify transaction proof: %w", err)
 	}
 

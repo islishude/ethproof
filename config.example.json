@@ -1,0 +1,71 @@
+{
+  "generate": {
+    "state": {
+      "rpcs": [
+        "https://rpc-1.example",
+        "https://rpc-2.example",
+        "https://rpc-3.example"
+      ],
+      "minRpcs": 3,
+      "block": 22000000,
+      "account": "0xYourAccount",
+      "slot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "out": "state.json"
+    },
+    "receipt": {
+      "rpcs": [
+        "https://rpc-1.example",
+        "https://rpc-2.example",
+        "https://rpc-3.example"
+      ],
+      "minRpcs": 3,
+      "tx": "0xYourTxHash",
+      "logIndex": 0,
+      "out": "receipt.json"
+    },
+    "tx": {
+      "rpcs": [
+        "https://rpc-1.example",
+        "https://rpc-2.example",
+        "https://rpc-3.example"
+      ],
+      "minRpcs": 3,
+      "tx": "0xYourTxHash",
+      "out": "tx.json"
+    }
+  },
+  "verify": {
+    "state": {
+      "rpcs": [
+        "https://verify-rpc-1.example",
+        "https://verify-rpc-2.example",
+        "https://verify-rpc-3.example"
+      ],
+      "minRpcs": 3,
+      "proof": "state.json"
+    },
+    "receipt": {
+      "rpcs": [
+        "https://verify-rpc-1.example",
+        "https://verify-rpc-2.example",
+        "https://verify-rpc-3.example"
+      ],
+      "minRpcs": 3,
+      "proof": "receipt.json",
+      "expectEmitter": "0xYourContract",
+      "expectTopics": [
+        "0xYourTopic0"
+      ],
+      "expectData": "0xYourEventData"
+    },
+    "tx": {
+      "rpcs": [
+        "https://verify-rpc-1.example",
+        "https://verify-rpc-2.example",
+        "https://verify-rpc-3.example"
+      ],
+      "minRpcs": 3,
+      "proof": "tx.json"
+    }
+  }
+}

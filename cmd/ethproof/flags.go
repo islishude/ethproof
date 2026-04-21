@@ -29,16 +29,19 @@ type generateTransactionConfig struct {
 }
 
 type verifyStateConfig struct {
-	ProofPath string
+	ProofPath     string
+	VerifyRequest proof.VerifyRPCRequest
 }
 
 type verifyReceiptConfig struct {
-	ProofPath    string
-	Expectations *proof.ReceiptExpectations
+	ProofPath     string
+	Expectations  *proof.ReceiptExpectations
+	VerifyRequest proof.VerifyRPCRequest
 }
 
 type verifyTransactionConfig struct {
-	ProofPath string
+	ProofPath     string
+	VerifyRequest proof.VerifyRPCRequest
 }
 
 func (m *multiStringFlag) String() string {
@@ -52,6 +55,7 @@ func (m *multiStringFlag) Set(value string) error {
 
 func parseGenerateStateArgs(args []string) (generateStateConfig, error) {
 	fs := newFlagSet("generate state")
+	configPath := fs.String("config", "", "config json file")
 	var rpcURLs multiStringFlag
 	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
 	minRPCs := fs.Int("min-rpcs", proofMinRPCsDefault(), "minimum distinct RPC sources required")
@@ -68,30 +72,52 @@ func parseGenerateStateArgs(args []string) (generateStateConfig, error) {
 	if err := ensureNoPositionalArgs(fs); err != nil {
 		return generateStateConfig{}, err
 	}
-	if err := validateRPCInputs(rpcURLs, *minRPCs); err != nil {
-		return generateStateConfig{}, err
-	}
-	if *accountHex == "" {
-		return generateStateConfig{}, newUsageError("generate state requires --account")
-	}
-	if *slotHex == "" {
-		return generateStateConfig{}, newUsageError("generate state requires --slot")
+
+	seen := visitedFlags(fs)
+	fileCfg, err := loadCLIConfig(*configPath)
+	if err != nil {
+		return generateStateConfig{}, newUsageError("%v", err)
 	}
 
-	return generateStateConfig{
+	var section *generateStateConfigFile
+	if fileCfg != nil {
+		section = fileCfg.Generate.State
+	}
+	cfg := generateStateConfig{
 		Request: proof.StateProofRequest{
-			RPCURLs:       rpcURLs,
-			MinRPCSources: *minRPCs,
-			BlockNumber:   *blockNumber,
-			Account:       common.HexToAddress(*accountHex),
-			Slot:          common.HexToHash(*slotHex),
+			RPCURLs:       mergeStringSlice(seen, "rpc", rpcURLs, nil),
+			MinRPCSources: mergeInt(seen, "min-rpcs", *minRPCs, nil, proofMinRPCsDefault()),
+			BlockNumber:   mergeUint64(seen, "block", *blockNumber, nil, 0),
 		},
-		Out: *out,
-	}, nil
+		Out: mergeString(seen, "out", *out, "", "state.json"),
+	}
+	rawAccount := mergeString(seen, "account", *accountHex, "", "")
+	rawSlot := mergeString(seen, "slot", *slotHex, "", "")
+	if section != nil {
+		cfg.Request.RPCURLs = mergeStringSlice(seen, "rpc", rpcURLs, section.RPCs)
+		cfg.Request.MinRPCSources = mergeInt(seen, "min-rpcs", *minRPCs, section.MinRPCs, proofMinRPCsDefault())
+		cfg.Request.BlockNumber = mergeUint64(seen, "block", *blockNumber, section.Block, 0)
+		rawAccount = mergeString(seen, "account", *accountHex, section.Account, "")
+		rawSlot = mergeString(seen, "slot", *slotHex, section.Slot, "")
+		cfg.Out = mergeString(seen, "out", *out, section.Out, "state.json")
+	}
+	if err := validateRPCInputs(cfg.Request.RPCURLs, cfg.Request.MinRPCSources, "generate state requires at least one RPC via --rpc or generate.state.rpcs in --config"); err != nil {
+		return generateStateConfig{}, err
+	}
+	if rawAccount == "" {
+		return generateStateConfig{}, newUsageError("generate state requires --account or generate.state.account in --config")
+	}
+	if rawSlot == "" {
+		return generateStateConfig{}, newUsageError("generate state requires --slot or generate.state.slot in --config")
+	}
+	cfg.Request.Account = common.HexToAddress(rawAccount)
+	cfg.Request.Slot = common.HexToHash(rawSlot)
+	return cfg, nil
 }
 
 func parseGenerateReceiptArgs(args []string) (generateReceiptConfig, error) {
 	fs := newFlagSet("generate receipt")
+	configPath := fs.String("config", "", "config json file")
 	var rpcURLs multiStringFlag
 	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
 	minRPCs := fs.Int("min-rpcs", proofMinRPCsDefault(), "minimum distinct RPC sources required")
@@ -107,26 +133,46 @@ func parseGenerateReceiptArgs(args []string) (generateReceiptConfig, error) {
 	if err := ensureNoPositionalArgs(fs); err != nil {
 		return generateReceiptConfig{}, err
 	}
-	if err := validateRPCInputs(rpcURLs, *minRPCs); err != nil {
-		return generateReceiptConfig{}, err
-	}
-	if *txHashHex == "" {
-		return generateReceiptConfig{}, newUsageError("generate receipt requires --tx")
+
+	seen := visitedFlags(fs)
+	fileCfg, err := loadCLIConfig(*configPath)
+	if err != nil {
+		return generateReceiptConfig{}, newUsageError("%v", err)
 	}
 
-	return generateReceiptConfig{
+	var section *generateReceiptConfigFile
+	if fileCfg != nil {
+		section = fileCfg.Generate.Receipt
+	}
+	cfg := generateReceiptConfig{
 		Request: proof.ReceiptProofRequest{
-			RPCURLs:       rpcURLs,
-			MinRPCSources: *minRPCs,
-			TxHash:        common.HexToHash(*txHashHex),
-			LogIndex:      *logIndex,
+			RPCURLs:       mergeStringSlice(seen, "rpc", rpcURLs, nil),
+			MinRPCSources: mergeInt(seen, "min-rpcs", *minRPCs, nil, proofMinRPCsDefault()),
+			LogIndex:      mergeUint(seen, "log-index", *logIndex, nil, 0),
 		},
-		Out: *out,
-	}, nil
+		Out: mergeString(seen, "out", *out, "", "receipt.json"),
+	}
+	rawTxHash := mergeString(seen, "tx", *txHashHex, "", "")
+	if section != nil {
+		cfg.Request.RPCURLs = mergeStringSlice(seen, "rpc", rpcURLs, section.RPCs)
+		cfg.Request.MinRPCSources = mergeInt(seen, "min-rpcs", *minRPCs, section.MinRPCs, proofMinRPCsDefault())
+		cfg.Request.LogIndex = mergeUint(seen, "log-index", *logIndex, section.LogIndex, 0)
+		rawTxHash = mergeString(seen, "tx", *txHashHex, section.Tx, "")
+		cfg.Out = mergeString(seen, "out", *out, section.Out, "receipt.json")
+	}
+	if err := validateRPCInputs(cfg.Request.RPCURLs, cfg.Request.MinRPCSources, "generate receipt requires at least one RPC via --rpc or generate.receipt.rpcs in --config"); err != nil {
+		return generateReceiptConfig{}, err
+	}
+	if rawTxHash == "" {
+		return generateReceiptConfig{}, newUsageError("generate receipt requires --tx or generate.receipt.tx in --config")
+	}
+	cfg.Request.TxHash = common.HexToHash(rawTxHash)
+	return cfg, nil
 }
 
 func parseGenerateTransactionArgs(args []string) (generateTransactionConfig, error) {
 	fs := newFlagSet("generate tx")
+	configPath := fs.String("config", "", "config json file")
 	var rpcURLs multiStringFlag
 	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
 	minRPCs := fs.Int("min-rpcs", proofMinRPCsDefault(), "minimum distinct RPC sources required")
@@ -141,25 +187,47 @@ func parseGenerateTransactionArgs(args []string) (generateTransactionConfig, err
 	if err := ensureNoPositionalArgs(fs); err != nil {
 		return generateTransactionConfig{}, err
 	}
-	if err := validateRPCInputs(rpcURLs, *minRPCs); err != nil {
-		return generateTransactionConfig{}, err
-	}
-	if *txHashHex == "" {
-		return generateTransactionConfig{}, newUsageError("generate tx requires --tx")
+
+	seen := visitedFlags(fs)
+	fileCfg, err := loadCLIConfig(*configPath)
+	if err != nil {
+		return generateTransactionConfig{}, newUsageError("%v", err)
 	}
 
-	return generateTransactionConfig{
+	var section *generateTransactionConfigFile
+	if fileCfg != nil {
+		section = fileCfg.Generate.Tx
+	}
+	cfg := generateTransactionConfig{
 		Request: proof.TransactionProofRequest{
-			RPCURLs:       rpcURLs,
-			MinRPCSources: *minRPCs,
-			TxHash:        common.HexToHash(*txHashHex),
+			RPCURLs:       mergeStringSlice(seen, "rpc", rpcURLs, nil),
+			MinRPCSources: mergeInt(seen, "min-rpcs", *minRPCs, nil, proofMinRPCsDefault()),
 		},
-		Out: *out,
-	}, nil
+		Out: mergeString(seen, "out", *out, "", "tx.json"),
+	}
+	rawTxHash := mergeString(seen, "tx", *txHashHex, "", "")
+	if section != nil {
+		cfg.Request.RPCURLs = mergeStringSlice(seen, "rpc", rpcURLs, section.RPCs)
+		cfg.Request.MinRPCSources = mergeInt(seen, "min-rpcs", *minRPCs, section.MinRPCs, proofMinRPCsDefault())
+		rawTxHash = mergeString(seen, "tx", *txHashHex, section.Tx, "")
+		cfg.Out = mergeString(seen, "out", *out, section.Out, "tx.json")
+	}
+	if err := validateRPCInputs(cfg.Request.RPCURLs, cfg.Request.MinRPCSources, "generate tx requires at least one RPC via --rpc or generate.tx.rpcs in --config"); err != nil {
+		return generateTransactionConfig{}, err
+	}
+	if rawTxHash == "" {
+		return generateTransactionConfig{}, newUsageError("generate tx requires --tx or generate.tx.tx in --config")
+	}
+	cfg.Request.TxHash = common.HexToHash(rawTxHash)
+	return cfg, nil
 }
 
 func parseVerifyStateArgs(args []string) (verifyStateConfig, error) {
 	fs := newFlagSet("verify state")
+	configPath := fs.String("config", "", "config json file")
+	var rpcURLs multiStringFlag
+	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
+	minRPCs := fs.Int("min-rpcs", proofMinRPCsDefault(), "minimum distinct RPC sources required")
 	proofPath := fs.String("proof", "state.json", "proof json file")
 	if err := parseFlagSet(fs, args); err != nil {
 		if _, ok := asUsageError(err); ok {
@@ -171,11 +239,40 @@ func parseVerifyStateArgs(args []string) (verifyStateConfig, error) {
 		return verifyStateConfig{}, err
 	}
 
-	return verifyStateConfig{ProofPath: *proofPath}, nil
+	seen := visitedFlags(fs)
+	fileCfg, err := loadCLIConfig(*configPath)
+	if err != nil {
+		return verifyStateConfig{}, newUsageError("%v", err)
+	}
+
+	var section *verifyStateConfigFile
+	if fileCfg != nil {
+		section = fileCfg.Verify.State
+	}
+	cfg := verifyStateConfig{
+		ProofPath: mergeString(seen, "proof", *proofPath, "", "state.json"),
+		VerifyRequest: proof.VerifyRPCRequest{
+			RPCURLs:       mergeStringSlice(seen, "rpc", rpcURLs, nil),
+			MinRPCSources: mergeInt(seen, "min-rpcs", *minRPCs, nil, proofMinRPCsDefault()),
+		},
+	}
+	if section != nil {
+		cfg.ProofPath = mergeString(seen, "proof", *proofPath, section.Proof, "state.json")
+		cfg.VerifyRequest.RPCURLs = mergeStringSlice(seen, "rpc", rpcURLs, section.RPCs)
+		cfg.VerifyRequest.MinRPCSources = mergeInt(seen, "min-rpcs", *minRPCs, section.MinRPCs, proofMinRPCsDefault())
+	}
+	if err := validateRPCInputs(cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources, "verify state requires independent RPCs via --rpc or verify.state.rpcs in --config"); err != nil {
+		return verifyStateConfig{}, err
+	}
+	return cfg, nil
 }
 
 func parseVerifyReceiptArgs(args []string) (verifyReceiptConfig, error) {
 	fs := newFlagSet("verify receipt")
+	configPath := fs.String("config", "", "config json file")
+	var rpcURLs multiStringFlag
+	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
+	minRPCs := fs.Int("min-rpcs", proofMinRPCsDefault(), "minimum distinct RPC sources required")
 	proofPath := fs.String("proof", "receipt.json", "proof json file")
 	expectEmitterHex := fs.String("expect-emitter", "", "optional expected emitter address")
 	expectDataHex := fs.String("expect-data", "", "optional expected event data hex")
@@ -191,19 +288,51 @@ func parseVerifyReceiptArgs(args []string) (verifyReceiptConfig, error) {
 		return verifyReceiptConfig{}, err
 	}
 
-	expect, err := buildReceiptExpectations(*expectEmitterHex, *expectDataHex, topics)
+	seen := visitedFlags(fs)
+	fileCfg, err := loadCLIConfig(*configPath)
+	if err != nil {
+		return verifyReceiptConfig{}, newUsageError("%v", err)
+	}
+
+	var section *verifyReceiptConfigFile
+	if fileCfg != nil {
+		section = fileCfg.Verify.Receipt
+	}
+	cfg := verifyReceiptConfig{
+		ProofPath: mergeString(seen, "proof", *proofPath, "", "receipt.json"),
+		VerifyRequest: proof.VerifyRPCRequest{
+			RPCURLs:       mergeStringSlice(seen, "rpc", rpcURLs, nil),
+			MinRPCSources: mergeInt(seen, "min-rpcs", *minRPCs, nil, proofMinRPCsDefault()),
+		},
+	}
+	rawEmitter := mergeString(seen, "expect-emitter", *expectEmitterHex, "", "")
+	rawData := mergeString(seen, "expect-data", *expectDataHex, "", "")
+	rawTopics := mergeStringSlice(seen, "expect-topic", topics, nil)
+	if section != nil {
+		cfg.ProofPath = mergeString(seen, "proof", *proofPath, section.Proof, "receipt.json")
+		cfg.VerifyRequest.RPCURLs = mergeStringSlice(seen, "rpc", rpcURLs, section.RPCs)
+		cfg.VerifyRequest.MinRPCSources = mergeInt(seen, "min-rpcs", *minRPCs, section.MinRPCs, proofMinRPCsDefault())
+		rawEmitter = mergeString(seen, "expect-emitter", *expectEmitterHex, section.ExpectEmitter, "")
+		rawData = mergeString(seen, "expect-data", *expectDataHex, section.ExpectData, "")
+		rawTopics = mergeStringSlice(seen, "expect-topic", topics, section.ExpectTopics)
+	}
+	if err := validateRPCInputs(cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources, "verify receipt requires independent RPCs via --rpc or verify.receipt.rpcs in --config"); err != nil {
+		return verifyReceiptConfig{}, err
+	}
+	expect, err := buildReceiptExpectations(rawEmitter, rawData, rawTopics)
 	if err != nil {
 		return verifyReceiptConfig{}, err
 	}
-
-	return verifyReceiptConfig{
-		ProofPath:    *proofPath,
-		Expectations: expect,
-	}, nil
+	cfg.Expectations = expect
+	return cfg, nil
 }
 
 func parseVerifyTransactionArgs(args []string) (verifyTransactionConfig, error) {
 	fs := newFlagSet("verify tx")
+	configPath := fs.String("config", "", "config json file")
+	var rpcURLs multiStringFlag
+	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
+	minRPCs := fs.Int("min-rpcs", proofMinRPCsDefault(), "minimum distinct RPC sources required")
 	proofPath := fs.String("proof", "tx.json", "proof json file")
 	if err := parseFlagSet(fs, args); err != nil {
 		if _, ok := asUsageError(err); ok {
@@ -215,10 +344,35 @@ func parseVerifyTransactionArgs(args []string) (verifyTransactionConfig, error) 
 		return verifyTransactionConfig{}, err
 	}
 
-	return verifyTransactionConfig{ProofPath: *proofPath}, nil
+	seen := visitedFlags(fs)
+	fileCfg, err := loadCLIConfig(*configPath)
+	if err != nil {
+		return verifyTransactionConfig{}, newUsageError("%v", err)
+	}
+
+	var section *verifyTransactionConfigFile
+	if fileCfg != nil {
+		section = fileCfg.Verify.Tx
+	}
+	cfg := verifyTransactionConfig{
+		ProofPath: mergeString(seen, "proof", *proofPath, "", "tx.json"),
+		VerifyRequest: proof.VerifyRPCRequest{
+			RPCURLs:       mergeStringSlice(seen, "rpc", rpcURLs, nil),
+			MinRPCSources: mergeInt(seen, "min-rpcs", *minRPCs, nil, proofMinRPCsDefault()),
+		},
+	}
+	if section != nil {
+		cfg.ProofPath = mergeString(seen, "proof", *proofPath, section.Proof, "tx.json")
+		cfg.VerifyRequest.RPCURLs = mergeStringSlice(seen, "rpc", rpcURLs, section.RPCs)
+		cfg.VerifyRequest.MinRPCSources = mergeInt(seen, "min-rpcs", *minRPCs, section.MinRPCs, proofMinRPCsDefault())
+	}
+	if err := validateRPCInputs(cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources, "verify tx requires independent RPCs via --rpc or verify.tx.rpcs in --config"); err != nil {
+		return verifyTransactionConfig{}, err
+	}
+	return cfg, nil
 }
 
-func buildReceiptExpectations(expectEmitterHex string, expectDataHex string, topics multiStringFlag) (*proof.ReceiptExpectations, error) {
+func buildReceiptExpectations(expectEmitterHex string, expectDataHex string, topics []string) (*proof.ReceiptExpectations, error) {
 	var expect proof.ReceiptExpectations
 	if expectEmitterHex != "" {
 		addr := common.HexToAddress(expectEmitterHex)
@@ -259,15 +413,70 @@ func ensureNoPositionalArgs(fs *flag.FlagSet) error {
 	return newUsageError("%s does not accept positional arguments: %s", fs.Name(), strings.Join(fs.Args(), " "))
 }
 
-func validateRPCInputs(rpcURLs []string, minRPCs int) error {
+func visitedFlags(fs *flag.FlagSet) map[string]bool {
+	out := make(map[string]bool)
+	fs.Visit(func(f *flag.Flag) {
+		out[f.Name] = true
+	})
+	return out
+}
+
+func mergeString(seen map[string]bool, flagName string, flagValue string, configValue string, defaultValue string) string {
+	if seen[flagName] {
+		return flagValue
+	}
+	if configValue != "" {
+		return configValue
+	}
+	return defaultValue
+}
+
+func mergeStringSlice(seen map[string]bool, flagName string, flagValue []string, configValue []string) []string {
+	if seen[flagName] {
+		return append([]string(nil), flagValue...)
+	}
+	return append([]string(nil), configValue...)
+}
+
+func mergeInt(seen map[string]bool, flagName string, flagValue int, configValue *int, defaultValue int) int {
+	if seen[flagName] {
+		return flagValue
+	}
+	if configValue != nil {
+		return *configValue
+	}
+	return defaultValue
+}
+
+func mergeUint(seen map[string]bool, flagName string, flagValue uint, configValue *uint, defaultValue uint) uint {
+	if seen[flagName] {
+		return flagValue
+	}
+	if configValue != nil {
+		return *configValue
+	}
+	return defaultValue
+}
+
+func mergeUint64(seen map[string]bool, flagName string, flagValue uint64, configValue *uint64, defaultValue uint64) uint64 {
+	if seen[flagName] {
+		return flagValue
+	}
+	if configValue != nil {
+		return *configValue
+	}
+	return defaultValue
+}
+
+func validateRPCInputs(rpcURLs []string, minRPCs int, missingMessage string) error {
 	if len(rpcURLs) == 0 {
-		return newUsageError("at least one --rpc is required")
+		return newUsageError("%s", missingMessage)
 	}
 	if minRPCs < 1 {
 		return newUsageError("--min-rpcs must be at least 1")
 	}
 	if len(rpcURLs) < minRPCs {
-		return newUsageError("--min-rpcs=%d requires at least %d --rpc values, got %d", minRPCs, minRPCs, len(rpcURLs))
+		return newUsageError("--min-rpcs=%d requires at least %d rpc values, got %d", minRPCs, minRPCs, len(rpcURLs))
 	}
 	return nil
 }

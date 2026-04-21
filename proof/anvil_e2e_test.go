@@ -3,7 +3,7 @@ package proof
 import (
 	"context"
 	"crypto/ecdsa"
-	"fmt"
+	"encoding/json"
 	"math/big"
 	"os"
 	"os/exec"
@@ -65,6 +65,11 @@ func TestAnvilE2E(t *testing.T) {
 func testAnvilAPIFlow(t *testing.T, ctx context.Context, scenario anvilScenario) {
 	t.Helper()
 
+	verifyReq := VerifyRPCRequest{
+		RPCURLs:       []string{scenario.rpcURL},
+		MinRPCSources: 1,
+	}
+
 	txPkg, err := GenerateTransactionProof(ctx, TransactionProofRequest{
 		RPCURLs:       []string{scenario.rpcURL},
 		MinRPCSources: 1,
@@ -76,6 +81,19 @@ func testAnvilAPIFlow(t *testing.T, ctx context.Context, scenario anvilScenario)
 	if err := VerifyTransactionProofPackage(txPkg); err != nil {
 		t.Fatalf("VerifyTransactionProofPackage: %v", err)
 	}
+	if err := VerifyTransactionProofPackageAgainstRPCs(ctx, txPkg, verifyReq); err != nil {
+		t.Fatalf("VerifyTransactionProofPackageAgainstRPCs: %v", err)
+	}
+	txPkgWithTamperedConsensus := cloneTransactionPackage(*txPkg)
+	txPkgWithTamperedConsensus.Block.SourceConsensus.RPCs = []string{"http://generate-rpc.invalid"}
+	if err := VerifyTransactionProofPackageAgainstRPCs(ctx, &txPkgWithTamperedConsensus, verifyReq); err != nil {
+		t.Fatalf("VerifyTransactionProofPackageAgainstRPCs with tampered generation rpc metadata: %v", err)
+	}
+	txPkgWithTamperedBlockHash := cloneTransactionPackage(*txPkg)
+	txPkgWithTamperedBlockHash.Block.BlockHash = common.HexToHash("0x1234")
+	if err := VerifyTransactionProofPackageAgainstRPCs(ctx, &txPkgWithTamperedBlockHash, verifyReq); err == nil {
+		t.Fatal("expected tampered tx block hash to fail rpc-aware verification")
+	}
 
 	receiptPkg, err := GenerateReceiptProof(ctx, ReceiptProofRequest{
 		RPCURLs:       []string{scenario.rpcURL},
@@ -86,12 +104,16 @@ func testAnvilAPIFlow(t *testing.T, ctx context.Context, scenario anvilScenario)
 	if err != nil {
 		t.Fatalf("GenerateReceiptProof: %v", err)
 	}
-	if err := VerifyReceiptProofPackageWithExpectations(receiptPkg, &ReceiptExpectations{
+	receiptExpect := &ReceiptExpectations{
 		Emitter: &scenario.contractAddress,
 		Topics:  scenario.eventTopics,
 		Data:    scenario.eventData,
-	}); err != nil {
+	}
+	if err := VerifyReceiptProofPackageWithExpectations(receiptPkg, receiptExpect); err != nil {
 		t.Fatalf("VerifyReceiptProofPackageWithExpectations: %v", err)
+	}
+	if err := VerifyReceiptProofPackageWithExpectationsAgainstRPCs(ctx, receiptPkg, receiptExpect, verifyReq); err != nil {
+		t.Fatalf("VerifyReceiptProofPackageWithExpectationsAgainstRPCs: %v", err)
 	}
 
 	statePkg, err := GenerateStateProof(ctx, StateProofRequest{
@@ -107,6 +129,9 @@ func testAnvilAPIFlow(t *testing.T, ctx context.Context, scenario anvilScenario)
 	if err := VerifyStateProofPackage(statePkg); err != nil {
 		t.Fatalf("VerifyStateProofPackage: %v", err)
 	}
+	if err := VerifyStateProofPackageAgainstRPCs(ctx, statePkg, verifyReq); err != nil {
+		t.Fatalf("VerifyStateProofPackageAgainstRPCs: %v", err)
+	}
 	if statePkg.StorageValue != common.BigToHash(scenario.newValue) {
 		t.Fatalf("unexpected storage value: got %s want %s", statePkg.StorageValue, common.BigToHash(scenario.newValue))
 	}
@@ -120,51 +145,16 @@ func testAnvilCLIFlow(t *testing.T, ctx context.Context, scenario anvilScenario)
 	txProof := filepath.Join(tmp, "tx.json")
 	receiptProof := filepath.Join(tmp, "receipt.json")
 	stateProof := filepath.Join(tmp, "state.json")
+	configPath := writeAnvilCLIConfig(t, tmp, scenario, txProof, receiptProof, stateProof)
 
-	runEventproof(t, ctx, root,
-		"generate", "tx",
-		"--rpc", scenario.rpcURL,
-		"--min-rpcs", "1",
-		"--tx", scenario.txHash.Hex(),
-		"--out", txProof,
-	)
-	runEventproof(t, ctx, root,
-		"verify", "tx",
-		"--proof", txProof,
-	)
+	runEventproof(t, ctx, root, "generate", "tx", "--config", configPath)
+	runEventproof(t, ctx, root, "verify", "tx", "--config", configPath)
 
-	runEventproof(t, ctx, root,
-		"generate", "receipt",
-		"--rpc", scenario.rpcURL,
-		"--min-rpcs", "1",
-		"--tx", scenario.txHash.Hex(),
-		"--log-index", fmt.Sprintf("%d", scenario.logIndex),
-		"--out", receiptProof,
-	)
-	receiptArgs := []string{
-		"verify", "receipt",
-		"--proof", receiptProof,
-		"--expect-emitter", scenario.contractAddress.Hex(),
-		"--expect-data", hexutil.Encode(scenario.eventData),
-	}
-	for _, topic := range scenario.eventTopics {
-		receiptArgs = append(receiptArgs, "--expect-topic", topic.Hex())
-	}
-	runEventproof(t, ctx, root, receiptArgs...)
+	runEventproof(t, ctx, root, "generate", "receipt", "--config", configPath)
+	runEventproof(t, ctx, root, "verify", "receipt", "--config", configPath)
 
-	runEventproof(t, ctx, root,
-		"generate", "state",
-		"--rpc", scenario.rpcURL,
-		"--min-rpcs", "1",
-		"--block", fmt.Sprintf("%d", scenario.blockNumber),
-		"--account", scenario.contractAddress.Hex(),
-		"--slot", scenario.slot.Hex(),
-		"--out", stateProof,
-	)
-	runEventproof(t, ctx, root,
-		"verify", "state",
-		"--proof", stateProof,
-	)
+	runEventproof(t, ctx, root, "generate", "state", "--config", configPath)
+	runEventproof(t, ctx, root, "verify", "state", "--config", configPath)
 }
 
 func deployProofDemoScenario(t *testing.T, ctx context.Context, client *ethclient.Client, rpcURL string) anvilScenario {
@@ -318,4 +308,67 @@ func hashToBytes32(hash common.Hash) [32]byte {
 	var out [32]byte
 	copy(out[:], hash[:])
 	return out
+}
+
+func writeAnvilCLIConfig(t *testing.T, dir string, scenario anvilScenario, txProof string, receiptProof string, stateProof string) string {
+	t.Helper()
+
+	topics := make([]string, 0, len(scenario.eventTopics))
+	for _, topic := range scenario.eventTopics {
+		topics = append(topics, topic.Hex())
+	}
+	config := map[string]any{
+		"generate": map[string]any{
+			"tx": map[string]any{
+				"rpcs":    []string{scenario.rpcURL},
+				"minRpcs": 1,
+				"tx":      scenario.txHash.Hex(),
+				"out":     txProof,
+			},
+			"receipt": map[string]any{
+				"rpcs":     []string{scenario.rpcURL},
+				"minRpcs":  1,
+				"tx":       scenario.txHash.Hex(),
+				"logIndex": scenario.logIndex,
+				"out":      receiptProof,
+			},
+			"state": map[string]any{
+				"rpcs":    []string{scenario.rpcURL},
+				"minRpcs": 1,
+				"block":   scenario.blockNumber,
+				"account": scenario.contractAddress.Hex(),
+				"slot":    scenario.slot.Hex(),
+				"out":     stateProof,
+			},
+		},
+		"verify": map[string]any{
+			"tx": map[string]any{
+				"rpcs":    []string{scenario.rpcURL},
+				"minRpcs": 1,
+				"proof":   txProof,
+			},
+			"receipt": map[string]any{
+				"rpcs":          []string{scenario.rpcURL},
+				"minRpcs":       1,
+				"proof":         receiptProof,
+				"expectEmitter": scenario.contractAddress.Hex(),
+				"expectTopics":  topics,
+				"expectData":    hexutil.Encode(scenario.eventData),
+			},
+			"state": map[string]any{
+				"rpcs":    []string{scenario.rpcURL},
+				"minRpcs": 1,
+				"proof":   stateProof,
+			},
+		},
+	}
+	b, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal cli config: %v", err)
+	}
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatalf("write cli config: %v", err)
+	}
+	return path
 }

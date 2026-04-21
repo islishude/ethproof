@@ -24,6 +24,10 @@ func TestLiveGenerateAndVerify(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
+	verifyReq := VerifyRPCRequest{
+		RPCURLs:       rpcs,
+		MinRPCSources: defaultMinRPCSources,
+	}
 
 	txPkg, err := GenerateTransactionProof(ctx, TransactionProofRequest{
 		RPCURLs: rpcs,
@@ -34,6 +38,9 @@ func TestLiveGenerateAndVerify(t *testing.T) {
 	}
 	if err := VerifyTransactionProofPackage(txPkg); err != nil {
 		t.Fatalf("VerifyTransactionProofPackage: %v", err)
+	}
+	if err := VerifyTransactionProofPackageAgainstRPCs(ctx, txPkg, verifyReq); err != nil {
+		t.Fatalf("VerifyTransactionProofPackageAgainstRPCs: %v", err)
 	}
 
 	receiptPkg, err := GenerateReceiptProof(ctx, ReceiptProofRequest{
@@ -47,6 +54,9 @@ func TestLiveGenerateAndVerify(t *testing.T) {
 	if err := VerifyReceiptProofPackage(receiptPkg); err != nil {
 		t.Fatalf("VerifyReceiptProofPackage: %v", err)
 	}
+	if err := VerifyReceiptProofPackageWithExpectationsAgainstRPCs(ctx, receiptPkg, nil, verifyReq); err != nil {
+		t.Fatalf("VerifyReceiptProofPackageWithExpectationsAgainstRPCs: %v", err)
+	}
 
 	statePkg, err := GenerateStateProof(ctx, StateProofRequest{
 		RPCURLs:     rpcs,
@@ -59,6 +69,9 @@ func TestLiveGenerateAndVerify(t *testing.T) {
 	}
 	if err := VerifyStateProofPackage(statePkg); err != nil {
 		t.Fatalf("VerifyStateProofPackage: %v", err)
+	}
+	if err := VerifyStateProofPackageAgainstRPCs(ctx, statePkg, verifyReq); err != nil {
+		t.Fatalf("VerifyStateProofPackageAgainstRPCs: %v", err)
 	}
 }
 

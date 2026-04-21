@@ -26,6 +26,27 @@ type rpcSource struct {
 	geth *gethclient.Client
 }
 
+func fetchBlockHeadersFromRPCs(ctx context.Context, urls []string, blockHash common.Hash) ([]blockHeaderSource, error) {
+	sources, err := openRPCSources(ctx, urls)
+	if err != nil {
+		return nil, err
+	}
+	defer closeRPCSources(sources)
+
+	headers := make([]blockHeaderSource, 0, len(sources))
+	for _, source := range sources {
+		header, err := fetchBlockHeaderSnapshotByHash(ctx, source, blockHash)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", source.url, err)
+		}
+		headers = append(headers, blockHeaderSource{
+			source: source.url,
+			header: header,
+		})
+	}
+	return headers, nil
+}
+
 func openRPCSources(ctx context.Context, urls []string) ([]*rpcSource, error) {
 	sources := make([]*rpcSource, 0, len(urls))
 	for _, url := range urls {
@@ -71,6 +92,18 @@ func fetchBlockHeader(ctx context.Context, source *rpcSource, blockHash common.H
 		ReceiptsRoot:     header.ReceiptHash,
 	}
 	return header, snapshot, nil
+}
+
+func fetchBlockHeaderSnapshotByHash(ctx context.Context, source *rpcSource, blockHash common.Hash) (blockSnapshotHeader, error) {
+	chainID, err := source.eth.ChainID(ctx)
+	if err != nil {
+		return blockSnapshotHeader{}, fmt.Errorf("chain id: %w", err)
+	}
+	_, snapshot, err := fetchBlockHeader(ctx, source, blockHash, chainID)
+	if err != nil {
+		return blockSnapshotHeader{}, err
+	}
+	return snapshot, nil
 }
 
 func fetchTransactionSnapshot(ctx context.Context, source *rpcSource, txHash common.Hash) (*transactionSnapshot, error) {

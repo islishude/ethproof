@@ -58,6 +58,11 @@ type TransactionProofRequest struct {
 	TxHash        common.Hash
 }
 
+type VerifyRPCRequest struct {
+	RPCURLs       []string
+	MinRPCSources int
+}
+
 type StateAccountClaim struct {
 	Nonce       uint64      `json:"nonce"`
 	Balance     string      `json:"balance"`
@@ -164,6 +169,10 @@ func VerifyStateProofPackage(pkg *StateProofPackage) error {
 	return verifyStateProofPackage(pkg)
 }
 
+func VerifyStateProofPackageAgainstRPCs(ctx context.Context, pkg *StateProofPackage, req VerifyRPCRequest) error {
+	return verifyStateProofPackageAgainstRPCs(ctx, pkg, req, fetchBlockHeadersFromRPCs)
+}
+
 func VerifyReceiptProofPackage(pkg *ReceiptProofPackage) error {
 	return verifyReceiptProofPackage(pkg, nil)
 }
@@ -172,6 +181,14 @@ func VerifyReceiptProofPackageWithExpectations(pkg *ReceiptProofPackage, expect 
 	return verifyReceiptProofPackage(pkg, expect)
 }
 
+func VerifyReceiptProofPackageWithExpectationsAgainstRPCs(ctx context.Context, pkg *ReceiptProofPackage, expect *ReceiptExpectations, req VerifyRPCRequest) error {
+	return verifyReceiptProofPackageWithExpectationsAgainstRPCs(ctx, pkg, expect, req, fetchBlockHeadersFromRPCs)
+}
+
 func VerifyTransactionProofPackage(pkg *TransactionProofPackage) error {
 	return verifyTransactionProofPackage(pkg)
+}
+
+func VerifyTransactionProofPackageAgainstRPCs(ctx context.Context, pkg *TransactionProofPackage, req VerifyRPCRequest) error {
+	return verifyTransactionProofPackageAgainstRPCs(ctx, pkg, req, fetchBlockHeadersFromRPCs)
 }

@@ -71,60 +71,50 @@ The default minimum is `3` distinct RPC sources. This can be overridden per requ
 
 ## Commands
 
+The CLI is now primarily config-driven. Start from [config.example.json](/Users/sudoless/codespace/coding/eth-proof/config.example.json) and pass `--config`; explicit flags still override the matching config fields.
+
 ### Generate state proof
 
 ```bash
-go run ./cmd/ethproof generate state \
-  --rpc https://rpc-1.example \
-  --rpc https://rpc-2.example \
-  --rpc https://rpc-3.example \
-  --min-rpcs 3 \
-  --block 22000000 \
-  --account 0xYourAccount \
-  --slot 0x0000000000000000000000000000000000000000000000000000000000000000 \
-  --out state.json
+go run ./cmd/ethproof generate state --config ./config.example.json
 ```
 
 ### Generate receipt / event proof
 
 ```bash
-go run ./cmd/ethproof generate receipt \
-  --rpc https://rpc-1.example \
-  --rpc https://rpc-2.example \
-  --rpc https://rpc-3.example \
-  --min-rpcs 3 \
-  --tx 0xYourTxHash \
-  --log-index 0 \
-  --out receipt.json
+go run ./cmd/ethproof generate receipt --config ./config.example.json
 ```
 
 ### Generate transaction proof
 
 ```bash
-go run ./cmd/ethproof generate tx \
-  --rpc https://rpc-1.example \
-  --rpc https://rpc-2.example \
-  --rpc https://rpc-3.example \
-  --min-rpcs 3 \
-  --tx 0xYourTxHash \
-  --out tx.json
+go run ./cmd/ethproof generate tx --config ./config.example.json
 ```
 
 ### Verify proofs
 
+`verify` requires its own independent RPC set in `verify.<kind>.rpcs` or via `--rpc`. It does not reuse the generation RPC list from the proof JSON or from `generate.*.rpcs`.
+
 ```bash
-go run ./cmd/ethproof verify state --proof state.json
+go run ./cmd/ethproof verify state --config ./config.example.json
 
-go run ./cmd/ethproof verify receipt \
-  --proof receipt.json \
-  --expect-emitter 0xYourContract \
-  --expect-topic 0xYourTopic0 \
-  --expect-data 0xYourEventData
+go run ./cmd/ethproof verify receipt --config ./config.example.json
 
-go run ./cmd/ethproof verify tx --proof tx.json
+go run ./cmd/ethproof verify tx --config ./config.example.json
 ```
 
-`verify receipt` always validates all fields embedded in the proof package. `--expect-*` flags add extra assertions on top of the package’s own claims.
+Example flag override:
+
+```bash
+go run ./cmd/ethproof verify tx \
+  --config ./config.example.json \
+  --rpc https://verify-rpc-1.example \
+  --rpc https://verify-rpc-2.example \
+  --rpc https://verify-rpc-3.example \
+  --min-rpcs 3
+```
+
+`verify receipt` always validates all fields embedded in the proof package. `--expect-*` flags add extra assertions on top of the package’s own claims, and CLI verify also re-fetches the block header from the independent verify RPC set to anchor the included roots.
 
 ## Offline fixtures
 
@@ -237,5 +227,7 @@ make live-test
 ## Notes
 
 - `state` proofs use `eth_getProof`; `receipt` and `transaction` proofs are rebuilt locally from canonical block data.
-- Verification only checks proof correctness against the included roots. If you need bridge-grade security, you must separately verify that the block header itself is finalized and trusted.
+- The library `Verify*ProofPackage` APIs remain fully offline. The CLI `verify` path now adds an independent RPC block-header check on top of the offline proof verification.
+- CLI `verify` never reuses `block.sourceConsensus.rpcs`; that field remains generation metadata only.
+- Even with independent RPC anchoring, if you need bridge-grade security, you must separately verify that the block header itself is finalized and trusted.
 - The code targets `github.com/ethereum/go-ethereum` `v1.17.x`.
