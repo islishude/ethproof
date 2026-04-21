@@ -136,6 +136,7 @@ go run ./cmd/mkfixtures --out-dir ./proof/testdata
 
 ```bash
 make build
+make install
 make test
 make fixtures
 make bindings

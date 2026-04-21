@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/islishude/ethproof/internal/proofutil"
 )
 
 func TestEncodeAndValidateBlockReceipts(t *testing.T) {
@@ -21,7 +22,7 @@ func TestEncodeAndValidateBlockReceipts(t *testing.T) {
 		t.Fatalf("unexpected receipt count: got %d want %d", len(got), len(receipts))
 	}
 	for i, receipt := range receipts {
-		want, err := encodeReceipt(receipt)
+		want, err := proofutil.EncodeReceipt(receipt)
 		if err != nil {
 			t.Fatalf("encodeReceipt(%d): %v", i, err)
 		}

@@ -8,31 +8,36 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/islishude/ethproof/internal/proofutil"
 )
 
+// GenerateReceiptProof fetches the target receipt data from every RPC source, requires normalized
+// agreement, rebuilds the receipts trie locally, and returns the inclusion proof package.
 func GenerateReceiptProof(ctx context.Context, req ReceiptProofRequest) (*ReceiptProofPackage, error) {
+	// Normalize the RPC set up front so consensus is evaluated over the exact sources we use.
 	rpcs, err := normalizeRPCURLs(req.RPCURLs, req.MinRPCSources)
 	if err != nil {
 		return nil, err
 	}
-	sources, err := openRPCSources(ctx, rpcs)
+
+	// Each source yields a fully normalized receipt snapshot: header context, transaction bytes,
+	// receipt bytes, full block receipt list, and the claimed log payload.
+	snapshots, err := collectFromRPCs(ctx, rpcs, func(ctx context.Context, source *rpcSource) (*receiptSnapshot, error) {
+		return fetchReceiptSnapshot(ctx, source, req.TxHash, req.LogIndex)
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer closeRPCSources(sources)
 
-	snapshots := make([]*receiptSnapshot, 0, len(sources))
-	for _, source := range sources {
-		snapshot, snapErr := fetchReceiptSnapshot(ctx, source, req.TxHash, req.LogIndex)
-		if snapErr != nil {
-			return nil, fmt.Errorf("%s: %w", source.url, snapErr)
-		}
-		snapshots = append(snapshots, snapshot)
-	}
+	// Receipt proof generation is intentionally strict: any normalized mismatch aborts instead
+	// of falling back to a quorum result.
 	base, consensus, err := consensusForReceiptSnapshots(rpcs, snapshots)
 	if err != nil {
 		return nil, err
 	}
+
+	// Rebuild the receipts trie locally from the agreed receipt bytes so the returned proof is
+	// anchored to the same receiptsRoot that appears in the agreed block header.
 	blockReceipts, err := decodeReceiptList(base.BlockReceipts)
 	if err != nil {
 		return nil, err
@@ -57,27 +62,37 @@ func GenerateReceiptProof(ctx context.Context, req ReceiptProofRequest) (*Receip
 	}, nil
 }
 
+// VerifyReceiptProofPackage verifies the embedded receipt proof without extra caller expectations.
 func VerifyReceiptProofPackage(pkg *ReceiptProofPackage) error {
 	return VerifyReceiptProofPackageWithExpectations(pkg, nil)
 }
 
+// VerifyReceiptProofPackageWithExpectations verifies the receipt proof locally and optionally checks
+// additional caller-provided expectations against the claimed log.
 func VerifyReceiptProofPackageWithExpectations(pkg *ReceiptProofPackage, expect *ReceiptExpectations) error {
-	proofDB, err := proofDBFromHexNodes(pkg.ProofNodes)
+	// Verify inclusion first using the provided proof nodes and the package's receiptsRoot.
+	proofDB, err := proofutil.ProofDBFromHexNodes(pkg.ProofNodes)
 	if err != nil {
 		return err
 	}
-	verifiedReceipt, err := trie.VerifyProof(pkg.Block.ReceiptsRoot, trieIndexKey(pkg.TxIndex), proofDB)
+	verifiedReceipt, err := trie.VerifyProof(pkg.Block.ReceiptsRoot, proofutil.TrieIndexKey(pkg.TxIndex), proofDB)
 	if err != nil {
 		return fmt.Errorf("verify receipt proof: %w", err)
 	}
-	receipt, claimedReceipt, err := decodeReceipt(pkg.ReceiptRLP)
+	receipt, claimedReceipt, err := proofutil.DecodeReceipt(pkg.ReceiptRLP)
 	if err != nil {
 		return fmt.Errorf("decode claimed receipt: %w", err)
 	}
+
+	// The proof must reproduce the exact claimed receipt bytes, not merely a receipt that
+	// decodes to the same high-level fields.
 	if !bytes.Equal(verifiedReceipt, claimedReceipt) {
 		return fmt.Errorf("verified receipt bytes do not match claimed receipt bytes")
 	}
-	tx, _, err := decodeTransaction(pkg.TransactionRLP)
+
+	// Cross-check the claimed transaction bytes because the proof package stores both the
+	// receipt inclusion witness and the transaction identity it is supposed to belong to.
+	tx, _, err := proofutil.DecodeTransaction(pkg.TransactionRLP)
 	if err != nil {
 		return fmt.Errorf("decode claimed transaction: %w", err)
 	}
@@ -87,6 +102,8 @@ func VerifyReceiptProofPackageWithExpectations(pkg *ReceiptProofPackage, expect 
 	if int(pkg.LogIndex) >= len(receipt.Logs) {
 		return fmt.Errorf("log index %d out of range for receipt with %d logs", pkg.LogIndex, len(receipt.Logs))
 	}
+
+	// After inclusion is established, validate the claimed event payload at the target log index.
 	log := receipt.Logs[pkg.LogIndex]
 	if log.Address != pkg.Event.Address {
 		return fmt.Errorf("event address mismatch: got %s want %s", log.Address, pkg.Event.Address)
@@ -98,6 +115,7 @@ func VerifyReceiptProofPackageWithExpectations(pkg *ReceiptProofPackage, expect 
 		return fmt.Errorf("%s", diffs[0])
 	}
 	if expect != nil {
+		// Caller expectations are additive checks on top of the package's own claims.
 		if expect.Emitter != nil && log.Address != *expect.Emitter {
 			return fmt.Errorf("expected emitter mismatch: got %s want %s", log.Address, *expect.Emitter)
 		}
@@ -118,90 +136,10 @@ func VerifyReceiptProofPackageWithExpectations(pkg *ReceiptProofPackage, expect 
 	return nil
 }
 
-func consensusForReceiptSnapshots(rpcs []string, snapshots []*receiptSnapshot) (*receiptSnapshot, SourceConsensus, error) {
-	base := snapshots[0]
-	for i := 1; i < len(snapshots); i++ {
-		other := snapshots[i]
-		var diffs []string
-		diffs = append(diffs, compareHeader(base.Header, other.Header)...)
-		if base.TxHash != other.TxHash {
-			diffs = append(diffs, "txHash mismatch")
-		}
-		if base.TxIndex != other.TxIndex {
-			diffs = append(diffs, "txIndex mismatch")
-		}
-		if base.LogIndex != other.LogIndex {
-			diffs = append(diffs, "logIndex mismatch")
-		}
-		if !bytes.Equal(base.TransactionRLP, other.TransactionRLP) {
-			diffs = append(diffs, "transactionRlp mismatch")
-		}
-		if !bytes.Equal(base.ReceiptRLP, other.ReceiptRLP) {
-			diffs = append(diffs, "receiptRlp mismatch")
-		}
-		diffs = append(diffs, compareByteSlices("blockTransactions", base.BlockTransactions, other.BlockTransactions)...)
-		diffs = append(diffs, compareByteSlices("blockReceipts", base.BlockReceipts, other.BlockReceipts)...)
-		diffs = append(diffs, compareEvent(base.Event, other.Event)...)
-		if err := combineMismatch(rpcs[0], rpcs[i], diffs); err != nil {
-			return nil, SourceConsensus{}, err
-		}
-	}
-	headerDigest, err := canonicalDigest(base.Header)
-	if err != nil {
-		return nil, SourceConsensus{}, err
-	}
-	blockTransactionsDigest, err := canonicalDigest(base.BlockTransactions)
-	if err != nil {
-		return nil, SourceConsensus{}, err
-	}
-	blockReceiptsDigest, err := canonicalDigest(base.BlockReceipts)
-	if err != nil {
-		return nil, SourceConsensus{}, err
-	}
-	targetReceiptDigest, err := canonicalDigest(struct {
-		TransactionRLP hexutil.Bytes `json:"transactionRlp"`
-		ReceiptRLP     hexutil.Bytes `json:"receiptRlp"`
-		Event          EventClaim    `json:"event"`
-	}{
-		TransactionRLP: base.TransactionRLP,
-		ReceiptRLP:     base.ReceiptRLP,
-		Event:          base.Event,
-	})
-	if err != nil {
-		return nil, SourceConsensus{}, err
-	}
-	consensus := sourceConsensus(
-		"live-rpc",
-		rpcs,
-		[]ConsensusDigest{
-			{Name: "header", Digest: headerDigest},
-			{Name: "blockTransactions", Digest: blockTransactionsDigest},
-			{Name: "blockReceipts", Digest: blockReceiptsDigest},
-			{Name: "targetReceipt", Digest: targetReceiptDigest},
-		},
-		[]ConsensusField{
-			{Name: "chainId", Value: chainIDString(base.Header.ChainID), Consistent: true},
-			{Name: "blockNumber", Value: fmt.Sprintf("%d", base.Header.BlockNumber), Consistent: true},
-			{Name: "blockHash", Value: base.Header.BlockHash.Hex(), Consistent: true},
-			{Name: "parentHash", Value: base.Header.ParentHash.Hex(), Consistent: true},
-			{Name: "stateRoot", Value: base.Header.StateRoot.Hex(), Consistent: true},
-			{Name: "transactionsRoot", Value: base.Header.TransactionsRoot.Hex(), Consistent: true},
-			{Name: "receiptsRoot", Value: base.Header.ReceiptsRoot.Hex(), Consistent: true},
-			{Name: "txHash", Value: base.TxHash.Hex(), Consistent: true},
-			{Name: "txIndex", Value: fmt.Sprintf("%d", base.TxIndex), Consistent: true},
-			{Name: "logIndex", Value: fmt.Sprintf("%d", base.LogIndex), Consistent: true},
-			{Name: "event.address", Value: base.Event.Address.Hex(), Consistent: true},
-			{Name: "event.topics", Value: fmt.Sprintf("%v", base.Event.Topics), Consistent: true},
-			{Name: "event.data", Value: hexutil.Encode(base.Event.Data), Consistent: true},
-		},
-	)
-	return base, consensus, nil
-}
-
 func decodeReceiptList(hexReceipts []hexutil.Bytes) (types.Receipts, error) {
 	out := make(types.Receipts, len(hexReceipts))
 	for i, receiptHex := range hexReceipts {
-		receipt, _, err := decodeReceipt(receiptHex)
+		receipt, _, err := proofutil.DecodeReceipt(receiptHex)
 		if err != nil {
 			return nil, fmt.Errorf("decode receipt %d: %w", i, err)
 		}

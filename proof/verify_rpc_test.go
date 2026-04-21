@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/islishude/ethproof/internal/proofutil"
 )
 
 func TestVerifyStateProofPackageAgainstRPCs(t *testing.T) {
@@ -130,7 +131,7 @@ func fixedBlockHeaderFetcher(block BlockContext) blockHeaderFetcher {
 
 func blockSnapshotHeaderFromBlockContext(block BlockContext) blockSnapshotHeader {
 	return blockSnapshotHeader{
-		ChainID:          cloneChainID(block.ChainID),
+		ChainID:          proofutil.CloneChainID(block.ChainID),
 		BlockNumber:      block.BlockNumber,
 		BlockHash:        block.BlockHash,
 		ParentHash:       block.ParentHash,
@@ -142,6 +143,6 @@ func blockSnapshotHeaderFromBlockContext(block BlockContext) blockSnapshotHeader
 
 func cloneBlockSnapshotHeader(in blockSnapshotHeader) blockSnapshotHeader {
 	out := in
-	out.ChainID = cloneChainID(in.ChainID)
+	out.ChainID = proofutil.CloneChainID(in.ChainID)
 	return out
 }
