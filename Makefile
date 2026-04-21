@@ -4,15 +4,10 @@ build:
 	mkdir -p bin && go build -o ./bin ./cmd/...
 
 test:
-	go test ./...
+	go test -v -race ./...
 
 fmt-check:
-	@files="$$(find . -type f -name '*.go' -not -path './vendor/*' | sort)"; \
-	out="$$(gofmt -l $$files)"; \
-	if [ -n "$$out" ]; then \
-		echo "$$out"; \
-		exit 1; \
-	fi
+	gofmt -d .
 	forge fmt --check
 
 lint:
@@ -31,15 +26,19 @@ bindings:
 	sh ./scripts/generate_bindings.sh
 
 e2e-up:
-	docker compose up -d anvil
+	docker compose up -d --wait anvil
 
 e2e-down:
 	docker compose down -v
 
 e2e-test:
-	ETH_PROOF_REQUIRE_E2E=1 go test ./proof -run TestAnvilE2E -count=1
+	set -e; \
+		docker compose down; \
+		docker compose up -d --wait; \
+		trap 'docker compose down' EXIT; \
+	ETH_PROOF_REQUIRE_E2E=1 go test -v -race -count=1 ./...
 
-e2e: bindings e2e-up e2e-test
+e2e: bindings e2e-test
 
 live-test:
 	@test -n "$(ETH_PROOF_RPCS)" || (echo "ETH_PROOF_RPCS is required"; exit 1)

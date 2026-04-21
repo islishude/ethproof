@@ -9,5 +9,10 @@ services:
       - --auto-impersonate
       - --no-request-size-limit
       - --chain-id=1337
+    healthcheck:
+      test: [ "CMD", "cast", "chain-id" ]
+      interval: 1s
+      timeout: 1s
+      retries: 10
     ports:
       - 8545:8545

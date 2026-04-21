@@ -25,7 +25,7 @@ const (
 	anvilDefaultRPCURL      = "http://127.0.0.1:8545"
 	anvilDefaultPrivateKey  = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 	anvilExpectedChainID    = 1337
-	anvilReadyTimeout       = 20 * time.Second
+	anvilReadyTimeout       = 5 * time.Second
 	anvilPollInterval       = 500 * time.Millisecond
 	proofDemoEventSignature = "ValueUpdated(address,bytes32,uint256)"
 )
@@ -246,35 +246,37 @@ func deployProofDemoScenario(t *testing.T, ctx context.Context, client *ethclien
 func requireAnvilClient(t *testing.T, ctx context.Context) (*ethclient.Client, string) {
 	t.Helper()
 
+	if os.Getenv("ETH_PROOF_REQUIRE_E2E") != "1" {
+		t.Skipf("skipping anvil e2e")
+		return nil, ""
+	}
+
 	rpcURL := strings.TrimSpace(os.Getenv("ETH_PROOF_E2E_RPC"))
 	if rpcURL == "" {
 		rpcURL = anvilDefaultRPCURL
 	}
-	deadline := time.Now().Add(anvilReadyTimeout)
-	var lastErr error
-	for time.Now().Before(deadline) {
-		client, err := ethclient.DialContext(ctx, rpcURL)
-		if err == nil {
-			chainID, chainErr := client.ChainID(ctx)
-			if chainErr == nil && chainID.Uint64() == anvilExpectedChainID {
-				return client, rpcURL
+
+	newctx, cancel := context.WithTimeout(ctx, anvilReadyTimeout)
+	defer cancel()
+
+	ticker := time.NewTimer(0)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-newctx.Done():
+			t.Fatalf("timed out waiting for Anvil RPC at %s", rpcURL)
+		case <-ticker.C:
+			client, err := ethclient.DialContext(ctx, rpcURL)
+			if err == nil {
+				chainID, chainErr := client.ChainID(ctx)
+				if chainErr == nil && chainID.Uint64() == anvilExpectedChainID {
+					return client, rpcURL
+				}
 			}
-			if chainErr == nil {
-				lastErr = fmt.Errorf("unexpected chain id %d on %s", chainID.Uint64(), rpcURL)
-			} else {
-				lastErr = chainErr
-			}
-			client.Close()
-		} else {
-			lastErr = err
+			ticker.Reset(anvilPollInterval)
 		}
-		time.Sleep(anvilPollInterval)
 	}
-	if os.Getenv("ETH_PROOF_REQUIRE_E2E") == "1" {
-		t.Fatalf("anvil e2e endpoint %s not ready: %v", rpcURL, lastErr)
-	}
-	t.Skipf("skipping anvil e2e; endpoint %s not ready: %v", rpcURL, lastErr)
-	return nil, ""
 }
 
 func mustTransactor(t *testing.T, ctx context.Context, key *ecdsa.PrivateKey) *bind.TransactOpts {
