@@ -30,8 +30,7 @@ func run(args []string) error {
 }
 
 func renderError(err error) {
-	var usageErr usageError
-	if errors.As(err, &usageErr) {
+	if usageErr, ok := errors.AsType[usageError](err); ok {
 		if usageErr.message != "" {
 			fmt.Fprintf(os.Stderr, "error: %s\n\n", usageErr.message)
 		}
@@ -43,8 +42,7 @@ func renderError(err error) {
 }
 
 func exitCode(err error) int {
-	var usageErr usageError
-	if errors.As(err, &usageErr) {
+	if _, ok := errors.AsType[usageError](err); ok {
 		return 2
 	}
 	return 1
