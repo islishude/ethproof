@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -144,7 +145,7 @@ func testAnvilCLIFlow(t *testing.T, ctx context.Context, scenario anvilScenario)
 		"verify", "receipt",
 		"--proof", receiptProof,
 		"--expect-emitter", scenario.contractAddress.Hex(),
-		"--expect-data", canonicalHex(scenario.eventData),
+		"--expect-data", hexutil.Encode(scenario.eventData),
 	}
 	for _, topic := range scenario.eventTopics {
 		receiptArgs = append(receiptArgs, "--expect-topic", topic.Hex())

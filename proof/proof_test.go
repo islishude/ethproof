@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 func TestOfflineFixturesMatchGoldenFiles(t *testing.T) {
@@ -116,7 +117,7 @@ func TestTamperedReceiptProofFails(t *testing.T) {
 	}
 
 	dataTampered := cloneReceiptPackage(pkg)
-	dataTampered.Event.Data = canonicalHex([]byte{0xaa})
+	dataTampered.Event.Data = canonicalBytes([]byte{0xaa})
 	if err := VerifyReceiptProofPackage(&dataTampered); err == nil {
 		t.Fatal("expected modified event data to fail verification")
 	}
@@ -219,30 +220,40 @@ func mustLoadTransactionFixture(t *testing.T) TransactionProofPackage {
 
 func cloneTransactionPackage(in TransactionProofPackage) TransactionProofPackage {
 	out := in
-	out.ProofNodes = append([]string(nil), in.ProofNodes...)
+	out.ProofNodes = cloneHexBytesList(in.ProofNodes)
+	out.TransactionRLP = canonicalBytes(in.TransactionRLP)
 	return out
 }
 
 func cloneReceiptPackage(in ReceiptProofPackage) ReceiptProofPackage {
 	out := in
-	out.ProofNodes = append([]string(nil), in.ProofNodes...)
+	out.TransactionRLP = canonicalBytes(in.TransactionRLP)
+	out.ReceiptRLP = canonicalBytes(in.ReceiptRLP)
+	out.ProofNodes = cloneHexBytesList(in.ProofNodes)
 	out.Event.Topics = append([]common.Hash(nil), in.Event.Topics...)
+	out.Event.Data = canonicalBytes(in.Event.Data)
 	return out
 }
 
 func cloneStatePackage(in StateProofPackage) StateProofPackage {
 	out := in
-	out.AccountProofNodes = append([]string(nil), in.AccountProofNodes...)
-	out.StorageProofNodes = append([]string(nil), in.StorageProofNodes...)
+	out.AccountRLP = canonicalBytes(in.AccountRLP)
+	out.AccountProofNodes = cloneHexBytesList(in.AccountProofNodes)
+	out.StorageProofNodes = cloneHexBytesList(in.StorageProofNodes)
 	return out
 }
 
-func mutateHexNode(t *testing.T, value string) string {
+func mutateHexNode(t *testing.T, value hexutil.Bytes) hexutil.Bytes {
 	t.Helper()
-	raw, err := decodeHexBytes(value)
-	if err != nil {
-		t.Fatalf("decode node: %v", err)
-	}
+	raw := common.CopyBytes(value)
 	raw[0] ^= 0x01
-	return canonicalHex(raw)
+	return canonicalBytes(raw)
+}
+
+func cloneHexBytesList(in []hexutil.Bytes) []hexutil.Bytes {
+	out := make([]hexutil.Bytes, len(in))
+	for i := range in {
+		out[i] = canonicalBytes(in[i])
+	}
+	return out
 }

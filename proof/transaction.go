@@ -1,9 +1,11 @@
 package proof
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 )
@@ -66,7 +68,7 @@ func verifyTransactionProofPackage(pkg *TransactionProofPackage) error {
 	if err != nil {
 		return fmt.Errorf("decode claimed transaction: %w", err)
 	}
-	if string(verifiedTransaction) != string(claimedTransaction) {
+	if !bytes.Equal(verifiedTransaction, claimedTransaction) {
 		return fmt.Errorf("verified transaction bytes do not match claimed transaction bytes")
 	}
 	if tx.Hash() != pkg.TxHash {
@@ -87,10 +89,10 @@ func consensusForTransactionSnapshots(rpcs []string, snapshots []*transactionSna
 		if base.TxIndex != other.TxIndex {
 			diffs = append(diffs, "txIndex mismatch")
 		}
-		if base.TransactionRLP != other.TransactionRLP {
+		if !bytes.Equal(base.TransactionRLP, other.TransactionRLP) {
 			diffs = append(diffs, "transactionRlp mismatch")
 		}
-		diffs = append(diffs, compareStringSlices("blockTransactions", base.BlockTransactions, other.BlockTransactions)...)
+		diffs = append(diffs, compareByteSlices("blockTransactions", base.BlockTransactions, other.BlockTransactions)...)
 		if err := combineMismatch(rpcs[0], rpcs[i], diffs); err != nil {
 			return nil, SourceConsensus{}, err
 		}
@@ -116,7 +118,7 @@ func consensusForTransactionSnapshots(rpcs []string, snapshots []*transactionSna
 			{Name: "targetTransaction", Digest: targetTransactionDigest},
 		},
 		[]ConsensusField{
-			{Name: "chainId", Value: base.Header.ChainID, Consistent: true},
+			{Name: "chainId", Value: chainIDString(base.Header.ChainID), Consistent: true},
 			{Name: "blockNumber", Value: fmt.Sprintf("%d", base.Header.BlockNumber), Consistent: true},
 			{Name: "blockHash", Value: base.Header.BlockHash.Hex(), Consistent: true},
 			{Name: "parentHash", Value: base.Header.ParentHash.Hex(), Consistent: true},
@@ -130,7 +132,7 @@ func consensusForTransactionSnapshots(rpcs []string, snapshots []*transactionSna
 	return base, consensus, nil
 }
 
-func decodeTransactionList(hexTransactions []string) (types.Transactions, error) {
+func decodeTransactionList(hexTransactions []hexutil.Bytes) (types.Transactions, error) {
 	out := make(types.Transactions, len(hexTransactions))
 	for i, txHex := range hexTransactions {
 		tx, _, err := decodeTransaction(txHex)
@@ -146,7 +148,7 @@ func transactionSnapshotFromBlock(header blockSnapshotHeader, txs types.Transact
 	if int(txIndex) >= len(txs) {
 		return nil, fmt.Errorf("transaction index %d out of range", txIndex)
 	}
-	blockTransactions := make([]string, len(txs))
+	blockTransactions := make([]hexutil.Bytes, len(txs))
 	for i, tx := range txs {
 		encoded, err := encodeTransaction(tx)
 		if err != nil {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 )
@@ -86,7 +87,7 @@ func verifyReceiptProofPackage(pkg *ReceiptProofPackage, expect *ReceiptExpectat
 	if log.Address != pkg.Event.Address {
 		return fmt.Errorf("event address mismatch: got %s want %s", log.Address, pkg.Event.Address)
 	}
-	if canonicalHex(log.Data) != pkg.Event.Data {
+	if !bytes.Equal(log.Data, pkg.Event.Data) {
 		return fmt.Errorf("event data mismatch")
 	}
 	if diffs := compareHashSlices("event.topics", log.Topics, pkg.Event.Topics); len(diffs) > 0 {
@@ -128,14 +129,14 @@ func consensusForReceiptSnapshots(rpcs []string, snapshots []*receiptSnapshot) (
 		if base.LogIndex != other.LogIndex {
 			diffs = append(diffs, "logIndex mismatch")
 		}
-		if base.TransactionRLP != other.TransactionRLP {
+		if !bytes.Equal(base.TransactionRLP, other.TransactionRLP) {
 			diffs = append(diffs, "transactionRlp mismatch")
 		}
-		if base.ReceiptRLP != other.ReceiptRLP {
+		if !bytes.Equal(base.ReceiptRLP, other.ReceiptRLP) {
 			diffs = append(diffs, "receiptRlp mismatch")
 		}
-		diffs = append(diffs, compareStringSlices("blockTransactions", base.BlockTransactions, other.BlockTransactions)...)
-		diffs = append(diffs, compareStringSlices("blockReceipts", base.BlockReceipts, other.BlockReceipts)...)
+		diffs = append(diffs, compareByteSlices("blockTransactions", base.BlockTransactions, other.BlockTransactions)...)
+		diffs = append(diffs, compareByteSlices("blockReceipts", base.BlockReceipts, other.BlockReceipts)...)
 		diffs = append(diffs, compareEvent(base.Event, other.Event)...)
 		if err := combineMismatch(rpcs[0], rpcs[i], diffs); err != nil {
 			return nil, SourceConsensus{}, err
@@ -154,9 +155,9 @@ func consensusForReceiptSnapshots(rpcs []string, snapshots []*receiptSnapshot) (
 		return nil, SourceConsensus{}, err
 	}
 	targetReceiptDigest, err := canonicalDigest(struct {
-		TransactionRLP string     `json:"transactionRlp"`
-		ReceiptRLP     string     `json:"receiptRlp"`
-		Event          EventClaim `json:"event"`
+		TransactionRLP hexutil.Bytes `json:"transactionRlp"`
+		ReceiptRLP     hexutil.Bytes `json:"receiptRlp"`
+		Event          EventClaim    `json:"event"`
 	}{
 		TransactionRLP: base.TransactionRLP,
 		ReceiptRLP:     base.ReceiptRLP,
@@ -175,7 +176,7 @@ func consensusForReceiptSnapshots(rpcs []string, snapshots []*receiptSnapshot) (
 			{Name: "targetReceipt", Digest: targetReceiptDigest},
 		},
 		[]ConsensusField{
-			{Name: "chainId", Value: base.Header.ChainID, Consistent: true},
+			{Name: "chainId", Value: chainIDString(base.Header.ChainID), Consistent: true},
 			{Name: "blockNumber", Value: fmt.Sprintf("%d", base.Header.BlockNumber), Consistent: true},
 			{Name: "blockHash", Value: base.Header.BlockHash.Hex(), Consistent: true},
 			{Name: "parentHash", Value: base.Header.ParentHash.Hex(), Consistent: true},
@@ -187,13 +188,13 @@ func consensusForReceiptSnapshots(rpcs []string, snapshots []*receiptSnapshot) (
 			{Name: "logIndex", Value: fmt.Sprintf("%d", base.LogIndex), Consistent: true},
 			{Name: "event.address", Value: base.Event.Address.Hex(), Consistent: true},
 			{Name: "event.topics", Value: fmt.Sprintf("%v", base.Event.Topics), Consistent: true},
-			{Name: "event.data", Value: base.Event.Data, Consistent: true},
+			{Name: "event.data", Value: hexutil.Encode(base.Event.Data), Consistent: true},
 		},
 	)
 	return base, consensus, nil
 }
 
-func decodeReceiptList(hexReceipts []string) (types.Receipts, error) {
+func decodeReceiptList(hexReceipts []hexutil.Bytes) (types.Receipts, error) {
 	out := make(types.Receipts, len(hexReceipts))
 	for i, receiptHex := range hexReceipts {
 		receipt, _, err := decodeReceipt(receiptHex)

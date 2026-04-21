@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/triedb"
+	"github.com/holiman/uint256"
 )
 
 const defaultMinRPCSources = 3
@@ -57,8 +58,33 @@ func trieIndexKey(index uint64) []byte {
 	return rlp.AppendUint64(nil, index)
 }
 
-func canonicalHex(data []byte) string {
-	return hexutil.Encode(data)
+func canonicalBytes(data []byte) hexutil.Bytes {
+	return hexutil.Bytes(common.CopyBytes(data))
+}
+
+func chainIDFromBig(v *big.Int) (*uint256.Int, error) {
+	if v == nil {
+		return nil, nil
+	}
+	out, overflow := uint256.FromBig(v)
+	if overflow {
+		return nil, fmt.Errorf("chain id %s overflows uint256", v)
+	}
+	return out, nil
+}
+
+func cloneChainID(v *uint256.Int) *uint256.Int {
+	if v == nil {
+		return nil
+	}
+	return v.Clone()
+}
+
+func chainIDString(v *uint256.Int) string {
+	if v == nil {
+		return "0"
+	}
+	return v.String()
 }
 
 func decodeHexBytes(value string) ([]byte, error) {
@@ -72,26 +98,24 @@ func trim0x(s string) string {
 	return s
 }
 
-func normalizeHexNodeList(nodes []string) ([]string, error) {
-	out := make([]string, 0, len(nodes))
+func normalizeHexNodeList(nodes []string) ([]hexutil.Bytes, error) {
+	out := make([]hexutil.Bytes, 0, len(nodes))
 	for _, node := range nodes {
 		b, err := decodeHexBytes(node)
 		if err != nil {
 			return nil, fmt.Errorf("decode proof node: %w", err)
 		}
-		out = append(out, canonicalHex(b))
+		out = append(out, canonicalBytes(b))
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool {
+		return bytes.Compare(out[i], out[j]) < 0
+	})
 	return out, nil
 }
 
-func proofDBFromHexNodes(nodes []string) (*memorydb.Database, error) {
+func proofDBFromHexNodes(nodes []hexutil.Bytes) (*memorydb.Database, error) {
 	db := memorydb.New()
-	for _, nodeHex := range nodes {
-		nodeBytes, err := decodeHexBytes(nodeHex)
-		if err != nil {
-			return nil, fmt.Errorf("decode proof node: %w", err)
-		}
+	for _, nodeBytes := range nodes {
 		hash := crypto.Keccak256Hash(nodeBytes)
 		if err := db.Put(hash[:], nodeBytes); err != nil {
 			return nil, fmt.Errorf("proof db put: %w", err)
@@ -100,7 +124,7 @@ func proofDBFromHexNodes(nodes []string) (*memorydb.Database, error) {
 	return db, nil
 }
 
-func dumpProofNodes(db *memorydb.Database) ([]string, error) {
+func dumpProofNodes(db *memorydb.Database) ([]hexutil.Bytes, error) {
 	it := db.NewIterator(nil, nil)
 	defer it.Release()
 
@@ -121,51 +145,43 @@ func dumpProofNodes(db *memorydb.Database) ([]string, error) {
 	sort.Slice(items, func(i, j int) bool {
 		return bytes.Compare(items[i].key, items[j].key) < 0
 	})
-	out := make([]string, len(items))
+	out := make([]hexutil.Bytes, len(items))
 	for i, item := range items {
-		out[i] = canonicalHex(item.val)
+		out[i] = canonicalBytes(item.val)
 	}
 	return out, nil
 }
 
-func encodeTransaction(tx *types.Transaction) (string, error) {
+func encodeTransaction(tx *types.Transaction) (hexutil.Bytes, error) {
 	b, err := tx.MarshalBinary()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return canonicalHex(b), nil
+	return canonicalBytes(b), nil
 }
 
-func encodeReceipt(receipt *types.Receipt) (string, error) {
+func encodeReceipt(receipt *types.Receipt) (hexutil.Bytes, error) {
 	b, err := receipt.MarshalBinary()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return canonicalHex(b), nil
+	return canonicalBytes(b), nil
 }
 
-func decodeTransaction(hexData string) (*types.Transaction, []byte, error) {
-	raw, err := decodeHexBytes(hexData)
-	if err != nil {
-		return nil, nil, err
-	}
+func decodeTransaction(raw []byte) (*types.Transaction, []byte, error) {
 	var tx types.Transaction
 	if err := tx.UnmarshalBinary(raw); err != nil {
 		return nil, nil, err
 	}
-	return &tx, raw, nil
+	return &tx, common.CopyBytes(raw), nil
 }
 
-func decodeReceipt(hexData string) (*types.Receipt, []byte, error) {
-	raw, err := decodeHexBytes(hexData)
-	if err != nil {
-		return nil, nil, err
-	}
+func decodeReceipt(raw []byte) (*types.Receipt, []byte, error) {
 	var receipt types.Receipt
 	if err := receipt.UnmarshalBinary(raw); err != nil {
 		return nil, nil, err
 	}
-	return &receipt, raw, nil
+	return &receipt, common.CopyBytes(raw), nil
 }
 
 func canonicalDigest(value any) (common.Hash, error) {
@@ -211,7 +227,7 @@ func encodeStorageProofValue(value common.Hash) ([]byte, error) {
 
 func buildBlockContext(header blockSnapshotHeader, consensus SourceConsensus) BlockContext {
 	return BlockContext{
-		ChainID:          header.ChainID,
+		ChainID:          cloneChainID(header.ChainID),
 		BlockNumber:      header.BlockNumber,
 		BlockHash:        header.BlockHash,
 		ParentHash:       header.ParentHash,
@@ -247,13 +263,13 @@ func compareHashSlices(name string, a, b []common.Hash) []string {
 	return diffs
 }
 
-func compareStringSlices(name string, a, b []string) []string {
+func compareByteSlices(name string, a, b []hexutil.Bytes) []string {
 	if len(a) != len(b) {
 		return []string{fmt.Sprintf("%s length mismatch: %d != %d", name, len(a), len(b))}
 	}
 	var diffs []string
 	for i := range a {
-		if a[i] != b[i] {
+		if !bytes.Equal(a[i], b[i]) {
 			diffs = append(diffs, fmt.Sprintf("%s[%d] mismatch", name, i))
 		}
 	}
@@ -262,7 +278,11 @@ func compareStringSlices(name string, a, b []string) []string {
 
 func compareHeader(a, b blockSnapshotHeader) []string {
 	var diffs []string
-	if a.ChainID != b.ChainID {
+	switch {
+	case a.ChainID == nil && b.ChainID == nil:
+	case a.ChainID == nil || b.ChainID == nil:
+		diffs = append(diffs, "header.chainId mismatch")
+	case a.ChainID.Cmp(b.ChainID) != 0:
 		diffs = append(diffs, "header.chainId mismatch")
 	}
 	if a.BlockNumber != b.BlockNumber {
@@ -308,7 +328,7 @@ func compareEvent(a, b EventClaim) []string {
 	if a.Address != b.Address {
 		diffs = append(diffs, "event.address mismatch")
 	}
-	if a.Data != b.Data {
+	if !bytes.Equal(a.Data, b.Data) {
 		diffs = append(diffs, "event.data mismatch")
 	}
 	diffs = append(diffs, compareHashSlices("event.topics", a.Topics, b.Topics)...)

@@ -6,6 +6,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb/memorydb"
@@ -107,7 +108,7 @@ func buildOfflineTransactionReceiptFixture() (blockSnapshotHeader, types.Transac
 	receipt1.Bloom = types.CreateBloom(receipt1)
 	receipts := types.Receipts{receipt0, receipt1}
 	header := blockSnapshotHeader{
-		ChainID:          chainID.String(),
+		ChainID:          uint256.MustFromBig(chainID),
 		BlockNumber:      18_765_432,
 		ParentHash:       crypto.Keccak256Hash([]byte("offline-parent-transaction-receipt")),
 		StateRoot:        crypto.Keccak256Hash([]byte("offline-state-root-transaction-receipt")),
@@ -131,7 +132,7 @@ func buildOfflineTransactionReceiptFixture() (blockSnapshotHeader, types.Transac
 		BaseFee:     big.NewInt(1_000_000_000),
 	}
 	header.BlockHash = ethHeader.Hash()
-	blockTransactions := make([]string, len(txs))
+	blockTransactions := make([]hexutil.Bytes, len(txs))
 	for i, tx := range txs {
 		encoded, encErr := encodeTransaction(tx)
 		if encErr != nil {
@@ -153,8 +154,8 @@ func buildOfflineTransactionReceiptFixture() (blockSnapshotHeader, types.Transac
 }
 
 func buildOfflineReceiptFixture(header blockSnapshotHeader, txs types.Transactions, receipts types.Receipts, txIndex uint64, consensus SourceConsensus) (*ReceiptProofPackage, error) {
-	blockTransactions := make([]string, len(txs))
-	blockReceipts := make([]string, len(receipts))
+	blockTransactions := make([]hexutil.Bytes, len(txs))
+	blockReceipts := make([]hexutil.Bytes, len(receipts))
 	for i := range txs {
 		txHex, err := encodeTransaction(txs[i])
 		if err != nil {
@@ -181,7 +182,7 @@ func buildOfflineReceiptFixture(header blockSnapshotHeader, txs types.Transactio
 		nil,
 		digests,
 		[]ConsensusField{
-			{Name: "chainId", Value: header.ChainID, Consistent: true},
+			{Name: "chainId", Value: chainIDString(header.ChainID), Consistent: true},
 			{Name: "blockNumber", Value: fmt.Sprintf("%d", header.BlockNumber), Consistent: true},
 			{Name: "blockHash", Value: header.BlockHash.Hex(), Consistent: true},
 			{Name: "parentHash", Value: header.ParentHash.Hex(), Consistent: true},
@@ -193,7 +194,7 @@ func buildOfflineReceiptFixture(header blockSnapshotHeader, txs types.Transactio
 			{Name: "logIndex", Value: "0", Consistent: true},
 			{Name: "event.address", Value: log.Address.Hex(), Consistent: true},
 			{Name: "event.topics", Value: fmt.Sprintf("%v", log.Topics), Consistent: true},
-			{Name: "event.data", Value: canonicalHex(log.Data), Consistent: true},
+			{Name: "event.data", Value: hexutil.Encode(log.Data), Consistent: true},
 		},
 	)
 	return &ReceiptProofPackage{
@@ -207,7 +208,7 @@ func buildOfflineReceiptFixture(header blockSnapshotHeader, txs types.Transactio
 		Event: EventClaim{
 			Address: log.Address,
 			Topics:  append([]common.Hash(nil), log.Topics...),
-			Data:    canonicalHex(log.Data),
+			Data:    canonicalBytes(log.Data),
 		},
 	}, nil
 }
@@ -283,7 +284,7 @@ func buildOfflineStateFixture() (*StateProofPackage, error) {
 	}
 
 	header := blockSnapshotHeader{
-		ChainID:          "1",
+		ChainID:          uint256.NewInt(1),
 		BlockNumber:      19_001_337,
 		ParentHash:       crypto.Keccak256Hash([]byte("offline-parent-state")),
 		StateRoot:        stateRoot,
@@ -308,7 +309,7 @@ func buildOfflineStateFixture() (*StateProofPackage, error) {
 	}
 	header.BlockHash = ethHeader.Hash()
 
-	digests, err := canonicalOfflineStateDigests(header, canonicalHex(accountRLPBytes), accountProofNodes, slotTarget, slotValue, storageProofNodes)
+	digests, err := canonicalOfflineStateDigests(header, canonicalBytes(accountRLPBytes), accountProofNodes, slotTarget, slotValue, storageProofNodes)
 	if err != nil {
 		return nil, err
 	}
@@ -317,7 +318,7 @@ func buildOfflineStateFixture() (*StateProofPackage, error) {
 		nil,
 		digests,
 		[]ConsensusField{
-			{Name: "chainId", Value: header.ChainID, Consistent: true},
+			{Name: "chainId", Value: chainIDString(header.ChainID), Consistent: true},
 			{Name: "blockNumber", Value: fmt.Sprintf("%d", header.BlockNumber), Consistent: true},
 			{Name: "blockHash", Value: header.BlockHash.Hex(), Consistent: true},
 			{Name: "parentHash", Value: header.ParentHash.Hex(), Consistent: true},
@@ -337,7 +338,7 @@ func buildOfflineStateFixture() (*StateProofPackage, error) {
 		Block:             buildBlockContext(header, consensus),
 		Account:           account,
 		Slot:              slotTarget,
-		AccountRLP:        canonicalHex(accountRLPBytes),
+		AccountRLP:        canonicalBytes(accountRLPBytes),
 		AccountProofNodes: accountProofNodes,
 		AccountClaim: StateAccountClaim{
 			Nonce:       accountState.Nonce,
@@ -354,7 +355,7 @@ func fixedPrivateKey(hexKey string) (*ecdsa.PrivateKey, error) {
 	return crypto.HexToECDSA(hexKey)
 }
 
-func canonicalOfflineReceiptDigests(header blockSnapshotHeader, blockTransactions, blockReceipts []string, transactionRLP, receiptRLP string, log *types.Log) ([]ConsensusDigest, error) {
+func canonicalOfflineReceiptDigests(header blockSnapshotHeader, blockTransactions, blockReceipts []hexutil.Bytes, transactionRLP, receiptRLP hexutil.Bytes, log *types.Log) ([]ConsensusDigest, error) {
 	headerDigest, err := canonicalDigest(header)
 	if err != nil {
 		return nil, err
@@ -368,16 +369,16 @@ func canonicalOfflineReceiptDigests(header blockSnapshotHeader, blockTransaction
 		return nil, err
 	}
 	targetDigest, err := canonicalDigest(struct {
-		TransactionRLP string     `json:"transactionRlp"`
-		ReceiptRLP     string     `json:"receiptRlp"`
-		Event          EventClaim `json:"event"`
+		TransactionRLP hexutil.Bytes `json:"transactionRlp"`
+		ReceiptRLP     hexutil.Bytes `json:"receiptRlp"`
+		Event          EventClaim    `json:"event"`
 	}{
 		TransactionRLP: transactionRLP,
 		ReceiptRLP:     receiptRLP,
 		Event: EventClaim{
 			Address: log.Address,
 			Topics:  append([]common.Hash(nil), log.Topics...),
-			Data:    canonicalHex(log.Data),
+			Data:    canonicalBytes(log.Data),
 		},
 	})
 	if err != nil {
@@ -391,14 +392,14 @@ func canonicalOfflineReceiptDigests(header blockSnapshotHeader, blockTransaction
 	}, nil
 }
 
-func canonicalOfflineStateDigests(header blockSnapshotHeader, accountRLP string, accountProof []string, slot, slotValue common.Hash, storageProof []string) ([]ConsensusDigest, error) {
+func canonicalOfflineStateDigests(header blockSnapshotHeader, accountRLP hexutil.Bytes, accountProof []hexutil.Bytes, slot, slotValue common.Hash, storageProof []hexutil.Bytes) ([]ConsensusDigest, error) {
 	headerDigest, err := canonicalDigest(header)
 	if err != nil {
 		return nil, err
 	}
 	accountDigest, err := canonicalDigest(struct {
-		AccountRLP string   `json:"accountRlp"`
-		Proof      []string `json:"proof"`
+		AccountRLP hexutil.Bytes   `json:"accountRlp"`
+		Proof      []hexutil.Bytes `json:"proof"`
 	}{
 		AccountRLP: accountRLP,
 		Proof:      accountProof,
@@ -407,9 +408,9 @@ func canonicalOfflineStateDigests(header blockSnapshotHeader, accountRLP string,
 		return nil, err
 	}
 	storageDigest, err := canonicalDigest(struct {
-		Slot  common.Hash `json:"slot"`
-		Value common.Hash `json:"value"`
-		Proof []string    `json:"proof"`
+		Slot  common.Hash     `json:"slot"`
+		Value common.Hash     `json:"value"`
+		Proof []hexutil.Bytes `json:"proof"`
 	}{
 		Slot:  slot,
 		Value: slotValue,
@@ -427,7 +428,7 @@ func canonicalOfflineStateDigests(header blockSnapshotHeader, accountRLP string,
 
 func offlineTransactionFields(txHash common.Hash, txIndex uint64, header blockSnapshotHeader) []ConsensusField {
 	return []ConsensusField{
-		{Name: "chainId", Value: header.ChainID, Consistent: true},
+		{Name: "chainId", Value: chainIDString(header.ChainID), Consistent: true},
 		{Name: "blockNumber", Value: fmt.Sprintf("%d", header.BlockNumber), Consistent: true},
 		{Name: "blockHash", Value: header.BlockHash.Hex(), Consistent: true},
 		{Name: "parentHash", Value: header.ParentHash.Hex(), Consistent: true},
@@ -439,7 +440,7 @@ func offlineTransactionFields(txHash common.Hash, txIndex uint64, header blockSn
 	}
 }
 
-func offlineTransactionDigests(header blockSnapshotHeader, blockTransactions []string, transactionRLP string) ([]ConsensusDigest, error) {
+func offlineTransactionDigests(header blockSnapshotHeader, blockTransactions []hexutil.Bytes, transactionRLP hexutil.Bytes) ([]ConsensusDigest, error) {
 	headerDigest, err := canonicalDigest(header)
 	if err != nil {
 		return nil, err

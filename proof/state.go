@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 func generateStateProof(ctx context.Context, req StateProofRequest) (*StateProofPackage, error) {
@@ -46,11 +49,7 @@ func verifyStateProofPackage(pkg *StateProofPackage) error {
 	if err != nil {
 		return err
 	}
-	claimedAccountRLP, err := decodeHexBytes(pkg.AccountRLP)
-	if err != nil {
-		return fmt.Errorf("decode claimed account rlp: %w", err)
-	}
-	if !bytes.Equal(accountRLP, claimedAccountRLP) {
+	if !bytes.Equal(accountRLP, pkg.AccountRLP) {
 		return fmt.Errorf("verified account bytes do not match claimed account bytes")
 	}
 	if _, err := verifyStorageProof(pkg.AccountClaim.StorageRoot, pkg.Slot, pkg.StorageProofNodes, pkg.StorageValue); err != nil {
@@ -71,15 +70,15 @@ func consensusForStateSnapshots(rpcs []string, snapshots []*accountSnapshot) (*a
 		if base.Slot != other.Slot {
 			diffs = append(diffs, "slot mismatch")
 		}
-		if base.AccountRLP != other.AccountRLP {
+		if !bytes.Equal(base.AccountRLP, other.AccountRLP) {
 			diffs = append(diffs, "accountRlp mismatch")
 		}
-		diffs = append(diffs, compareStringSlices("accountProof", base.AccountProof, other.AccountProof)...)
+		diffs = append(diffs, compareByteSlices("accountProof", base.AccountProof, other.AccountProof)...)
 		diffs = append(diffs, compareStateClaim(base.AccountClaim, other.AccountClaim)...)
 		if base.StorageValue != other.StorageValue {
 			diffs = append(diffs, "storageValue mismatch")
 		}
-		diffs = append(diffs, compareStringSlices("storageProof", base.StorageProof, other.StorageProof)...)
+		diffs = append(diffs, compareByteSlices("storageProof", base.StorageProof, other.StorageProof)...)
 		if err := combineMismatch(rpcs[0], rpcs[i], diffs); err != nil {
 			return nil, SourceConsensus{}, err
 		}
@@ -89,8 +88,8 @@ func consensusForStateSnapshots(rpcs []string, snapshots []*accountSnapshot) (*a
 		return nil, SourceConsensus{}, err
 	}
 	accountProofDigest, err := canonicalDigest(struct {
-		AccountRLP string            `json:"accountRlp"`
-		Proof      []string          `json:"proof"`
+		AccountRLP hexutil.Bytes     `json:"accountRlp"`
+		Proof      []hexutil.Bytes   `json:"proof"`
 		Claim      StateAccountClaim `json:"claim"`
 	}{
 		AccountRLP: base.AccountRLP,
@@ -101,12 +100,12 @@ func consensusForStateSnapshots(rpcs []string, snapshots []*accountSnapshot) (*a
 		return nil, SourceConsensus{}, err
 	}
 	storageProofDigest, err := canonicalDigest(struct {
-		Slot  string   `json:"slot"`
-		Value string   `json:"value"`
-		Proof []string `json:"proof"`
+		Slot  common.Hash     `json:"slot"`
+		Value common.Hash     `json:"value"`
+		Proof []hexutil.Bytes `json:"proof"`
 	}{
-		Slot:  base.Slot.Hex(),
-		Value: base.StorageValue.Hex(),
+		Slot:  base.Slot,
+		Value: base.StorageValue,
 		Proof: base.StorageProof,
 	})
 	if err != nil {
@@ -121,7 +120,7 @@ func consensusForStateSnapshots(rpcs []string, snapshots []*accountSnapshot) (*a
 			{Name: "storageProof", Digest: storageProofDigest},
 		},
 		[]ConsensusField{
-			{Name: "chainId", Value: base.Header.ChainID, Consistent: true},
+			{Name: "chainId", Value: chainIDString(base.Header.ChainID), Consistent: true},
 			{Name: "blockNumber", Value: fmt.Sprintf("%d", base.Header.BlockNumber), Consistent: true},
 			{Name: "blockHash", Value: base.Header.BlockHash.Hex(), Consistent: true},
 			{Name: "parentHash", Value: base.Header.ParentHash.Hex(), Consistent: true},

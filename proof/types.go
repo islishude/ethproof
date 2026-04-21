@@ -4,10 +4,12 @@ import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/holiman/uint256"
 )
 
 type BlockContext struct {
-	ChainID          string          `json:"chainId"`
+	ChainID          *uint256.Int    `json:"chainId"`
 	BlockNumber      uint64          `json:"blockNumber"`
 	BlockHash        common.Hash     `json:"blockHash"`
 	ParentHash       common.Hash     `json:"parentHash"`
@@ -67,36 +69,36 @@ type StateProofPackage struct {
 	Block             BlockContext      `json:"block"`
 	Account           common.Address    `json:"account"`
 	Slot              common.Hash       `json:"slot"`
-	AccountRLP        string            `json:"accountRlp"`
-	AccountProofNodes []string          `json:"accountProofNodes"`
+	AccountRLP        hexutil.Bytes     `json:"accountRlp"`
+	AccountProofNodes []hexutil.Bytes   `json:"accountProofNodes"`
 	AccountClaim      StateAccountClaim `json:"accountClaim"`
 	StorageValue      common.Hash       `json:"storageValue"`
-	StorageProofNodes []string          `json:"storageProofNodes"`
+	StorageProofNodes []hexutil.Bytes   `json:"storageProofNodes"`
 }
 
 type EventClaim struct {
 	Address common.Address `json:"address"`
 	Topics  []common.Hash  `json:"topics"`
-	Data    string         `json:"data"`
+	Data    hexutil.Bytes  `json:"data"`
 }
 
 type ReceiptProofPackage struct {
-	Block          BlockContext `json:"block"`
-	TxHash         common.Hash  `json:"txHash"`
-	TxIndex        uint64       `json:"txIndex"`
-	LogIndex       uint         `json:"logIndex"`
-	TransactionRLP string       `json:"transactionRlp"`
-	ReceiptRLP     string       `json:"receiptRlp"`
-	ProofNodes     []string     `json:"proofNodes"`
-	Event          EventClaim   `json:"event"`
+	Block          BlockContext    `json:"block"`
+	TxHash         common.Hash     `json:"txHash"`
+	TxIndex        uint64          `json:"txIndex"`
+	LogIndex       uint            `json:"logIndex"`
+	TransactionRLP hexutil.Bytes   `json:"transactionRlp"`
+	ReceiptRLP     hexutil.Bytes   `json:"receiptRlp"`
+	ProofNodes     []hexutil.Bytes `json:"proofNodes"`
+	Event          EventClaim      `json:"event"`
 }
 
 type TransactionProofPackage struct {
-	Block          BlockContext `json:"block"`
-	TxHash         common.Hash  `json:"txHash"`
-	TxIndex        uint64       `json:"txIndex"`
-	TransactionRLP string       `json:"transactionRlp"`
-	ProofNodes     []string     `json:"proofNodes"`
+	Block          BlockContext    `json:"block"`
+	TxHash         common.Hash     `json:"txHash"`
+	TxIndex        uint64          `json:"txIndex"`
+	TransactionRLP hexutil.Bytes   `json:"transactionRlp"`
+	ProofNodes     []hexutil.Bytes `json:"proofNodes"`
 }
 
 type ReceiptExpectations struct {
@@ -115,11 +117,11 @@ type accountSnapshot struct {
 	Header       blockSnapshotHeader `json:"header"`
 	Account      common.Address      `json:"account"`
 	Slot         common.Hash         `json:"slot"`
-	AccountRLP   string              `json:"accountRlp"`
-	AccountProof []string            `json:"accountProof"`
+	AccountRLP   hexutil.Bytes       `json:"accountRlp"`
+	AccountProof []hexutil.Bytes     `json:"accountProof"`
 	AccountClaim StateAccountClaim   `json:"accountClaim"`
 	StorageValue common.Hash         `json:"storageValue"`
-	StorageProof []string            `json:"storageProof"`
+	StorageProof []hexutil.Bytes     `json:"storageProof"`
 }
 
 type receiptSnapshot struct {
@@ -127,10 +129,10 @@ type receiptSnapshot struct {
 	TxHash            common.Hash         `json:"txHash"`
 	TxIndex           uint64              `json:"txIndex"`
 	LogIndex          uint                `json:"logIndex"`
-	TransactionRLP    string              `json:"transactionRlp"`
-	ReceiptRLP        string              `json:"receiptRlp"`
-	BlockTransactions []string            `json:"blockTransactions"`
-	BlockReceipts     []string            `json:"blockReceipts"`
+	TransactionRLP    hexutil.Bytes       `json:"transactionRlp"`
+	ReceiptRLP        hexutil.Bytes       `json:"receiptRlp"`
+	BlockTransactions []hexutil.Bytes     `json:"blockTransactions"`
+	BlockReceipts     []hexutil.Bytes     `json:"blockReceipts"`
 	Event             EventClaim          `json:"event"`
 }
 
@@ -138,18 +140,18 @@ type transactionSnapshot struct {
 	Header            blockSnapshotHeader `json:"header"`
 	TxHash            common.Hash         `json:"txHash"`
 	TxIndex           uint64              `json:"txIndex"`
-	TransactionRLP    string              `json:"transactionRlp"`
-	BlockTransactions []string            `json:"blockTransactions"`
+	TransactionRLP    hexutil.Bytes       `json:"transactionRlp"`
+	BlockTransactions []hexutil.Bytes     `json:"blockTransactions"`
 }
 
 type blockSnapshotHeader struct {
-	ChainID          string      `json:"chainId"`
-	BlockNumber      uint64      `json:"blockNumber"`
-	BlockHash        common.Hash `json:"blockHash"`
-	ParentHash       common.Hash `json:"parentHash"`
-	StateRoot        common.Hash `json:"stateRoot"`
-	TransactionsRoot common.Hash `json:"transactionsRoot"`
-	ReceiptsRoot     common.Hash `json:"receiptsRoot"`
+	ChainID          *uint256.Int `json:"chainId"`
+	BlockNumber      uint64       `json:"blockNumber"`
+	BlockHash        common.Hash  `json:"blockHash"`
+	ParentHash       common.Hash  `json:"parentHash"`
+	StateRoot        common.Hash  `json:"stateRoot"`
+	TransactionsRoot common.Hash  `json:"transactionsRoot"`
+	ReceiptsRoot     common.Hash  `json:"receiptsRoot"`
 }
 
 func GenerateStateProof(ctx context.Context, req StateProofRequest) (*StateProofPackage, error) {

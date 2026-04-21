@@ -1,6 +1,7 @@
 package proof
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -27,7 +28,7 @@ func TestEncodeAndValidateBlockReceipts(t *testing.T) {
 		if err != nil {
 			t.Fatalf("encodeReceipt(%d): %v", i, err)
 		}
-		if got[i] != want {
+		if !bytes.Equal(got[i], want) {
 			t.Fatalf("receipt %d mismatch", i)
 		}
 	}

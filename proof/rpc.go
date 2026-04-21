@@ -1,12 +1,14 @@
 package proof
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -55,8 +57,12 @@ func fetchBlockHeader(ctx context.Context, source *rpcSource, blockHash common.H
 	if err != nil {
 		return nil, blockSnapshotHeader{}, fmt.Errorf("fetch header: %w", err)
 	}
+	chainIDValue, err := chainIDFromBig(chainID)
+	if err != nil {
+		return nil, blockSnapshotHeader{}, err
+	}
 	snapshot := blockSnapshotHeader{
-		ChainID:          chainID.String(),
+		ChainID:          chainIDValue,
 		BlockNumber:      header.Number.Uint64(),
 		BlockHash:        header.Hash(),
 		ParentHash:       header.ParentHash,
@@ -102,7 +108,7 @@ func fetchTransactionSnapshot(ctx context.Context, source *rpcSource, txHash com
 	if err != nil {
 		return nil, fmt.Errorf("encode target tx: %w", err)
 	}
-	blockTransactions := make([]string, len(blockTxs))
+	blockTransactions := make([]hexutil.Bytes, len(blockTxs))
 	for i, blockTx := range blockTxs {
 		encoded, encErr := encodeTransaction(blockTx)
 		if encErr != nil {
@@ -114,7 +120,7 @@ func fetchTransactionSnapshot(ctx context.Context, source *rpcSource, txHash com
 	if blockTxs[targetIndex].Hash() != txHash {
 		return nil, fmt.Errorf("block transaction[%d] hash mismatch: got %s want %s", targetIndex, blockTxs[targetIndex].Hash(), txHash)
 	}
-	if blockTransactions[targetIndex] != transactionRLP {
+	if !bytes.Equal(blockTransactions[targetIndex], transactionRLP) {
 		return nil, fmt.Errorf("transaction bytes mismatch between block body and tx lookup")
 	}
 	return &transactionSnapshot{
@@ -156,7 +162,7 @@ func fetchReceiptSnapshot(ctx context.Context, source *rpcSource, txHash common.
 	if err != nil {
 		return nil, err
 	}
-	if blockReceipts[txSnapshot.TxIndex] != receiptRLP {
+	if !bytes.Equal(blockReceipts[txSnapshot.TxIndex], receiptRLP) {
 		return nil, fmt.Errorf("receipt bytes mismatch between block receipts and target receipt lookup")
 	}
 	log := receipt.Logs[logIndex]
@@ -172,12 +178,12 @@ func fetchReceiptSnapshot(ctx context.Context, source *rpcSource, txHash common.
 		Event: EventClaim{
 			Address: log.Address,
 			Topics:  append([]common.Hash(nil), log.Topics...),
-			Data:    canonicalHex(log.Data),
+			Data:    canonicalBytes(log.Data),
 		},
 	}, nil
 }
 
-func fetchBlockReceipts(ctx context.Context, source *rpcSource, blockHash common.Hash, expectedCount int) ([]string, error) {
+func fetchBlockReceipts(ctx context.Context, source *rpcSource, blockHash common.Hash, expectedCount int) ([]hexutil.Bytes, error) {
 	receipts, err := source.eth.BlockReceipts(ctx, rpc.BlockNumberOrHashWithHash(blockHash, true))
 	if err != nil {
 		if isRPCMethodNotFound(err) {
@@ -188,7 +194,7 @@ func fetchBlockReceipts(ctx context.Context, source *rpcSource, blockHash common
 	return encodeAndValidateBlockReceipts(receipts, blockHash, expectedCount)
 }
 
-func fetchBlockReceiptsByTransactionScan(ctx context.Context, source *rpcSource, blockHash common.Hash, expectedCount int) ([]string, error) {
+func fetchBlockReceiptsByTransactionScan(ctx context.Context, source *rpcSource, blockHash common.Hash, expectedCount int) ([]hexutil.Bytes, error) {
 	block, err := source.eth.BlockByHash(ctx, blockHash)
 	if err != nil {
 		return nil, fmt.Errorf("fetch block for receipts: %w", err)
@@ -196,7 +202,7 @@ func fetchBlockReceiptsByTransactionScan(ctx context.Context, source *rpcSource,
 	if len(block.Transactions()) != expectedCount {
 		return nil, fmt.Errorf("block transaction count %d does not match expected count %d", len(block.Transactions()), expectedCount)
 	}
-	blockReceipts := make([]string, len(block.Transactions()))
+	blockReceipts := make([]hexutil.Bytes, len(block.Transactions()))
 	for i, blockTx := range block.Transactions() {
 		receipt, receiptErr := source.eth.TransactionReceipt(ctx, blockTx.Hash())
 		if receiptErr != nil {
@@ -220,11 +226,11 @@ func fetchBlockReceiptsByTransactionScan(ctx context.Context, source *rpcSource,
 	return blockReceipts, nil
 }
 
-func encodeAndValidateBlockReceipts(receipts []*types.Receipt, blockHash common.Hash, expectedCount int) ([]string, error) {
+func encodeAndValidateBlockReceipts(receipts []*types.Receipt, blockHash common.Hash, expectedCount int) ([]hexutil.Bytes, error) {
 	if len(receipts) != expectedCount {
 		return nil, fmt.Errorf("block receipt count %d does not match expected count %d", len(receipts), expectedCount)
 	}
-	out := make([]string, len(receipts))
+	out := make([]hexutil.Bytes, len(receipts))
 	for i, receipt := range receipts {
 		if receipt == nil {
 			return nil, fmt.Errorf("block receipt %d is nil", i)
@@ -275,13 +281,17 @@ func fetchStateSnapshot(ctx context.Context, source *rpcSource, blockNumber uint
 		return nil, err
 	}
 	headerSnapshot := blockSnapshotHeader{
-		ChainID:          chainID.String(),
+		ChainID:          nil,
 		BlockNumber:      header.Number.Uint64(),
 		BlockHash:        header.Hash(),
 		ParentHash:       header.ParentHash,
 		StateRoot:        header.Root,
 		TransactionsRoot: header.TxHash,
 		ReceiptsRoot:     header.ReceiptHash,
+	}
+	headerSnapshot.ChainID, err = chainIDFromBig(chainID)
+	if err != nil {
+		return nil, err
 	}
 	accountClaim := StateAccountClaim{
 		Nonce:       proof.Nonce,
@@ -301,7 +311,7 @@ func fetchStateSnapshot(ctx context.Context, source *rpcSource, blockNumber uint
 		Header:       headerSnapshot,
 		Account:      account,
 		Slot:         slot,
-		AccountRLP:   canonicalHex(accountRLP),
+		AccountRLP:   canonicalBytes(accountRLP),
 		AccountProof: accountProof,
 		AccountClaim: accountClaim,
 		StorageValue: expectedStorageValue,
@@ -309,59 +319,51 @@ func fetchStateSnapshot(ctx context.Context, source *rpcSource, blockNumber uint
 	}, nil
 }
 
-func buildReceiptTrieAndProof(receipts []string, targetIndex uint64, expectedRoot common.Hash) (string, []string, error) {
+func buildReceiptTrieAndProof(receipts []hexutil.Bytes, targetIndex uint64, expectedRoot common.Hash) (hexutil.Bytes, []hexutil.Bytes, error) {
 	tr := makeProofTrie()
 	for i, receiptHex := range receipts {
-		receiptBytes, err := decodeHexBytes(receiptHex)
-		if err != nil {
-			return "", nil, fmt.Errorf("decode receipt %d: %w", i, err)
-		}
-		if err := tr.Update(trieIndexKey(uint64(i)), receiptBytes); err != nil {
-			return "", nil, fmt.Errorf("receipt trie update %d: %w", i, err)
+		if err := tr.Update(trieIndexKey(uint64(i)), receiptHex); err != nil {
+			return nil, nil, fmt.Errorf("receipt trie update %d: %w", i, err)
 		}
 	}
 	root := tr.Hash()
 	if root != expectedRoot {
-		return "", nil, fmt.Errorf("derived receiptsRoot mismatch: local=%s expected=%s", root, expectedRoot)
+		return nil, nil, fmt.Errorf("derived receiptsRoot mismatch: local=%s expected=%s", root, expectedRoot)
 	}
 	proofDB := memorydb.New()
 	if err := tr.Prove(trieIndexKey(targetIndex), proofDB); err != nil {
-		return "", nil, fmt.Errorf("prove receipt inclusion: %w", err)
+		return nil, nil, fmt.Errorf("prove receipt inclusion: %w", err)
 	}
 	nodes, err := dumpProofNodes(proofDB)
 	if err != nil {
-		return "", nil, err
+		return nil, nil, err
 	}
 	return receipts[targetIndex], nodes, nil
 }
 
-func buildTransactionTrieAndProof(transactions []string, targetIndex uint64, expectedRoot common.Hash) (string, []string, error) {
+func buildTransactionTrieAndProof(transactions []hexutil.Bytes, targetIndex uint64, expectedRoot common.Hash) (hexutil.Bytes, []hexutil.Bytes, error) {
 	tr := makeProofTrie()
 	for i, txHex := range transactions {
-		txBytes, err := decodeHexBytes(txHex)
-		if err != nil {
-			return "", nil, fmt.Errorf("decode tx %d: %w", i, err)
-		}
-		if err := tr.Update(trieIndexKey(uint64(i)), txBytes); err != nil {
-			return "", nil, fmt.Errorf("transaction trie update %d: %w", i, err)
+		if err := tr.Update(trieIndexKey(uint64(i)), txHex); err != nil {
+			return nil, nil, fmt.Errorf("transaction trie update %d: %w", i, err)
 		}
 	}
 	root := tr.Hash()
 	if root != expectedRoot {
-		return "", nil, fmt.Errorf("derived transactionsRoot mismatch: local=%s expected=%s", root, expectedRoot)
+		return nil, nil, fmt.Errorf("derived transactionsRoot mismatch: local=%s expected=%s", root, expectedRoot)
 	}
 	proofDB := memorydb.New()
 	if err := tr.Prove(trieIndexKey(targetIndex), proofDB); err != nil {
-		return "", nil, fmt.Errorf("prove transaction inclusion: %w", err)
+		return nil, nil, fmt.Errorf("prove transaction inclusion: %w", err)
 	}
 	nodes, err := dumpProofNodes(proofDB)
 	if err != nil {
-		return "", nil, err
+		return nil, nil, err
 	}
 	return transactions[targetIndex], nodes, nil
 }
 
-func verifyAccountProof(stateRoot common.Hash, account common.Address, nodes []string, claim StateAccountClaim) ([]byte, error) {
+func verifyAccountProof(stateRoot common.Hash, account common.Address, nodes []hexutil.Bytes, claim StateAccountClaim) ([]byte, error) {
 	db, err := proofDBFromHexNodes(nodes)
 	if err != nil {
 		return nil, err
@@ -396,7 +398,7 @@ func verifyAccountProof(stateRoot common.Hash, account common.Address, nodes []s
 	return accountValue, nil
 }
 
-func verifyStorageProof(storageRoot common.Hash, slot common.Hash, nodes []string, expectedValue common.Hash) ([]byte, error) {
+func verifyStorageProof(storageRoot common.Hash, slot common.Hash, nodes []hexutil.Bytes, expectedValue common.Hash) ([]byte, error) {
 	db, err := proofDBFromHexNodes(nodes)
 	if err != nil {
 		return nil, err
