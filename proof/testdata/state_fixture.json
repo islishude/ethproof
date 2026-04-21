@@ -1,0 +1,119 @@
+{
+  "block": {
+    "chainId": "1",
+    "blockNumber": 19001337,
+    "blockHash": "0x9403668f0b6fb6a2d0831eb66bc4fd5652edd7517f967fdb7dfd518cc07d9fe4",
+    "parentHash": "0x4bf60d336943c0d79b2d83188ce0a9f85be507728041f97078c95aeedadf1aae",
+    "stateRoot": "0xfabbd91872ed880ebe77f5fa0d78c70bd577b8f2d024b935b3ecc05862b7b16d",
+    "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+    "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+    "sourceConsensus": {
+      "mode": "offline-fixture",
+      "rpcs": [],
+      "digests": [
+        {
+          "name": "header",
+          "digest": "0x10776e9e7024b765453be9231afe98de492cc9f6e62adfa06cf813e924fd1945"
+        },
+        {
+          "name": "accountProof",
+          "digest": "0x8f60967a7ffcd6272666d86855ae539cd38c1387cf2848559db2ab8c3a3d52d8"
+        },
+        {
+          "name": "storageProof",
+          "digest": "0xf66d920c0d0b17cd91b6c1733ae88dbad6ca64a8f93c69f04b527dcc3018e04d"
+        }
+      ],
+      "fields": [
+        {
+          "name": "chainId",
+          "value": "1",
+          "consistent": true
+        },
+        {
+          "name": "blockNumber",
+          "value": "19001337",
+          "consistent": true
+        },
+        {
+          "name": "blockHash",
+          "value": "0x9403668f0b6fb6a2d0831eb66bc4fd5652edd7517f967fdb7dfd518cc07d9fe4",
+          "consistent": true
+        },
+        {
+          "name": "parentHash",
+          "value": "0x4bf60d336943c0d79b2d83188ce0a9f85be507728041f97078c95aeedadf1aae",
+          "consistent": true
+        },
+        {
+          "name": "stateRoot",
+          "value": "0xfabbd91872ed880ebe77f5fa0d78c70bd577b8f2d024b935b3ecc05862b7b16d",
+          "consistent": true
+        },
+        {
+          "name": "transactionsRoot",
+          "value": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+          "consistent": true
+        },
+        {
+          "name": "receiptsRoot",
+          "value": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+          "consistent": true
+        },
+        {
+          "name": "account",
+          "value": "0x4444444444444444444444444444444444444444",
+          "consistent": true
+        },
+        {
+          "name": "slot",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "consistent": true
+        },
+        {
+          "name": "account.nonce",
+          "value": "7",
+          "consistent": true
+        },
+        {
+          "name": "account.balance",
+          "value": "0x16fee0e524",
+          "consistent": true
+        },
+        {
+          "name": "account.storageRoot",
+          "value": "0x51e3a6b1ec49bebb3cdc8f533e43b820ca313a5e7d1dfcdb9bb15921352dfce7",
+          "consistent": true
+        },
+        {
+          "name": "account.codeHash",
+          "value": "0xe0dae998fb440c58e6514a416750fe11ea5df675f0b51de17ad77b653e1b25b7",
+          "consistent": true
+        },
+        {
+          "name": "storage.value",
+          "value": "0x00000000000000000000000000000000000000000000000000000000deadbeef",
+          "consistent": true
+        }
+      ]
+    }
+  },
+  "account": "0x4444444444444444444444444444444444444444",
+  "slot": "0x0000000000000000000000000000000000000000000000000000000000000001",
+  "accountRlp": "0xf849078516fee0e524a051e3a6b1ec49bebb3cdc8f533e43b820ca313a5e7d1dfcdb9bb15921352dfce7a0e0dae998fb440c58e6514a416750fe11ea5df675f0b51de17ad77b653e1b25b7",
+  "accountProofNodes": [
+    "0xf86ea03cfa6af4bfa0111fd5e7625d43e84cd2d40629cf6008219d2c0e30ed48abf8b6b84bf849078516fee0e524a051e3a6b1ec49bebb3cdc8f533e43b820ca313a5e7d1dfcdb9bb15921352dfce7a0e0dae998fb440c58e6514a416750fe11ea5df675f0b51de17ad77b653e1b25b7",
+    "0xf85180808080a00347da9476563bab16b61be8f37f88ddc78411e36705171c236c78eeaa9a78bb80a02551a6e6305ed629a13ad211cd133b0d4cb43391281d38faa2c441a1ecb5a5cd80808080808080808080"
+  ],
+  "accountClaim": {
+    "nonce": 7,
+    "balance": "0x16fee0e524",
+    "storageRoot": "0x51e3a6b1ec49bebb3cdc8f533e43b820ca313a5e7d1dfcdb9bb15921352dfce7",
+    "codeHash": "0xe0dae998fb440c58e6514a416750fe11ea5df675f0b51de17ad77b653e1b25b7"
+  },
+  "storageValue": "0x00000000000000000000000000000000000000000000000000000000deadbeef",
+  "storageProofNodes": [
+    "0xe7a0310e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf68584deadbeef",
+    "0xf85180808080a0f0cb9ebd4916b8e8f9ac6a94d3bd71345d47654578f28fe64eecb22197558771808080808080a038b224cdad1072fc3e9bfdfab598188dbc4ac167b80a4d924e959cc95da6ad1c8080808080"
+  ]
+}

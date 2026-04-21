@@ -1,0 +1,83 @@
+{
+  "block": {
+    "chainId": "1",
+    "blockNumber": 18765432,
+    "blockHash": "0x8b468f8c33079f1f3c53d73ea8a2a4be37ab247016376ddcdadff6fe7795d30a",
+    "parentHash": "0x51624688bbc9319b09c182899633a6a22f8643d4a2b7576cd4801776b02330b1",
+    "stateRoot": "0xc039ba8e375edd4857396673862627218573be88bbf3624b222d100d874032cb",
+    "transactionsRoot": "0x4f5535d2984ae55ebe3ddeb3a73e1d6f5b66783492854ed61901949babac7e37",
+    "receiptsRoot": "0xdf82ee2c015a57f39f19327157b53c08107336e52e0573e166a2890496b36ddd",
+    "sourceConsensus": {
+      "mode": "offline-fixture",
+      "rpcs": [],
+      "digests": [
+        {
+          "name": "header",
+          "digest": "0x918a05d9c9d06a7d523162031fd287565283c41ae561df5d1059c24baa7901af"
+        },
+        {
+          "name": "blockTransactions",
+          "digest": "0x2df63cc2dbb9e1cba06044d9a3a7140787be38dfbbe52432d0f6716a08a3d8f8"
+        },
+        {
+          "name": "targetTransaction",
+          "digest": "0xfa86345312c3c240e862c6f151f4a5696bef43679869d7971f227a267178e909"
+        }
+      ],
+      "fields": [
+        {
+          "name": "chainId",
+          "value": "1",
+          "consistent": true
+        },
+        {
+          "name": "blockNumber",
+          "value": "18765432",
+          "consistent": true
+        },
+        {
+          "name": "blockHash",
+          "value": "0x8b468f8c33079f1f3c53d73ea8a2a4be37ab247016376ddcdadff6fe7795d30a",
+          "consistent": true
+        },
+        {
+          "name": "parentHash",
+          "value": "0x51624688bbc9319b09c182899633a6a22f8643d4a2b7576cd4801776b02330b1",
+          "consistent": true
+        },
+        {
+          "name": "stateRoot",
+          "value": "0xc039ba8e375edd4857396673862627218573be88bbf3624b222d100d874032cb",
+          "consistent": true
+        },
+        {
+          "name": "transactionsRoot",
+          "value": "0x4f5535d2984ae55ebe3ddeb3a73e1d6f5b66783492854ed61901949babac7e37",
+          "consistent": true
+        },
+        {
+          "name": "receiptsRoot",
+          "value": "0xdf82ee2c015a57f39f19327157b53c08107336e52e0573e166a2890496b36ddd",
+          "consistent": true
+        },
+        {
+          "name": "txHash",
+          "value": "0xfcdcb22a5317174a37dda3da7b5da118521e5da53ec5fde44e960de2fdfc1d89",
+          "consistent": true
+        },
+        {
+          "name": "txIndex",
+          "value": "0",
+          "consistent": true
+        }
+      ]
+    }
+  },
+  "txHash": "0xfcdcb22a5317174a37dda3da7b5da118521e5da53ec5fde44e960de2fdfc1d89",
+  "txIndex": 0,
+  "transactionRlp": "0x02f8730103843b9aca00847735940083015f9094100000000000000000000000000000000000000184075bcd1584abcdef01c001a0313cdb4a12ddb460d1d53b93a7e496ef0965e1b3816aa3e66e1bb1ec559c3fc4a03bbcca25735ae62ab1299aaca12368ac23b60610e5a5e92538f6e6d1578ad26e",
+  "proofNodes": [
+    "0xf87930b87602f8730103843b9aca00847735940083015f9094100000000000000000000000000000000000000184075bcd1584abcdef01c001a0313cdb4a12ddb460d1d53b93a7e496ef0965e1b3816aa3e66e1bb1ec559c3fc4a03bbcca25735ae62ab1299aaca12368ac23b60610e5a5e92538f6e6d1578ad26e",
+    "0xf851a0c970074b3cd0ca720d37d0c1c43153fd6af4bf9c2a3a46c8a4ed8c59e866e0de80808080808080a01382491d6c3b6c5b639f60597698ee5793a3780c97fbef83c701556e1229b0758080808080808080"
+  ]
+}

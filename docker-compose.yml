@@ -1,0 +1,13 @@
+name: testnet
+
+services:
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:stable
+    entrypoint:
+      - anvil
+      - --host=0.0.0.0
+      - --auto-impersonate
+      - --no-request-size-limit
+      - --chain-id=1337
+    ports:
+      - 8545:8545
