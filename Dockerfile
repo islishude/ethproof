@@ -11,5 +11,5 @@ RUN apk --no-cache add ca-certificates
 
 FROM gcr.io/distroless/base-debian13:latest
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=compiler /app/bin/ /usr/local/bin/
+COPY --from=compiler /app/bin/ethproof /usr/local/bin/
 ENTRYPOINT [ "ethproof" ]

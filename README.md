@@ -184,6 +184,15 @@ The e2e test expects Anvil on `http://127.0.0.1:8545` with chain ID `1337`. You 
 
 Go contract bindings are generated with geth `abigen v1`, not `--v2`.
 
+The Foundry profile is pinned for deterministic output across platforms and toolchain updates:
+
+- `solc_version = "0.8.28"`
+- `evm_version = "prague"`
+- `bytecode_hash = "none"`
+- `cbor_metadata = false`
+
+This keeps `forge inspect ... bytecode` stable for binding generation instead of depending on Foundry defaults or metadata hashes embedded at the end of the bytecode.
+
 Regenerate them with:
 
 ```bash
