@@ -50,7 +50,4 @@ jobs:
           version: ${{ env.FOUNDRY_VERSION }}
       - run: make bindings build
       - run: git diff --exit-code
-      - run: make e2e-up
       - run: make e2e-test
-      - if: always()
-        run: make e2e-down
