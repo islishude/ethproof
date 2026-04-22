@@ -73,13 +73,27 @@ The CLI is now primarily config-driven. Start from [config.example.json](/Users/
 
 Runtime logs use the standard library `log/slog`. By default the CLI writes `info`-level text logs to `stderr`; `--log-level` and `--log-format` override the top-level `logging.level` / `logging.format` config values. Help text still prints to `stdout`, and usage errors still print to `stderr` without going through the logger. The `proof` package itself is silent by default and does not emit runtime logs.
 
+## Build and install the CLI with:
+
+```bash
+make build
+```
+
+You'll have a compiled `ethproof` binary in `./bin/ethproof` that you can run with `--help` for usage info.
+
+You can install it to your `$GOPATH/bin` with:
+
+```bash
+make install
+```
+
 ### Generate state proof
 
 ```bash
-go run ./cmd/ethproof generate state --config ./config.example.json
+ethproof generate state --config ./config.example.json
 
 # or override runtime logging for a single invocation
-go run ./cmd/ethproof generate state --config ./config.example.json --log-level debug --log-format json
+ethproof generate state --config ./config.example.json --log-level debug --log-format json
 ```
 
 `generate state` accepts repeatable `--slot` flags, and config uses `generate.state.slots`.
@@ -87,13 +101,13 @@ go run ./cmd/ethproof generate state --config ./config.example.json --log-level 
 ### Generate receipt / event proof
 
 ```bash
-go run ./cmd/ethproof generate receipt --config ./config.example.json
+ethproof generate receipt --config ./config.example.json
 ```
 
 ### Generate transaction proof
 
 ```bash
-go run ./cmd/ethproof generate tx --config ./config.example.json
+ethproof generate tx --config ./config.example.json
 ```
 
 ### Resolve Solidity storage slots
@@ -117,7 +131,7 @@ Dynamic containers must be indexed explicitly. Examples:
 Foundry artifact example:
 
 ```bash
-go run ./cmd/ethproof resolve slot \
+ethproof resolve slot \
   --compiler-output ./out/ProofDemo.sol/ProofDemo.json \
   --contract ProofDemo \
   --var value \
@@ -127,7 +141,7 @@ go run ./cmd/ethproof resolve slot \
 Hardhat build-info example:
 
 ```bash
-go run ./cmd/ethproof resolve slot \
+ethproof resolve slot \
   --compiler-output ./artifacts/build-info/<build-info>.json \
   --contract contracts/MyContract.sol:MyContract \
   --var 'data[4][9].b' \
@@ -139,17 +153,17 @@ go run ./cmd/ethproof resolve slot \
 `verify` requires its own independent RPC set in `verify.<kind>.rpcs` or via `--rpc`. It does not reuse the generation RPC list from the proof JSON or from `generate.*.rpcs`.
 
 ```bash
-go run ./cmd/ethproof verify state --config ./config.example.json
+ethproof verify state --config ./config.example.json
 
-go run ./cmd/ethproof verify receipt --config ./config.example.json
+ethproof verify receipt --config ./config.example.json
 
-go run ./cmd/ethproof verify tx --config ./config.example.json
+ethproof verify tx --config ./config.example.json
 ```
 
 Example flag override:
 
 ```bash
-go run ./cmd/ethproof verify tx \
+ethproof verify tx \
   --config ./config.example.json \
   --rpc https://verify-rpc-1.example \
   --rpc https://verify-rpc-2.example \
@@ -240,20 +254,6 @@ The default test flow is offline and deterministic:
 - `make e2e-test` only runs the local Anvil-backed `TestAnvilE2E` mainline path.
 - `TestAnvilE2E` is skipped unless `ETH_PROOF_REQUIRE_E2E=1`, so plain `go test ./...` remains offline-stable.
 
-## Make targets
-
-```bash
-make build
-make install
-make test
-make fixtures
-make bindings
-make e2e-up
-make e2e-test
-make e2e-down
-make e2e
-```
-
 ## Local Anvil e2e
 
 The local e2e flow uses the checked-in [docker-compose.yml](/Users/sudoless/codespace/coding/eth-proof/docker-compose.yml) plus the two demo contracts:
@@ -272,15 +272,7 @@ The local e2e flow uses the checked-in [docker-compose.yml](/Users/sudoless/code
 Start the node and run e2e:
 
 ```bash
-make e2e-up
 make e2e-test
-make e2e-down
-```
-
-Or run the convenience target:
-
-```bash
-make e2e
 ```
 
 The e2e test expects Anvil on `http://127.0.0.1:8545` with chain ID `1337`. You can override the RPC URL with `ETH_PROOF_E2E_RPC`.

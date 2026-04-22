@@ -2,7 +2,7 @@ name: testnet
 
 services:
   anvil:
-    image: ghcr.io/foundry-rs/foundry:stable
+    image: ghcr.io/foundry-rs/foundry:v1.5.1
     entrypoint:
       - anvil
       - --host=0.0.0.0
