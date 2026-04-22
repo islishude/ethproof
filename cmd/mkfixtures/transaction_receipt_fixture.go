@@ -131,7 +131,7 @@ func buildOfflineTransactionReceiptFixture() (blockSnapshotHeader, types.Transac
 	return header, txs, receipts, 0, consensus, nil
 }
 
-func buildOfflineReceiptFixture(header blockSnapshotHeader, txs types.Transactions, receipts types.Receipts, txIndex uint64, consensus SourceConsensus) (*ReceiptProofPackage, error) {
+func buildOfflineReceiptFixture(header blockSnapshotHeader, txs types.Transactions, receipts types.Receipts, txIndex uint64) (*ReceiptProofPackage, error) {
 	blockTransactions := make([]hexutil.Bytes, len(txs))
 	blockReceipts := make([]hexutil.Bytes, len(receipts))
 	for i := range txs {

@@ -43,7 +43,7 @@ func BuildOfflineFixtures() (*OfflineFixtures, error) {
 	if err != nil {
 		return nil, err
 	}
-	receiptFixture, err := buildOfflineReceiptFixture(txReceiptHeader, txs, receipts, txIndex, receiptConsensus)
+	receiptFixture, err := buildOfflineReceiptFixture(txReceiptHeader, txs, receipts, txIndex)
 	if err != nil {
 		return nil, err
 	}
