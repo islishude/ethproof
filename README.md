@@ -98,6 +98,44 @@ go run ./cmd/ethproof generate receipt --config ./config.example.json
 go run ./cmd/ethproof generate tx --config ./config.example.json
 ```
 
+### Resolve Solidity storage slots
+
+`resolve slot` resolves a Solidity variable path into concrete storage slot metadata from compiler output. This is independent from `generate state`; use it to compute slot keys first, then pass the resolved slot(s) into `generate state --slot`.
+
+The command supports three input shapes:
+
+- raw Solidity `storageLayout` JSON
+- Foundry artifacts that include `storageLayout`
+- Hardhat build-info JSON via `output.contracts`
+
+Dynamic containers must be indexed explicitly. Examples:
+
+- `value`
+- `config.owner`
+- `balances[0x1111111111111111111111111111111111111111]`
+- `data[4][9].b`
+- `blob@word(1)`
+
+Foundry artifact example:
+
+```bash
+go run ./cmd/ethproof resolve slot \
+  --compiler-output ./out/ProofDemo.sol/ProofDemo.json \
+  --contract ProofDemo \
+  --var value \
+  --format artifact
+```
+
+Hardhat build-info example:
+
+```bash
+go run ./cmd/ethproof resolve slot \
+  --compiler-output ./artifacts/build-info/<build-info>.json \
+  --contract contracts/MyContract.sol:MyContract \
+  --var 'data[4][9].b' \
+  --format build-info
+```
+
 ### Verify proofs
 
 `verify` requires its own independent RPC set in `verify.<kind>.rpcs` or via `--rpc`. It does not reuse the generation RPC list from the proof JSON or from `generate.*.rpcs`.
@@ -213,11 +251,18 @@ make live-test
 
 ## Local Anvil e2e
 
-The local e2e flow uses the checked-in [docker-compose.yml](/Users/sudoless/codespace/coding/eth-proof/docker-compose.yml) and a tiny Foundry contract [contracts/ProofDemo.sol](/Users/sudoless/codespace/coding/eth-proof/contracts/ProofDemo.sol):
+The local e2e flow uses the checked-in [docker-compose.yml](/Users/sudoless/codespace/coding/eth-proof/docker-compose.yml) plus two Foundry demo contracts:
 
-- `uint256 public value` keeps the state proof target fixed at storage `slot 0`
-- `setValue(uint256,bytes32)` updates storage and emits `ValueUpdated(address indexed caller, bytes32 indexed marker, uint256 value)`
-- the same transaction drives `transaction proof`, `receipt/event proof`, and `state proof`
+- [contracts/ProofDemo.sol](/Users/sudoless/codespace/coding/eth-proof/contracts/ProofDemo.sol) keeps the fixed-slot baseline path for a simple `uint256 public value`.
+- [contracts/ProofComplexDemo.sol](/Users/sudoless/codespace/coding/eth-proof/contracts/ProofComplexDemo.sol) exercises nested mapping, dynamic array, mapping-to-struct, and long `string` / `bytes` storage resolved through `resolve slot`.
+- the simple flow still drives `transaction proof`, `receipt/event proof`, and `state proof` from one transaction.
+- the complex flow additionally resolves these storage queries from the Foundry artifact before state proof generation:
+  - `balances[caller]`
+  - `history[caller][2]`
+  - `positions[caller][positionId].quantity`
+  - `positions[caller][positionId].lastPrice`
+  - `note@word(0)`
+  - `payload@word(0)`
 
 Start the node and run e2e:
 
@@ -245,8 +290,11 @@ The Foundry profile is pinned for deterministic output across platforms and tool
 - `evm_version = "prague"`
 - `bytecode_hash = "none"`
 - `cbor_metadata = false`
+- `extra_output = ["storageLayout"]`
 
 This keeps `forge inspect ... bytecode` stable for binding generation instead of depending on Foundry defaults or metadata hashes embedded at the end of the bytecode.
+
+The extra compiler output also makes repo-local Foundry artifacts usable with `ethproof resolve slot` directly from `out/*.json`.
 
 Regenerate them with:
 
@@ -254,18 +302,11 @@ Regenerate them with:
 make bindings
 ```
 
-The target runs:
+The target runs `forge build`, then emits bindings for both demo contracts into [internal/e2e/bindings](/Users/sudoless/codespace/coding/eth-proof/internal/e2e/bindings):
 
 ```bash
-forge build
-forge inspect --json contracts/ProofDemo.sol:ProofDemo abi > ABI.json
-forge inspect contracts/ProofDemo.sol:ProofDemo bytecode > BIN.txt
-go tool github.com/ethereum/go-ethereum/cmd/abigen \
-  --abi ABI.json \
-  --bin BIN.txt \
-  --pkg bindings \
-  --type ProofDemo \
-  --out internal/e2e/bindings/proofdemo.go
+internal/e2e/bindings/proofdemo.go
+internal/e2e/bindings/proofcomplexdemo.go
 ```
 
 `make live-test` requires these environment variables:

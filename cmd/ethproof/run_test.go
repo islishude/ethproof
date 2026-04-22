@@ -11,6 +11,8 @@ func TestRunMainHelpPrintsUsageToStdout(t *testing.T) {
 		{name: "root long help", args: []string{"--help"}},
 		{name: "generate help", args: []string{"generate", "-h"}},
 		{name: "subcommand help", args: []string{"generate", "state", "--help"}},
+		{name: "resolve help", args: []string{"resolve", "-h"}},
+		{name: "resolve subcommand help", args: []string{"resolve", "slot", "--help"}},
 	}
 
 	for _, tt := range tests {

@@ -28,6 +28,8 @@ func run(args []string) error {
 	switch args[0] {
 	case "generate":
 		return runGenerate(args[1:])
+	case "resolve":
+		return runResolve(args[1:])
 	case "verify":
 		return runVerify(args[1:])
 	default:

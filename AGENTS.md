@@ -11,15 +11,16 @@ Start with [README.md](README.md) for proof semantics and CLI examples. Use [Mak
 - `proof/`: core proof generation, verification, RPC normalization, JSON I/O, and tests.
 - `cmd/ethproof/`: CLI entrypoint; keep it thin and delegate logic into `proof`.
 - `cmd/mkfixtures/`: generator for deterministic offline fixtures under `proof/testdata/`.
-- `contracts/ProofDemo.sol`: minimal contract used by local end-to-end tests.
-- `internal/e2e/bindings/`: generated Go bindings for the demo contract. Do not hand-edit generated files.
+- `contracts/ProofDemo.sol`: minimal fixed-slot contract used by local end-to-end tests.
+- `contracts/ProofComplexDemo.sol`: complex mapping/array/string/bytes contract used by local end-to-end tests.
+- `internal/e2e/bindings/`: generated Go bindings for the demo contracts. Do not hand-edit generated files.
 - `scripts/generate_bindings.sh`: binding generation workflow.
 
 ## Core Architecture
 
 The codebase supports exactly three proof flows, defined in [proof/types.go](proof/types.go):
 
-- `StateProofPackage`: account proof plus one storage slot proof against `stateRoot`.
+- `StateProofPackage`: account proof plus one or more storage slot proofs against `stateRoot`.
 - `ReceiptProofPackage`: receipt inclusion proof plus event claim against `receiptsRoot`.
 - `TransactionProofPackage`: transaction inclusion proof against `transactionsRoot`.
 
@@ -27,8 +28,8 @@ The codebase supports exactly three proof flows, defined in [proof/types.go](pro
 
 ## External Tooling
 
-- Go `1.26.1`.
-- `github.com/ethereum/go-ethereum v1.17.2` is the main protocol dependency.
+- Go `1.26.2` or the latest compatible version.
+- `github.com/ethereum/go-ethereum` is the main protocol dependency.
 - Foundry (`forge`) is used for the Solidity demo contract.
 - Anvil is used for local e2e testing through [docker-compose.yml](docker-compose.yml).
 - Contract bindings must be generated with geth `abigen v1` via [scripts/generate_bindings.sh](scripts/generate_bindings.sh), not with `abigen --v2`.
@@ -38,7 +39,7 @@ The codebase supports exactly three proof flows, defined in [proof/types.go](pro
 - Do not weaken the multi-RPC consensus model. Live proof generation is intentionally strict and fails on any normalized mismatch.
 - Preserve the public JSON shape in [proof/types.go](proof/types.go) unless the task explicitly requires a schema change.
 - Prefer adding or fixing logic in `proof/` over duplicating behavior in `cmd/ethproof/`.
-- Treat [internal/e2e/bindings/proofdemo.go](internal/e2e/bindings/proofdemo.go) as generated output. Regenerate it instead of editing it manually.
+- Treat [internal/e2e/bindings/proofdemo.go](internal/e2e/bindings/proofdemo.go) and [internal/e2e/bindings/proofcomplexdemo.go](internal/e2e/bindings/proofcomplexdemo.go) as generated output. Regenerate them instead of editing them manually.
 - When changing proof encoding, verification, or serialization, check whether offline fixtures in [proof/testdata](proof/testdata) need to be regenerated.
 - When changing the Solidity demo contract, regenerate bindings and re-run the Anvil e2e path.
 

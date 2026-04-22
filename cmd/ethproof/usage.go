@@ -9,6 +9,7 @@ const usageText = `Usage:
   ethproof generate state   [--config config.json] [--rpc URL ...] [--min-rpcs N] [--block N] [--account 0xADDR] [--slot 0xSLOT ...] [--out state.json] [--log-level LEVEL] [--log-format text|json]
   ethproof generate receipt [--config config.json] [--rpc URL ...] [--min-rpcs N] [--tx 0xHASH] [--log-index N] [--out receipt.json] [--log-level LEVEL] [--log-format text|json]
   ethproof generate tx      [--config config.json] [--rpc URL ...] [--min-rpcs N] [--tx 0xHASH] [--out tx.json] [--log-level LEVEL] [--log-format text|json]
+  ethproof resolve slot     [--compiler-output path] [--contract name-or-source:name] [--var query] [--format auto|layout|artifact|build-info] [--out result.json]
 
   ethproof verify state   [--config config.json] [--rpc URL ...] [--min-rpcs N] [--proof state.json] [--log-level LEVEL] [--log-format text|json]
   ethproof verify receipt [--config config.json] [--rpc URL ...] [--min-rpcs N] [--proof receipt.json] [--expect-emitter 0xADDR] [--expect-topic 0xHASH] [--expect-data 0xDATA] [--log-level LEVEL] [--log-format text|json]

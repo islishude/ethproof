@@ -5,18 +5,26 @@ ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
-ABI_PATH="$TMPDIR/ProofDemo.abi.json"
-BIN_PATH="$TMPDIR/ProofDemo.bin"
-OUT_PATH="$ROOT/internal/e2e/bindings/proofdemo.go"
+generate_binding() {
+  fqcn="$1"
+  type_name="$2"
+  out_name="$3"
+  abi_path="$TMPDIR/$type_name.abi.json"
+  bin_path="$TMPDIR/$type_name.bin"
+  out_path="$ROOT/internal/e2e/bindings/$out_name"
+
+  forge inspect --json "$fqcn" abi > "$abi_path"
+  forge inspect "$fqcn" bytecode > "$bin_path"
+  go tool github.com/ethereum/go-ethereum/cmd/abigen \
+    --abi "$abi_path" \
+    --bin "$bin_path" \
+    --pkg bindings \
+    --type "$type_name" \
+    --out "$out_path"
+}
 
 cd "$ROOT"
 forge build
-forge inspect --json contracts/ProofDemo.sol:ProofDemo abi > "$ABI_PATH"
-forge inspect contracts/ProofDemo.sol:ProofDemo bytecode > "$BIN_PATH"
-mkdir -p "$(dirname "$OUT_PATH")"
-go tool github.com/ethereum/go-ethereum/cmd/abigen \
-  --abi "$ABI_PATH" \
-  --bin "$BIN_PATH" \
-  --pkg bindings \
-  --type ProofDemo \
-  --out "$OUT_PATH"
+mkdir -p "$ROOT/internal/e2e/bindings"
+generate_binding contracts/ProofDemo.sol:ProofDemo ProofDemo proofdemo.go
+generate_binding contracts/ProofComplexDemo.sol:ProofComplexDemo ProofComplexDemo proofcomplexdemo.go

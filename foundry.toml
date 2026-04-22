@@ -5,6 +5,7 @@ optimizer_runs = 200
 evm_version = "prague"
 bytecode_hash = "none"
 cbor_metadata = false
+extra_output = ["storageLayout"]
 
 src = "contracts"
 out = "out"

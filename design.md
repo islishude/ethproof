@@ -38,7 +38,7 @@ flowchart TD
     UTIL["internal/proofutil<br/>Encoding / trie / digest / proof node helpers"]
     RPC["Ethereum RPC Sources"]
     DATA["proof/testdata/*.json"]
-    E2E["Anvil + ProofDemo.sol + e2e tests"]
+    E2E["Anvil + demo contracts + e2e tests"]
 
     CLI --> PROOF
     FIX --> PROOF
@@ -94,8 +94,9 @@ flowchart TD
 | `cmd/mkfixtures/*.go` | Fixture construction, offline digests, shared helpers |
 | `proof/testdata/*.json` | Deterministic offline fixtures |
 | `proof/*_test.go` | Core proof unit tests, fixture regression tests, verify-RPC tests, e2e |
-| `contracts/ProofDemo.sol` | Minimal contract used by local e2e |
-| `internal/e2e/bindings/proofdemo.go` | Generated Go binding, must not be edited by hand |
+| `contracts/ProofDemo.sol` | Minimal fixed-slot contract used by local e2e |
+| `contracts/ProofComplexDemo.sol` | Complex mapping/array/string/bytes contract used by local e2e |
+| `internal/e2e/bindings/*.go` | Generated Go bindings, must not be edited by hand |
 
 ## 5. Public Data Model
 
@@ -110,7 +111,7 @@ flowchart TD
     - digests of normalized inputs
     - field lists for human auditability
 - `StateProofPackage`
-  - account proof + single storage slot proof
+  - account proof + one or more storage slot proofs
 - `ReceiptProofPackage`
   - receipt inclusion proof + event claim
 - `TransactionProofPackage`
@@ -412,7 +413,7 @@ The following invariants must be preserved when changing the code:
 2. Do not change the public JSON structure in `proof/types.go` unless a schema change is explicitly required.
 3. CLI `verify` must use an independent verify RPC set and must not reuse generation metadata.
 4. Public `Verify*ProofPackage` APIs must remain usable offline.
-5. `internal/e2e/bindings/proofdemo.go` is generated output and must not be edited by hand.
+5. `internal/e2e/bindings/*.go` is generated output and must not be edited by hand.
 6. Logic related to proof correctness should stay in `proof/`; do not duplicate it in the CLI.
 
 ## 15. Extension and Refactoring Guidance
