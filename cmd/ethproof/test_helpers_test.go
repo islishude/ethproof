@@ -59,3 +59,15 @@ func captureCommandOutput(t *testing.T, fn func()) (string, string) {
 
 	return string(stdout), string(stderr)
 }
+
+func withCLIDeps(t *testing.T, mutate func(*commandDeps)) {
+	t.Helper()
+
+	original := cliDeps
+	updated := original
+	mutate(&updated)
+	cliDeps = updated
+	t.Cleanup(func() {
+		cliDeps = original
+	})
+}

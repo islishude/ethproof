@@ -6,9 +6,7 @@ This project generates and verifies three Ethereum Merkle Patricia Trie proof ty
 - `receipt(event)`: receipt inclusion proof against `receiptsRoot`, then event matching inside the receipt
 - `transaction`: transaction inclusion proof against `transactionsRoot`
 
-It ships with deterministic offline fixtures under [proof/testdata](/Users/sudoless/codespace/coding/eth-proof/proof/testdata) and can optionally generate live proofs from Ethereum mainnet RPCs.
-
-It also includes a local Anvil-backed e2e path that deploys a minimal test contract, generates all three proof types from a real local transaction, and validates them through both the Go API and the CLI.
+It ships with deterministic offline fixtures under [proof/testdata](/Users/sudoless/codespace/coding/eth-proof/proof/testdata) plus a local Anvil-backed e2e path that deploys a minimal test contract, generates all three proof types from a real local transaction, and validates them through both the Go API and the CLI.
 
 ## Proof model
 
@@ -234,6 +232,14 @@ Regenerate them with:
 go run ./cmd/mkfixtures --out-dir ./proof/testdata --log-level info
 ```
 
+## Testing
+
+The default test flow is offline and deterministic:
+
+- `make test` runs the unit and offline integration suites with `go test -v -race ./...`.
+- `make e2e-test` only runs the local Anvil-backed `TestAnvilE2E` mainline path.
+- `TestAnvilE2E` is skipped unless `ETH_PROOF_REQUIRE_E2E=1`, so plain `go test ./...` remains offline-stable.
+
 ## Make targets
 
 ```bash
@@ -246,23 +252,22 @@ make e2e-up
 make e2e-test
 make e2e-down
 make e2e
-make live-test
 ```
 
 ## Local Anvil e2e
 
-The local e2e flow uses the checked-in [docker-compose.yml](/Users/sudoless/codespace/coding/eth-proof/docker-compose.yml) plus two Foundry demo contracts:
+The local e2e flow uses the checked-in [docker-compose.yml](/Users/sudoless/codespace/coding/eth-proof/docker-compose.yml) plus the two demo contracts:
 
-- [contracts/ProofDemo.sol](/Users/sudoless/codespace/coding/eth-proof/contracts/ProofDemo.sol) keeps the fixed-slot baseline path for a simple `uint256 public value`.
-- [contracts/ProofComplexDemo.sol](/Users/sudoless/codespace/coding/eth-proof/contracts/ProofComplexDemo.sol) exercises nested mapping, dynamic array, mapping-to-struct, and long `string` / `bytes` storage resolved through `resolve slot`.
-- the simple flow still drives `transaction proof`, `receipt/event proof`, and `state proof` from one transaction.
-- the complex flow additionally resolves these storage queries from the Foundry artifact before state proof generation:
+- [contracts/ProofDemo.sol](/Users/sudoless/codespace/coding/eth-proof/contracts/ProofDemo.sol) drives the proof-generation mainline.
+- [contracts/ProofComplexDemo.sol](/Users/sudoless/codespace/coding/eth-proof/contracts/ProofComplexDemo.sol) provides a narrow resolver compatibility regression against real Foundry artifacts and real chain storage.
+- `api_mainline` deploys the simple contract, then generates and verifies `transaction`, `receipt`, and `state` proofs.
+- `cli_mainline` first resolves the `value` slot from the simple contract artifact and runs the CLI `generate` / `verify` flow, then runs a focused `ProofComplexDemo` `resolve slot` regression for:
   - `balances[caller]`
   - `history[caller][2]`
-  - `positions[caller][positionId].quantity`
   - `positions[caller][positionId].lastPrice`
   - `note@word(0)`
   - `payload@word(0)`
+- the complex resolver stage compares each resolved slot against the contract's actual storage word at the mined block, rather than generating a proof.
 
 Start the node and run e2e:
 
@@ -307,27 +312,6 @@ The target runs `forge build`, then emits bindings for both demo contracts into 
 ```bash
 internal/e2e/bindings/proofdemo.go
 internal/e2e/bindings/proofcomplexdemo.go
-```
-
-`make live-test` requires these environment variables:
-
-- `ETH_PROOF_RPCS`: comma-separated list of at least 3 archive-capable RPC URLs
-- `ETH_PROOF_LIVE_TX`: transaction hash used for `transaction` and `receipt` proofs
-- `ETH_PROOF_LIVE_LOG_INDEX`: log index inside that receipt
-- `ETH_PROOF_LIVE_STATE_BLOCK`: block number used for the state proof
-- `ETH_PROOF_LIVE_ACCOUNT`: account address for the state proof
-- `ETH_PROOF_LIVE_SLOTS`: comma-separated 32-byte storage slot keys for the state proof
-
-Example:
-
-```bash
-ETH_PROOF_RPCS="https://rpc1,https://rpc2,https://rpc3" \
-ETH_PROOF_LIVE_TX=0x... \
-ETH_PROOF_LIVE_LOG_INDEX=0 \
-ETH_PROOF_LIVE_STATE_BLOCK=22000000 \
-ETH_PROOF_LIVE_ACCOUNT=0x... \
-ETH_PROOF_LIVE_SLOTS=0x...,0x... \
-make live-test
 ```
 
 ## Notes

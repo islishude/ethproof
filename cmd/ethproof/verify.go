@@ -43,10 +43,10 @@ func runVerifyState(args []string) error {
 	defer cancel()
 
 	var pkg proof.StateProofPackage
-	if err := proof.LoadJSON(cfg.ProofPath, &pkg); err != nil {
+	if err := cliDeps.loadJSON(cfg.ProofPath, &pkg); err != nil {
 		return wrapRuntimeError(logger, fmt.Errorf("read state proof json: %w", err))
 	}
-	if err := proof.VerifyStateProofPackageAgainstRPCs(ctx, &pkg, cfg.VerifyRequest); err != nil {
+	if err := cliDeps.verifyState(ctx, &pkg, cfg.VerifyRequest); err != nil {
 		return wrapRuntimeError(logger, fmt.Errorf("verify state proof: %w", err))
 	}
 
@@ -67,10 +67,10 @@ func runVerifyReceipt(args []string) error {
 	defer cancel()
 
 	var pkg proof.ReceiptProofPackage
-	if err := proof.LoadJSON(cfg.ProofPath, &pkg); err != nil {
+	if err := cliDeps.loadJSON(cfg.ProofPath, &pkg); err != nil {
 		return wrapRuntimeError(logger, fmt.Errorf("read receipt proof json: %w", err))
 	}
-	if err := proof.VerifyReceiptProofPackageWithExpectationsAgainstRPCs(ctx, &pkg, cfg.Expectations, cfg.VerifyRequest); err != nil {
+	if err := cliDeps.verifyReceipt(ctx, &pkg, cfg.Expectations, cfg.VerifyRequest); err != nil {
 		return wrapRuntimeError(logger, fmt.Errorf("verify receipt proof: %w", err))
 	}
 
@@ -91,10 +91,10 @@ func runVerifyTransaction(args []string) error {
 	defer cancel()
 
 	var pkg proof.TransactionProofPackage
-	if err := proof.LoadJSON(cfg.ProofPath, &pkg); err != nil {
+	if err := cliDeps.loadJSON(cfg.ProofPath, &pkg); err != nil {
 		return wrapRuntimeError(logger, fmt.Errorf("read transaction proof json: %w", err))
 	}
-	if err := proof.VerifyTransactionProofPackageAgainstRPCs(ctx, &pkg, cfg.VerifyRequest); err != nil {
+	if err := cliDeps.verifyTransaction(ctx, &pkg, cfg.VerifyRequest); err != nil {
 		return wrapRuntimeError(logger, fmt.Errorf("verify transaction proof: %w", err))
 	}
 

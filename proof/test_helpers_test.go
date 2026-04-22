@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"slices"
-	"strings"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -16,127 +16,89 @@ import (
 	"github.com/islishude/ethproof/internal/proofutil"
 )
 
-func TestGenerateStateProofFromSources(t *testing.T) {
-	req, verifyReq, wantNames := testStateProofSourcesRequest(t)
-
-	pkg, err := GenerateStateProofFromSources(context.Background(), req)
-	if err != nil {
-		t.Fatalf("GenerateStateProofFromSources: %v", err)
-	}
-	if !slices.Equal(pkg.Block.SourceConsensus.RPCs, wantNames) {
-		t.Fatalf("unexpected source names: got %v want %v", pkg.Block.SourceConsensus.RPCs, wantNames)
-	}
-	if err := VerifyStateProofPackage(pkg); err != nil {
-		t.Fatalf("VerifyStateProofPackage: %v", err)
-	}
-	if err := VerifyStateProofPackageAgainstSources(context.Background(), pkg, verifyReq); err != nil {
-		t.Fatalf("VerifyStateProofPackageAgainstSources: %v", err)
-	}
+func fixturePath(name string) string {
+	return filepath.Join("testdata", name)
 }
 
-func TestGenerateStateProofFromSourcesRejectsEmptySlots(t *testing.T) {
-	req, _, _ := testStateProofSourcesRequest(t)
-	req.Slots = nil
+func repoRoot(t *testing.T) string {
+	t.Helper()
 
-	_, err := GenerateStateProofFromSources(context.Background(), req)
-	if err == nil {
-		t.Fatal("expected empty slots to fail")
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("failed to determine caller path")
 	}
-	if !strings.Contains(err.Error(), "at least one storage slot") {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	return filepath.Dir(filepath.Dir(file))
 }
 
-func TestGenerateStateProofFromSourcesRejectsDuplicateSlots(t *testing.T) {
-	req, _, _ := testStateProofSourcesRequest(t)
-	req.Slots = []common.Hash{req.Slots[0], req.Slots[0]}
+func mustLoadStateFixture(t *testing.T) StateProofPackage {
+	t.Helper()
 
-	_, err := GenerateStateProofFromSources(context.Background(), req)
-	if err == nil {
-		t.Fatal("expected duplicate slots to fail")
+	var pkg StateProofPackage
+	if err := LoadJSON(fixturePath("state_fixture.json"), &pkg); err != nil {
+		t.Fatalf("load state fixture: %v", err)
 	}
-	if !strings.Contains(err.Error(), "duplicate storage slot") {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	return pkg
 }
 
-func TestNormalizeStorageProofResultsRejectsCountMismatch(t *testing.T) {
-	fixture := mustLoadStateFixture(t)
-	_, err := normalizeStorageProofResults(storageProofSlotsFromFixture(fixture), fixture.AccountClaim.StorageRoot, storageResultsFromFixture(fixture)[:1])
-	if err == nil {
-		t.Fatal("expected storage proof count mismatch")
+func mustLoadReceiptFixture(t *testing.T) ReceiptProofPackage {
+	t.Helper()
+
+	var pkg ReceiptProofPackage
+	if err := LoadJSON(fixturePath("receipt_fixture.json"), &pkg); err != nil {
+		t.Fatalf("load receipt fixture: %v", err)
 	}
-	if !strings.Contains(err.Error(), "expected 2 storage proofs, got 1") {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	return pkg
 }
 
-func TestNormalizeStorageProofResultsRejectsUnexpectedKey(t *testing.T) {
-	fixture := mustLoadStateFixture(t)
-	results := storageResultsFromFixture(fixture)
-	results[1].Key = common.HexToHash("0x03").Hex()
+func mustLoadTransactionFixture(t *testing.T) TransactionProofPackage {
+	t.Helper()
 
-	_, err := normalizeStorageProofResults(storageProofSlotsFromFixture(fixture), fixture.AccountClaim.StorageRoot, results)
-	if err == nil {
-		t.Fatal("expected unexpected storage proof key")
+	var pkg TransactionProofPackage
+	if err := LoadJSON(fixturePath("transaction_fixture.json"), &pkg); err != nil {
+		t.Fatalf("load transaction fixture: %v", err)
 	}
-	if !strings.Contains(err.Error(), "unexpected storage proof key") {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	return pkg
 }
 
-func TestNormalizeStorageProofResultsRejectsDuplicateKey(t *testing.T) {
-	fixture := mustLoadStateFixture(t)
-	results := storageResultsFromFixture(fixture)
-	results[1].Key = results[0].Key
-
-	_, err := normalizeStorageProofResults(storageProofSlotsFromFixture(fixture), fixture.AccountClaim.StorageRoot, results)
-	if err == nil {
-		t.Fatal("expected duplicate storage proof key")
-	}
-	if !strings.Contains(err.Error(), "duplicate storage proof key") {
-		t.Fatalf("unexpected error: %v", err)
-	}
+func cloneTransactionPackage(in TransactionProofPackage) TransactionProofPackage {
+	out := in
+	out.ProofNodes = cloneHexBytesList(in.ProofNodes)
+	out.TransactionRLP = proofutil.CanonicalBytes(in.TransactionRLP)
+	return out
 }
 
-func TestGenerateReceiptProofFromSources(t *testing.T) {
-	req, verifyReq, wantNames := testReceiptProofSourcesRequest(t)
-
-	pkg, err := GenerateReceiptProofFromSources(context.Background(), req)
-	if err != nil {
-		t.Fatalf("GenerateReceiptProofFromSources: %v", err)
-	}
-	if !slices.Equal(pkg.Block.SourceConsensus.RPCs, wantNames) {
-		t.Fatalf("unexpected source names: got %v want %v", pkg.Block.SourceConsensus.RPCs, wantNames)
-	}
-	if err := VerifyReceiptProofPackage(pkg); err != nil {
-		t.Fatalf("VerifyReceiptProofPackage: %v", err)
-	}
-	if err := VerifyReceiptProofPackageWithExpectationsAgainstSources(context.Background(), pkg, &ReceiptExpectations{
-		Emitter: &pkg.Event.Address,
-		Topics:  append([]common.Hash(nil), pkg.Event.Topics...),
-		Data:    append([]byte(nil), pkg.Event.Data...),
-	}, verifyReq); err != nil {
-		t.Fatalf("VerifyReceiptProofPackageWithExpectationsAgainstSources: %v", err)
-	}
+func cloneReceiptPackage(in ReceiptProofPackage) ReceiptProofPackage {
+	out := in
+	out.TransactionRLP = proofutil.CanonicalBytes(in.TransactionRLP)
+	out.ReceiptRLP = proofutil.CanonicalBytes(in.ReceiptRLP)
+	out.ProofNodes = cloneHexBytesList(in.ProofNodes)
+	out.Event.Topics = append([]common.Hash(nil), in.Event.Topics...)
+	out.Event.Data = proofutil.CanonicalBytes(in.Event.Data)
+	return out
 }
 
-func TestGenerateTransactionProofFromSources(t *testing.T) {
-	req, verifyReq, wantNames := testTransactionProofSourcesRequest(t)
+func cloneStatePackage(in StateProofPackage) StateProofPackage {
+	out := in
+	out.AccountRLP = proofutil.CanonicalBytes(in.AccountRLP)
+	out.AccountProofNodes = cloneHexBytesList(in.AccountProofNodes)
+	out.StorageProofs = cloneStateStorageProofs(in.StorageProofs)
+	return out
+}
 
-	pkg, err := GenerateTransactionProofFromSources(context.Background(), req)
-	if err != nil {
-		t.Fatalf("GenerateTransactionProofFromSources: %v", err)
+func mutateHexNode(t *testing.T, value hexutil.Bytes) hexutil.Bytes {
+	t.Helper()
+
+	raw := common.CopyBytes(value)
+	raw[0] ^= 0x01
+	return proofutil.CanonicalBytes(raw)
+}
+
+func cloneHexBytesList(in []hexutil.Bytes) []hexutil.Bytes {
+	out := make([]hexutil.Bytes, len(in))
+	for i := range in {
+		out[i] = proofutil.CanonicalBytes(in[i])
 	}
-	if !slices.Equal(pkg.Block.SourceConsensus.RPCs, wantNames) {
-		t.Fatalf("unexpected source names: got %v want %v", pkg.Block.SourceConsensus.RPCs, wantNames)
-	}
-	if err := VerifyTransactionProofPackage(pkg); err != nil {
-		t.Fatalf("VerifyTransactionProofPackage: %v", err)
-	}
-	if err := VerifyTransactionProofPackageAgainstSources(context.Background(), pkg, verifyReq); err != nil {
-		t.Fatalf("VerifyTransactionProofPackageAgainstSources: %v", err)
-	}
+	return out
 }
 
 type fakeHeaderSource struct {
@@ -200,8 +162,14 @@ func (s *fakeStateSource) GetProof(_ context.Context, account common.Address, ke
 	if account != s.expectedAccount {
 		return nil, fmt.Errorf("unexpected account %s", account)
 	}
-	if !slices.Equal(keys, encodeStateSlots(s.expectedSlots)) {
+	if got, want := keys, stateSlotKeys(s.expectedSlots); len(got) != len(want) {
 		return nil, fmt.Errorf("unexpected proof keys %v", keys)
+	} else {
+		for i := range got {
+			if got[i] != want[i] {
+				return nil, fmt.Errorf("unexpected proof keys %v", keys)
+			}
+		}
 	}
 	return cloneAccountResult(s.proof), nil
 }
@@ -245,10 +213,7 @@ func (s *fakeReceiptSource) BlockByHash(_ context.Context, blockHash common.Hash
 	if s.blockErr != nil {
 		return nil, s.blockErr
 	}
-	if s.block == nil {
-		return nil, fmt.Errorf("block unavailable")
-	}
-	if got := s.block.Hash(); got != blockHash {
+	if s.block == nil || s.block.Hash() != blockHash {
 		return nil, fmt.Errorf("unknown block %s", blockHash)
 	}
 	return s.block, nil
@@ -290,7 +255,10 @@ func testStateProofSourcesRequest(t *testing.T) (StateProofSourcesRequest, Verif
 		StorageHash:  fixture.AccountClaim.StorageRoot,
 		StorageProof: storageResultsFromFixture(fixture),
 	}
-	slices.Reverse(proof.StorageProof)
+	for i, j := 0, len(proof.StorageProof)-1; i < j; i, j = i+1, j-1 {
+		proof.StorageProof[i], proof.StorageProof[j] = proof.StorageProof[j], proof.StorageProof[i]
+	}
+
 	names := []string{"source-a", "source-b", "source-c"}
 	sources := make([]StateSource, len(names))
 	headerSources := make([]HeaderSource, len(names))
@@ -309,6 +277,7 @@ func testStateProofSourcesRequest(t *testing.T) (StateProofSourcesRequest, Verif
 		sources[i] = source
 		headerSources[i] = source
 	}
+
 	return StateProofSourcesRequest{
 			Sources:       sources,
 			MinRPCSources: len(sources),
@@ -323,46 +292,15 @@ func testStateProofSourcesRequest(t *testing.T) (StateProofSourcesRequest, Verif
 		names
 }
 
-func storageResultsFromFixture(fixture StateProofPackage) []gethclient.StorageResult {
-	results := make([]gethclient.StorageResult, len(fixture.StorageProofs))
-	for i, storageProof := range fixture.StorageProofs {
-		value := new(big.Int)
-		if storageProof.Value != (common.Hash{}) {
-			value = new(big.Int).SetBytes(storageProof.Value[:])
-		}
-		results[i] = gethclient.StorageResult{
-			Key:   storageProof.Slot.Hex(),
-			Value: value,
-			Proof: encodeProofNodes(storageProof.ProofNodes),
-		}
-	}
-	return results
-}
-
-func storageProofSlotsFromFixture(fixture StateProofPackage) []common.Hash {
-	slots := make([]common.Hash, len(fixture.StorageProofs))
-	for i, storageProof := range fixture.StorageProofs {
-		slots[i] = storageProof.Slot
-	}
-	return slots
-}
-
-func encodeStateSlots(slots []common.Hash) []string {
-	encoded := make([]string, len(slots))
-	for i, slot := range slots {
-		encoded[i] = slot.Hex()
-	}
-	return encoded
-}
-
 func testReceiptProofSourcesRequest(t *testing.T) (ReceiptProofSourcesRequest, VerifySourcesRequest, []string) {
 	t.Helper()
 
-	sources, txHash, logIndex, _, names := testReceiptSourceSet(t)
+	sources, txHash, logIndex, names := testReceiptSourceSet(t)
 	headerSources := make([]HeaderSource, len(sources))
 	for i, source := range sources {
 		headerSources[i] = source
 	}
+
 	return ReceiptProofSourcesRequest{
 			Sources:       sources,
 			MinRPCSources: len(sources),
@@ -379,13 +317,14 @@ func testReceiptProofSourcesRequest(t *testing.T) (ReceiptProofSourcesRequest, V
 func testTransactionProofSourcesRequest(t *testing.T) (TransactionProofSourcesRequest, VerifySourcesRequest, []string) {
 	t.Helper()
 
-	sources, txHash, _, _, names := testReceiptSourceSet(t)
+	sources, txHash, _, names := testReceiptSourceSet(t)
 	txSources := make([]TransactionSource, len(sources))
 	headerSources := make([]HeaderSource, len(sources))
 	for i, source := range sources {
 		txSources[i] = source
 		headerSources[i] = source
 	}
+
 	return TransactionProofSourcesRequest{
 			Sources:       txSources,
 			MinRPCSources: len(txSources),
@@ -398,7 +337,7 @@ func testTransactionProofSourcesRequest(t *testing.T) (TransactionProofSourcesRe
 		names
 }
 
-func testReceiptSourceSet(t *testing.T) ([]ReceiptSource, common.Hash, uint, uint64, []string) {
+func testReceiptSourceSet(t *testing.T) ([]ReceiptSource, common.Hash, uint, []string) {
 	t.Helper()
 
 	to0 := common.HexToAddress("0x1000000000000000000000000000000000000001")
@@ -490,7 +429,32 @@ func testReceiptSourceSet(t *testing.T) ([]ReceiptSource, common.Hash, uint, uin
 			txsByHash: txsByHash,
 		}
 	}
-	return sources, tx1.Hash(), 0, 1, names
+
+	return sources, tx1.Hash(), 0, names
+}
+
+func storageResultsFromFixture(fixture StateProofPackage) []gethclient.StorageResult {
+	results := make([]gethclient.StorageResult, len(fixture.StorageProofs))
+	for i, storageProof := range fixture.StorageProofs {
+		value := new(big.Int)
+		if storageProof.Value != (common.Hash{}) {
+			value = new(big.Int).SetBytes(storageProof.Value[:])
+		}
+		results[i] = gethclient.StorageResult{
+			Key:   storageProof.Slot.Hex(),
+			Value: value,
+			Proof: encodeProofNodes(storageProof.ProofNodes),
+		}
+	}
+	return results
+}
+
+func storageProofSlotsFromFixture(fixture StateProofPackage) []common.Hash {
+	slots := make([]common.Hash, len(fixture.StorageProofs))
+	for i, storageProof := range fixture.StorageProofs {
+		slots[i] = storageProof.Slot
+	}
+	return slots
 }
 
 func encodeProofNodes(nodes []hexutil.Bytes) []string {
@@ -564,5 +528,23 @@ func cloneReceiptList(in []*types.Receipt) []*types.Receipt {
 	for i, receipt := range in {
 		out[i] = cloneReceipt(receipt)
 	}
+	return out
+}
+
+func blockSnapshotHeaderFromBlockContext(block BlockContext) blockSnapshotHeader {
+	return blockSnapshotHeader{
+		ChainID:          proofutil.CloneChainID(block.ChainID),
+		BlockNumber:      block.BlockNumber,
+		BlockHash:        block.BlockHash,
+		ParentHash:       block.ParentHash,
+		StateRoot:        block.StateRoot,
+		TransactionsRoot: block.TransactionsRoot,
+		ReceiptsRoot:     block.ReceiptsRoot,
+	}
+}
+
+func cloneBlockSnapshotHeader(in blockSnapshotHeader) blockSnapshotHeader {
+	out := in
+	out.ChainID = proofutil.CloneChainID(in.ChainID)
 	return out
 }

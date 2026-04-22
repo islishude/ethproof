@@ -9,81 +9,97 @@ import (
 	"github.com/islishude/ethproof/proof"
 )
 
-func TestParseGenerateStateArgsPassesMinRPCs(t *testing.T) {
-	cfg, err := parseGenerateStateArgs([]string{
-		"--rpc", "http://127.0.0.1:8545",
-		"--min-rpcs", "1",
-		"--block", "12",
-		"--account", "0x1111111111111111111111111111111111111111",
-		"--slot", "0x01",
-		"--slot", "0x02",
-		"--out", "state.json",
-	})
-	if err != nil {
-		t.Fatalf("parseGenerateStateArgs: %v", err)
+func TestParseGenerateRequests(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(*testing.T)
+	}{
+		{
+			name: "state direct flags",
+			run: func(t *testing.T) {
+				cfg, err := parseGenerateStateArgs([]string{
+					"--rpc", "http://127.0.0.1:8545",
+					"--min-rpcs", "1",
+					"--block", "12",
+					"--account", "0x1111111111111111111111111111111111111111",
+					"--slot", "0x01",
+					"--slot", "0x02",
+					"--out", "state.json",
+				})
+				if err != nil {
+					t.Fatalf("parseGenerateStateArgs: %v", err)
+				}
+				if cfg.Request.MinRPCSources != 1 || cfg.Request.BlockNumber != 12 {
+					t.Fatalf("unexpected state request: %+v", cfg.Request)
+				}
+				if cfg.Request.Account != common.HexToAddress("0x1111111111111111111111111111111111111111") {
+					t.Fatalf("unexpected account: %s", cfg.Request.Account)
+				}
+				if len(cfg.Request.Slots) != 2 || cfg.Request.Slots[0] != common.HexToHash("0x01") || cfg.Request.Slots[1] != common.HexToHash("0x02") {
+					t.Fatalf("unexpected slots: %v", cfg.Request.Slots)
+				}
+				if cfg.Out != "state.json" {
+					t.Fatalf("unexpected output path: %s", cfg.Out)
+				}
+			},
+		},
+		{
+			name: "receipt default min rpcs",
+			run: func(t *testing.T) {
+				cfg, err := parseGenerateReceiptArgs([]string{
+					"--rpc", "http://127.0.0.1:8545",
+					"--rpc", "http://127.0.0.1:8546",
+					"--rpc", "http://127.0.0.1:8547",
+					"--tx", "0x02",
+					"--log-index", "3",
+				})
+				if err != nil {
+					t.Fatalf("parseGenerateReceiptArgs: %v", err)
+				}
+				if cfg.Request.MinRPCSources != proof.DefaultMinRPCSources {
+					t.Fatalf("expected default MinRPCSources=%d, got %d", proof.DefaultMinRPCSources, cfg.Request.MinRPCSources)
+				}
+				if cfg.Request.LogIndex != 3 {
+					t.Fatalf("unexpected log index: %d", cfg.Request.LogIndex)
+				}
+			},
+		},
+		{
+			name: "transaction direct flags",
+			run: func(t *testing.T) {
+				cfg, err := parseGenerateTransactionArgs([]string{
+					"--rpc", "http://127.0.0.1:8545",
+					"--min-rpcs", "1",
+					"--tx", "0x03",
+					"--out", "tx.json",
+				})
+				if err != nil {
+					t.Fatalf("parseGenerateTransactionArgs: %v", err)
+				}
+				if cfg.Request.MinRPCSources != 1 || cfg.Request.TxHash != common.HexToHash("0x03") {
+					t.Fatalf("unexpected tx request: %+v", cfg.Request)
+				}
+				if cfg.Out != "tx.json" {
+					t.Fatalf("unexpected output path: %s", cfg.Out)
+				}
+			},
+		},
 	}
-	if cfg.Request.MinRPCSources != 1 {
-		t.Fatalf("expected MinRPCSources=1, got %d", cfg.Request.MinRPCSources)
-	}
-	if cfg.Request.BlockNumber != 12 {
-		t.Fatalf("expected block number 12, got %d", cfg.Request.BlockNumber)
-	}
-	if cfg.Request.Account != common.HexToAddress("0x1111111111111111111111111111111111111111") {
-		t.Fatalf("unexpected account: %s", cfg.Request.Account)
-	}
-	if len(cfg.Request.Slots) != 2 {
-		t.Fatalf("expected 2 slots, got %d", len(cfg.Request.Slots))
-	}
-	if cfg.Request.Slots[0] != common.HexToHash("0x01") || cfg.Request.Slots[1] != common.HexToHash("0x02") {
-		t.Fatalf("unexpected slots: %v", cfg.Request.Slots)
-	}
-	if cfg.Out != "state.json" {
-		t.Fatalf("unexpected output path: %s", cfg.Out)
+
+	for _, tt := range tests {
+		t.Run(tt.name, tt.run)
 	}
 }
 
-func TestParseGenerateReceiptArgsDefaultsMinRPCs(t *testing.T) {
-	cfg, err := parseGenerateReceiptArgs([]string{
-		"--rpc", "http://127.0.0.1:8545",
-		"--rpc", "http://127.0.0.1:8546",
-		"--rpc", "http://127.0.0.1:8547",
-		"--tx", "0x02",
-		"--log-index", "3",
-	})
-	if err != nil {
-		t.Fatalf("parseGenerateReceiptArgs: %v", err)
-	}
-	if cfg.Request.MinRPCSources != proof.DefaultMinRPCSources {
-		t.Fatalf("expected default MinRPCSources=%d, got %d", proof.DefaultMinRPCSources, cfg.Request.MinRPCSources)
-	}
-	if cfg.Request.LogIndex != 3 {
-		t.Fatalf("expected log index 3, got %d", cfg.Request.LogIndex)
-	}
-}
-
-func TestParseGenerateTransactionArgsPassesMinRPCs(t *testing.T) {
-	cfg, err := parseGenerateTransactionArgs([]string{
-		"--rpc", "http://127.0.0.1:8545",
-		"--min-rpcs", "1",
-		"--tx", "0x03",
-		"--out", "tx.json",
-	})
-	if err != nil {
-		t.Fatalf("parseGenerateTransactionArgs: %v", err)
-	}
-	if cfg.Request.MinRPCSources != 1 {
-		t.Fatalf("expected MinRPCSources=1, got %d", cfg.Request.MinRPCSources)
-	}
-	if cfg.Request.TxHash != common.HexToHash("0x03") {
-		t.Fatalf("unexpected tx hash: %s", cfg.Request.TxHash)
-	}
-	if cfg.Out != "tx.json" {
-		t.Fatalf("unexpected output path: %s", cfg.Out)
-	}
-}
-
-func TestParseGenerateStateArgsUsesConfig(t *testing.T) {
-	configPath := writeTestConfig(t, `{
+func TestParseGenerateStateArgsScenarios(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(*testing.T)
+	}{
+		{
+			name: "uses config",
+			run: func(t *testing.T) {
+				configPath := writeTestConfig(t, `{
   "generate": {
     "state": {
       "rpcs": ["http://127.0.0.1:9545", "http://127.0.0.1:9546", "http://127.0.0.1:9547"],
@@ -95,30 +111,22 @@ func TestParseGenerateStateArgsUsesConfig(t *testing.T) {
     }
   }
 }`)
-
-	cfg, err := parseGenerateStateArgs([]string{"--config", configPath})
-	if err != nil {
-		t.Fatalf("parseGenerateStateArgs: %v", err)
-	}
-	if cfg.Request.BlockNumber != 99 {
-		t.Fatalf("expected block number 99, got %d", cfg.Request.BlockNumber)
-	}
-	if cfg.Request.MinRPCSources != 2 {
-		t.Fatalf("expected MinRPCSources=2, got %d", cfg.Request.MinRPCSources)
-	}
-	if got := strings.Join(cfg.Request.RPCURLs, ","); got != "http://127.0.0.1:9545,http://127.0.0.1:9546,http://127.0.0.1:9547" {
-		t.Fatalf("unexpected rpc urls: %s", got)
-	}
-	if len(cfg.Request.Slots) != 2 || cfg.Request.Slots[0] != common.HexToHash("0x04") || cfg.Request.Slots[1] != common.HexToHash("0x05") {
-		t.Fatalf("unexpected slots: %v", cfg.Request.Slots)
-	}
-	if cfg.Out != "from-config.json" {
-		t.Fatalf("unexpected output path: %s", cfg.Out)
-	}
-}
-
-func TestParseGenerateStateArgsFlagsOverrideConfig(t *testing.T) {
-	configPath := writeTestConfig(t, `{
+				cfg, err := parseGenerateStateArgs([]string{"--config", configPath})
+				if err != nil {
+					t.Fatalf("parseGenerateStateArgs: %v", err)
+				}
+				if got := strings.Join(cfg.Request.RPCURLs, ","); got != "http://127.0.0.1:9545,http://127.0.0.1:9546,http://127.0.0.1:9547" {
+					t.Fatalf("unexpected rpc urls: %s", got)
+				}
+				if cfg.Request.MinRPCSources != 2 || cfg.Request.BlockNumber != 99 || cfg.Out != "from-config.json" {
+					t.Fatalf("unexpected config merge result: %+v", cfg)
+				}
+			},
+		},
+		{
+			name: "flags override config",
+			run: func(t *testing.T) {
+				configPath := writeTestConfig(t, `{
   "generate": {
     "state": {
       "rpcs": ["http://127.0.0.1:9545", "http://127.0.0.1:9546", "http://127.0.0.1:9547"],
@@ -130,32 +138,27 @@ func TestParseGenerateStateArgsFlagsOverrideConfig(t *testing.T) {
     }
   }
 }`)
-
-	cfg, err := parseGenerateStateArgs([]string{
-		"--config", configPath,
-		"--rpc", "http://127.0.0.1:8545",
-		"--min-rpcs", "1",
-		"--out", "override.json",
-	})
-	if err != nil {
-		t.Fatalf("parseGenerateStateArgs: %v", err)
-	}
-	if got := strings.Join(cfg.Request.RPCURLs, ","); got != "http://127.0.0.1:8545" {
-		t.Fatalf("expected rpc override, got %s", got)
-	}
-	if cfg.Request.MinRPCSources != 1 {
-		t.Fatalf("expected MinRPCSources=1, got %d", cfg.Request.MinRPCSources)
-	}
-	if cfg.Out != "override.json" {
-		t.Fatalf("unexpected output path: %s", cfg.Out)
-	}
-	if cfg.Request.BlockNumber != 99 {
-		t.Fatalf("expected config block number 99, got %d", cfg.Request.BlockNumber)
-	}
-}
-
-func TestParseGenerateStateArgsUsesLoggingConfigAndFlagOverrides(t *testing.T) {
-	configPath := writeTestConfig(t, `{
+				cfg, err := parseGenerateStateArgs([]string{
+					"--config", configPath,
+					"--rpc", "http://127.0.0.1:8545",
+					"--min-rpcs", "1",
+					"--out", "override.json",
+				})
+				if err != nil {
+					t.Fatalf("parseGenerateStateArgs: %v", err)
+				}
+				if got := strings.Join(cfg.Request.RPCURLs, ","); got != "http://127.0.0.1:8545" {
+					t.Fatalf("unexpected rpc override: %s", got)
+				}
+				if cfg.Request.MinRPCSources != 1 || cfg.Out != "override.json" || cfg.Request.BlockNumber != 99 {
+					t.Fatalf("unexpected override result: %+v", cfg)
+				}
+			},
+		},
+		{
+			name: "uses config logging and flag overrides",
+			run: func(t *testing.T) {
+				configPath := writeTestConfig(t, `{
   "logging": {
     "level": "warn",
     "format": "json"
@@ -170,57 +173,53 @@ func TestParseGenerateStateArgsUsesLoggingConfigAndFlagOverrides(t *testing.T) {
     }
   }
 }`)
-
-	cfg, err := parseGenerateStateArgs([]string{
-		"--config", configPath,
-		"--log-level", "debug",
-	})
-	if err != nil {
-		t.Fatalf("parseGenerateStateArgs: %v", err)
-	}
-	if cfg.Logging.Level != "debug" {
-		t.Fatalf("expected log level override debug, got %s", cfg.Logging.Level)
-	}
-	if cfg.Logging.Format != "json" {
-		t.Fatalf("expected config log format json, got %s", cfg.Logging.Format)
-	}
-}
-
-func TestParseGenerateStateArgsRejectsInvalidLogLevel(t *testing.T) {
-	_, err := parseGenerateStateArgs([]string{
-		"--rpc", "http://127.0.0.1:8545",
-		"--min-rpcs", "1",
-		"--block", "12",
-		"--account", "0x1111111111111111111111111111111111111111",
-		"--slot", "0x01",
-		"--log-level", "verbose",
-	})
-	if err == nil {
-		t.Fatal("expected invalid log level to fail")
-	}
-	if !strings.Contains(err.Error(), "unsupported log level") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestParseGenerateStateArgsDefaultsLogging(t *testing.T) {
-	cfg, err := parseGenerateStateArgs([]string{
-		"--rpc", "http://127.0.0.1:8545",
-		"--min-rpcs", "1",
-		"--block", "12",
-		"--account", "0x1111111111111111111111111111111111111111",
-		"--slot", "0x01",
-	})
-	if err != nil {
-		t.Fatalf("parseGenerateStateArgs: %v", err)
-	}
-	if cfg.Logging != logutil.DefaultConfig() {
-		t.Fatalf("unexpected default logging config: %+v", cfg.Logging)
-	}
-}
-
-func TestParseGenerateStateArgsRejectsLegacySlotConfigField(t *testing.T) {
-	configPath := writeTestConfig(t, `{
+				cfg, err := parseGenerateStateArgs([]string{"--config", configPath, "--log-level", "debug"})
+				if err != nil {
+					t.Fatalf("parseGenerateStateArgs: %v", err)
+				}
+				if cfg.Logging.Level != "debug" || cfg.Logging.Format != "json" {
+					t.Fatalf("unexpected logging config: %+v", cfg.Logging)
+				}
+			},
+		},
+		{
+			name: "defaults logging",
+			run: func(t *testing.T) {
+				cfg, err := parseGenerateStateArgs([]string{
+					"--rpc", "http://127.0.0.1:8545",
+					"--min-rpcs", "1",
+					"--block", "12",
+					"--account", "0x1111111111111111111111111111111111111111",
+					"--slot", "0x01",
+				})
+				if err != nil {
+					t.Fatalf("parseGenerateStateArgs: %v", err)
+				}
+				if cfg.Logging != logutil.DefaultConfig() {
+					t.Fatalf("unexpected default logging config: %+v", cfg.Logging)
+				}
+			},
+		},
+		{
+			name: "rejects invalid log level",
+			run: func(t *testing.T) {
+				_, err := parseGenerateStateArgs([]string{
+					"--rpc", "http://127.0.0.1:8545",
+					"--min-rpcs", "1",
+					"--block", "12",
+					"--account", "0x1111111111111111111111111111111111111111",
+					"--slot", "0x01",
+					"--log-level", "verbose",
+				})
+				if err == nil || !strings.Contains(err.Error(), "unsupported log level") {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			},
+		},
+		{
+			name: "rejects legacy slot config field",
+			run: func(t *testing.T) {
+				configPath := writeTestConfig(t, `{
   "generate": {
     "state": {
       "rpcs": ["http://127.0.0.1:9545"],
@@ -231,12 +230,15 @@ func TestParseGenerateStateArgsRejectsLegacySlotConfigField(t *testing.T) {
     }
   }
 }`)
-
-	_, err := parseGenerateStateArgs([]string{"--config", configPath})
-	if err == nil {
-		t.Fatal("expected legacy slot config field to fail")
+				_, err := parseGenerateStateArgs([]string{"--config", configPath})
+				if err == nil || !strings.Contains(err.Error(), "unknown field \"slot\"") {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			},
+		},
 	}
-	if !strings.Contains(err.Error(), "unknown field \"slot\"") {
-		t.Fatalf("unexpected error: %v", err)
+
+	for _, tt := range tests {
+		t.Run(tt.name, tt.run)
 	}
 }

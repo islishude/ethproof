@@ -41,20 +41,6 @@ func TestNormalizeRPCURLsRejectsInvalidMinimum(t *testing.T) {
 	}
 }
 
-func TestNormalizeSourceNamesRejectsDuplicateNames(t *testing.T) {
-	_, err := normalizeSourceNames([]stubNamedSource{"one", "one"}, 1)
-	if err == nil {
-		t.Fatal("expected duplicate source names to fail")
-	}
-}
-
-func TestNormalizeSourceNamesRejectsEmptyNames(t *testing.T) {
-	_, err := normalizeSourceNames([]stubNamedSource{" "}, 1)
-	if err == nil {
-		t.Fatal("expected empty source name to fail")
-	}
-}
-
 func TestOpenNormalizedRPCSourcesUsingNormalizesURLsAndClosesSources(t *testing.T) {
 	openCalls := 0
 	closeCalls := 0

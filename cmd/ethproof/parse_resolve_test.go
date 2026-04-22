@@ -7,94 +7,84 @@ import (
 	"github.com/islishude/ethproof/proof"
 )
 
-func TestParseResolveSlotArgs(t *testing.T) {
-	cfg, err := parseResolveSlotArgs([]string{
-		"--compiler-output", "out/Fixture.json",
-		"--contract", "contracts/Fixture.sol:Fixture",
-		"--var", "data[4][9].b",
-		"--format", "build-info",
-		"--out", "slot.json",
-	})
-	if err != nil {
-		t.Fatalf("parseResolveSlotArgs: %v", err)
-	}
-	if cfg.CompilerOutput != "out/Fixture.json" {
-		t.Fatalf("unexpected compiler output path: %s", cfg.CompilerOutput)
-	}
-	if cfg.Contract != "contracts/Fixture.sol:Fixture" {
-		t.Fatalf("unexpected contract selector: %s", cfg.Contract)
-	}
-	if cfg.Variable != "data[4][9].b" {
-		t.Fatalf("unexpected variable query: %s", cfg.Variable)
-	}
-	if cfg.Format != proof.StorageLayoutFormatBuildInfo {
-		t.Fatalf("unexpected format: %s", cfg.Format)
-	}
-	if cfg.Out != "slot.json" {
-		t.Fatalf("unexpected output path: %s", cfg.Out)
-	}
-}
-
-func TestParseResolveSlotArgsDefaultsFormat(t *testing.T) {
-	cfg, err := parseResolveSlotArgs([]string{
-		"--compiler-output", "out/Fixture.json",
-		"--contract", "Fixture",
-		"--var", "value",
-	})
-	if err != nil {
-		t.Fatalf("parseResolveSlotArgs: %v", err)
-	}
-	if cfg.Format != proof.StorageLayoutFormatAuto {
-		t.Fatalf("expected auto format, got %s", cfg.Format)
-	}
-}
-
-func TestParseResolveSlotArgsRejectsMissingRequiredFlags(t *testing.T) {
+func TestParseResolveSlotArgsScenarios(t *testing.T) {
 	tests := []struct {
 		name string
-		args []string
-		want string
+		run  func(*testing.T)
 	}{
 		{
-			name: "missing compiler output",
-			args: []string{"--contract", "Fixture", "--var", "value"},
-			want: "requires --compiler-output",
+			name: "parses explicit format and output",
+			run: func(t *testing.T) {
+				cfg, err := parseResolveSlotArgs([]string{
+					"--compiler-output", "out/Fixture.json",
+					"--contract", "contracts/Fixture.sol:Fixture",
+					"--var", "data[4][9].b",
+					"--format", "build-info",
+					"--out", "slot.json",
+				})
+				if err != nil {
+					t.Fatalf("parseResolveSlotArgs: %v", err)
+				}
+				if cfg.CompilerOutput != "out/Fixture.json" || cfg.Contract != "contracts/Fixture.sol:Fixture" || cfg.Variable != "data[4][9].b" {
+					t.Fatalf("unexpected resolve config: %+v", cfg)
+				}
+				if cfg.Format != proof.StorageLayoutFormatBuildInfo || cfg.Out != "slot.json" {
+					t.Fatalf("unexpected resolve format/output: %+v", cfg)
+				}
+			},
 		},
 		{
-			name: "missing contract",
-			args: []string{"--compiler-output", "out/Fixture.json", "--var", "value"},
-			want: "requires --contract",
+			name: "defaults to auto format",
+			run: func(t *testing.T) {
+				cfg, err := parseResolveSlotArgs([]string{
+					"--compiler-output", "out/Fixture.json",
+					"--contract", "Fixture",
+					"--var", "value",
+				})
+				if err != nil {
+					t.Fatalf("parseResolveSlotArgs: %v", err)
+				}
+				if cfg.Format != proof.StorageLayoutFormatAuto {
+					t.Fatalf("expected auto format, got %s", cfg.Format)
+				}
+			},
 		},
 		{
-			name: "missing query",
-			args: []string{"--compiler-output", "out/Fixture.json", "--contract", "Fixture"},
-			want: "requires --var",
+			name: "rejects missing required flags",
+			run: func(t *testing.T) {
+				tests := []struct {
+					args []string
+					want string
+				}{
+					{args: []string{"--contract", "Fixture", "--var", "value"}, want: "requires --compiler-output"},
+					{args: []string{"--compiler-output", "out/Fixture.json", "--var", "value"}, want: "requires --contract"},
+					{args: []string{"--compiler-output", "out/Fixture.json", "--contract", "Fixture"}, want: "requires --var"},
+				}
+				for _, tt := range tests {
+					_, err := parseResolveSlotArgs(tt.args)
+					if err == nil || !strings.Contains(err.Error(), tt.want) {
+						t.Fatalf("unexpected error: %v", err)
+					}
+				}
+			},
+		},
+		{
+			name: "rejects invalid format",
+			run: func(t *testing.T) {
+				_, err := parseResolveSlotArgs([]string{
+					"--compiler-output", "out/Fixture.json",
+					"--contract", "Fixture",
+					"--var", "value",
+					"--format", "weird",
+				})
+				if err == nil || !strings.Contains(err.Error(), "unsupported storage layout format") {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			},
 		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := parseResolveSlotArgs(tt.args)
-			if err == nil {
-				t.Fatal("expected parseResolveSlotArgs to fail")
-			}
-			if !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("unexpected error: %v", err)
-			}
-		})
-	}
-}
 
-func TestParseResolveSlotArgsRejectsInvalidFormat(t *testing.T) {
-	_, err := parseResolveSlotArgs([]string{
-		"--compiler-output", "out/Fixture.json",
-		"--contract", "Fixture",
-		"--var", "value",
-		"--format", "weird",
-	})
-	if err == nil {
-		t.Fatal("expected invalid format to fail")
-	}
-	if !strings.Contains(err.Error(), "unsupported storage layout format") {
-		t.Fatalf("unexpected error: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, tt.run)
 	}
 }

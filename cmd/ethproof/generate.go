@@ -47,11 +47,11 @@ func runGenerateState(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), stateProofTimeout)
 	defer cancel()
 
-	pkg, err := proof.GenerateStateProof(ctx, cfg.Request)
+	pkg, err := cliDeps.generateState(ctx, cfg.Request)
 	if err != nil {
 		return wrapRuntimeError(logger, fmt.Errorf("generate state proof: %w", err))
 	}
-	if err := proof.SaveJSON(cfg.Out, pkg); err != nil {
+	if err := cliDeps.saveJSON(cfg.Out, pkg); err != nil {
 		return wrapRuntimeError(logger, fmt.Errorf("write state proof: %w", err))
 	}
 
@@ -79,11 +79,11 @@ func runGenerateReceipt(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), receiptProofTimeout)
 	defer cancel()
 
-	pkg, err := proof.GenerateReceiptProof(ctx, cfg.Request)
+	pkg, err := cliDeps.generateReceipt(ctx, cfg.Request)
 	if err != nil {
 		return wrapRuntimeError(logger, fmt.Errorf("generate receipt proof: %w", err))
 	}
-	if err := proof.SaveJSON(cfg.Out, pkg); err != nil {
+	if err := cliDeps.saveJSON(cfg.Out, pkg); err != nil {
 		return wrapRuntimeError(logger, fmt.Errorf("write receipt proof: %w", err))
 	}
 
@@ -109,11 +109,11 @@ func runGenerateTransaction(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), transactionProofTimeout)
 	defer cancel()
 
-	pkg, err := proof.GenerateTransactionProof(ctx, cfg.Request)
+	pkg, err := cliDeps.generateTransaction(ctx, cfg.Request)
 	if err != nil {
 		return wrapRuntimeError(logger, fmt.Errorf("generate transaction proof: %w", err))
 	}
-	if err := proof.SaveJSON(cfg.Out, pkg); err != nil {
+	if err := cliDeps.saveJSON(cfg.Out, pkg); err != nil {
 		return wrapRuntimeError(logger, fmt.Errorf("write transaction proof: %w", err))
 	}
 

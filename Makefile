@@ -1,6 +1,6 @@
-.PHONY: build test fixtures live-test bindings e2e-up e2e-down e2e-test e2e fmt-check lint ci
+.PHONY: build test fixtures bindings e2e-up e2e-down e2e-test e2e fmt-check lint ci
 
-all: build e2e-test fmt-check lint
+all: fmt-check lint build test e2e-test
 
 install:
 	go install -trimpath -ldflags="-s -w" ./cmd/ethproof
@@ -42,15 +42,6 @@ e2e-test:
 		docker compose down; \
 		docker compose up -d --wait; \
 		trap 'docker compose down' EXIT; \
-	ETH_PROOF_REQUIRE_E2E=1 go test -v -race -count=1 ./...
+	ETH_PROOF_REQUIRE_E2E=1 go test -v -race -count=1 ./proof -run TestAnvilE2E$$
 
 e2e: bindings e2e-test
-
-live-test:
-	@test -n "$(ETH_PROOF_RPCS)" || (echo "ETH_PROOF_RPCS is required"; exit 1)
-	@test -n "$(ETH_PROOF_LIVE_TX)" || (echo "ETH_PROOF_LIVE_TX is required"; exit 1)
-	@test -n "$(ETH_PROOF_LIVE_LOG_INDEX)" || (echo "ETH_PROOF_LIVE_LOG_INDEX is required"; exit 1)
-	@test -n "$(ETH_PROOF_LIVE_STATE_BLOCK)" || (echo "ETH_PROOF_LIVE_STATE_BLOCK is required"; exit 1)
-	@test -n "$(ETH_PROOF_LIVE_ACCOUNT)" || (echo "ETH_PROOF_LIVE_ACCOUNT is required"; exit 1)
-	@test -n "$(ETH_PROOF_LIVE_SLOT)" || (echo "ETH_PROOF_LIVE_SLOT is required"; exit 1)
-	go test ./proof -run TestLiveGenerateAndVerify -count=1
