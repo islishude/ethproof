@@ -16,6 +16,7 @@ func TestParseGenerateStateArgsPassesMinRPCs(t *testing.T) {
 		"--block", "12",
 		"--account", "0x1111111111111111111111111111111111111111",
 		"--slot", "0x01",
+		"--slot", "0x02",
 		"--out", "state.json",
 	})
 	if err != nil {
@@ -30,8 +31,11 @@ func TestParseGenerateStateArgsPassesMinRPCs(t *testing.T) {
 	if cfg.Request.Account != common.HexToAddress("0x1111111111111111111111111111111111111111") {
 		t.Fatalf("unexpected account: %s", cfg.Request.Account)
 	}
-	if cfg.Request.Slot != common.HexToHash("0x01") {
-		t.Fatalf("unexpected slot: %s", cfg.Request.Slot)
+	if len(cfg.Request.Slots) != 2 {
+		t.Fatalf("expected 2 slots, got %d", len(cfg.Request.Slots))
+	}
+	if cfg.Request.Slots[0] != common.HexToHash("0x01") || cfg.Request.Slots[1] != common.HexToHash("0x02") {
+		t.Fatalf("unexpected slots: %v", cfg.Request.Slots)
 	}
 	if cfg.Out != "state.json" {
 		t.Fatalf("unexpected output path: %s", cfg.Out)
@@ -86,7 +90,7 @@ func TestParseGenerateStateArgsUsesConfig(t *testing.T) {
       "minRpcs": 2,
       "block": 99,
       "account": "0x1111111111111111111111111111111111111111",
-      "slot": "0x04",
+      "slots": ["0x04", "0x05"],
       "out": "from-config.json"
     }
   }
@@ -105,6 +109,9 @@ func TestParseGenerateStateArgsUsesConfig(t *testing.T) {
 	if got := strings.Join(cfg.Request.RPCURLs, ","); got != "http://127.0.0.1:9545,http://127.0.0.1:9546,http://127.0.0.1:9547" {
 		t.Fatalf("unexpected rpc urls: %s", got)
 	}
+	if len(cfg.Request.Slots) != 2 || cfg.Request.Slots[0] != common.HexToHash("0x04") || cfg.Request.Slots[1] != common.HexToHash("0x05") {
+		t.Fatalf("unexpected slots: %v", cfg.Request.Slots)
+	}
 	if cfg.Out != "from-config.json" {
 		t.Fatalf("unexpected output path: %s", cfg.Out)
 	}
@@ -118,7 +125,7 @@ func TestParseGenerateStateArgsFlagsOverrideConfig(t *testing.T) {
       "minRpcs": 3,
       "block": 99,
       "account": "0x1111111111111111111111111111111111111111",
-      "slot": "0x04",
+      "slots": ["0x04"],
       "out": "from-config.json"
     }
   }
@@ -159,7 +166,7 @@ func TestParseGenerateStateArgsUsesLoggingConfigAndFlagOverrides(t *testing.T) {
       "minRpcs": 1,
       "block": 99,
       "account": "0x1111111111111111111111111111111111111111",
-      "slot": "0x04"
+      "slots": ["0x04"]
     }
   }
 }`)
@@ -209,5 +216,27 @@ func TestParseGenerateStateArgsDefaultsLogging(t *testing.T) {
 	}
 	if cfg.Logging != logutil.DefaultConfig() {
 		t.Fatalf("unexpected default logging config: %+v", cfg.Logging)
+	}
+}
+
+func TestParseGenerateStateArgsRejectsLegacySlotConfigField(t *testing.T) {
+	configPath := writeTestConfig(t, `{
+  "generate": {
+    "state": {
+      "rpcs": ["http://127.0.0.1:9545"],
+      "minRpcs": 1,
+      "block": 99,
+      "account": "0x1111111111111111111111111111111111111111",
+      "slot": "0x04"
+    }
+  }
+}`)
+
+	_, err := parseGenerateStateArgs([]string{"--config", configPath})
+	if err == nil {
+		t.Fatal("expected legacy slot config field to fail")
+	}
+	if !strings.Contains(err.Error(), "unknown field \"slot\"") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

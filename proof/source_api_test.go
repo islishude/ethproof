@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -30,6 +31,71 @@ func TestGenerateStateProofFromSources(t *testing.T) {
 	}
 	if err := VerifyStateProofPackageAgainstSources(context.Background(), pkg, verifyReq); err != nil {
 		t.Fatalf("VerifyStateProofPackageAgainstSources: %v", err)
+	}
+}
+
+func TestGenerateStateProofFromSourcesRejectsEmptySlots(t *testing.T) {
+	req, _, _ := testStateProofSourcesRequest(t)
+	req.Slots = nil
+
+	_, err := GenerateStateProofFromSources(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected empty slots to fail")
+	}
+	if !strings.Contains(err.Error(), "at least one storage slot") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGenerateStateProofFromSourcesRejectsDuplicateSlots(t *testing.T) {
+	req, _, _ := testStateProofSourcesRequest(t)
+	req.Slots = []common.Hash{req.Slots[0], req.Slots[0]}
+
+	_, err := GenerateStateProofFromSources(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected duplicate slots to fail")
+	}
+	if !strings.Contains(err.Error(), "duplicate storage slot") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNormalizeStorageProofResultsRejectsCountMismatch(t *testing.T) {
+	fixture := mustLoadStateFixture(t)
+	_, err := normalizeStorageProofResults(storageProofSlotsFromFixture(fixture), fixture.AccountClaim.StorageRoot, storageResultsFromFixture(fixture)[:1])
+	if err == nil {
+		t.Fatal("expected storage proof count mismatch")
+	}
+	if !strings.Contains(err.Error(), "expected 2 storage proofs, got 1") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNormalizeStorageProofResultsRejectsUnexpectedKey(t *testing.T) {
+	fixture := mustLoadStateFixture(t)
+	results := storageResultsFromFixture(fixture)
+	results[1].Key = common.HexToHash("0x03").Hex()
+
+	_, err := normalizeStorageProofResults(storageProofSlotsFromFixture(fixture), fixture.AccountClaim.StorageRoot, results)
+	if err == nil {
+		t.Fatal("expected unexpected storage proof key")
+	}
+	if !strings.Contains(err.Error(), "unexpected storage proof key") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNormalizeStorageProofResultsRejectsDuplicateKey(t *testing.T) {
+	fixture := mustLoadStateFixture(t)
+	results := storageResultsFromFixture(fixture)
+	results[1].Key = results[0].Key
+
+	_, err := normalizeStorageProofResults(storageProofSlotsFromFixture(fixture), fixture.AccountClaim.StorageRoot, results)
+	if err == nil {
+		t.Fatal("expected duplicate storage proof key")
+	}
+	if !strings.Contains(err.Error(), "duplicate storage proof key") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -112,7 +178,7 @@ type fakeStateSource struct {
 	*fakeHeaderSource
 	expectedBlockNumber uint64
 	expectedAccount     common.Address
-	expectedSlot        common.Hash
+	expectedSlots       []common.Hash
 	proof               *gethclient.AccountResult
 	proofErr            error
 }
@@ -134,7 +200,7 @@ func (s *fakeStateSource) GetProof(_ context.Context, account common.Address, ke
 	if account != s.expectedAccount {
 		return nil, fmt.Errorf("unexpected account %s", account)
 	}
-	if len(keys) != 1 || keys[0] != s.expectedSlot.Hex() {
+	if !slices.Equal(keys, encodeStateSlots(s.expectedSlots)) {
 		return nil, fmt.Errorf("unexpected proof keys %v", keys)
 	}
 	return cloneAccountResult(s.proof), nil
@@ -222,12 +288,9 @@ func testStateProofSourcesRequest(t *testing.T) (StateProofSourcesRequest, Verif
 		CodeHash:     fixture.AccountClaim.CodeHash,
 		Nonce:        fixture.AccountClaim.Nonce,
 		StorageHash:  fixture.AccountClaim.StorageRoot,
-		StorageProof: []gethclient.StorageResult{{
-			Key:   fixture.Slot.Hex(),
-			Value: new(big.Int).SetBytes(fixture.StorageValue[:]),
-			Proof: encodeProofNodes(fixture.StorageProofNodes),
-		}},
+		StorageProof: storageResultsFromFixture(fixture),
 	}
+	slices.Reverse(proof.StorageProof)
 	names := []string{"source-a", "source-b", "source-c"}
 	sources := make([]StateSource, len(names))
 	headerSources := make([]HeaderSource, len(names))
@@ -240,7 +303,7 @@ func testStateProofSourcesRequest(t *testing.T) (StateProofSourcesRequest, Verif
 			},
 			expectedBlockNumber: header.Number.Uint64(),
 			expectedAccount:     fixture.Account,
-			expectedSlot:        fixture.Slot,
+			expectedSlots:       storageProofSlotsFromFixture(fixture),
 			proof:               proof,
 		}
 		sources[i] = source
@@ -251,13 +314,45 @@ func testStateProofSourcesRequest(t *testing.T) (StateProofSourcesRequest, Verif
 			MinRPCSources: len(sources),
 			BlockNumber:   header.Number.Uint64(),
 			Account:       fixture.Account,
-			Slot:          fixture.Slot,
+			Slots:         storageProofSlotsFromFixture(fixture),
 		},
 		VerifySourcesRequest{
 			Sources:       headerSources,
 			MinRPCSources: len(headerSources),
 		},
 		names
+}
+
+func storageResultsFromFixture(fixture StateProofPackage) []gethclient.StorageResult {
+	results := make([]gethclient.StorageResult, len(fixture.StorageProofs))
+	for i, storageProof := range fixture.StorageProofs {
+		value := new(big.Int)
+		if storageProof.Value != (common.Hash{}) {
+			value = new(big.Int).SetBytes(storageProof.Value[:])
+		}
+		results[i] = gethclient.StorageResult{
+			Key:   storageProof.Slot.Hex(),
+			Value: value,
+			Proof: encodeProofNodes(storageProof.ProofNodes),
+		}
+	}
+	return results
+}
+
+func storageProofSlotsFromFixture(fixture StateProofPackage) []common.Hash {
+	slots := make([]common.Hash, len(fixture.StorageProofs))
+	for i, storageProof := range fixture.StorageProofs {
+		slots[i] = storageProof.Slot
+	}
+	return slots
+}
+
+func encodeStateSlots(slots []common.Hash) []string {
+	encoded := make([]string, len(slots))
+	for i, slot := range slots {
+		encoded[i] = slot.Hex()
+	}
+	return encoded
 }
 
 func testReceiptProofSourcesRequest(t *testing.T) (ReceiptProofSourcesRequest, VerifySourcesRequest, []string) {

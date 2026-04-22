@@ -58,7 +58,7 @@ func TestParseVerifyStateArgsRequiresIndependentRPCs(t *testing.T) {
       "rpcs": ["http://127.0.0.1:9545", "http://127.0.0.1:9546", "http://127.0.0.1:9547"],
       "minRpcs": 3,
       "account": "0x1111111111111111111111111111111111111111",
-      "slot": "0x04"
+      "slots": ["0x04"]
     }
   },
   "verify": {

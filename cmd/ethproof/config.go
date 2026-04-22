@@ -32,7 +32,7 @@ type generateStateConfigFile struct {
 	MinRPCs *int     `json:"minRpcs"`
 	Block   *uint64  `json:"block"`
 	Account string   `json:"account"`
-	Slot    string   `json:"slot"`
+	Slots   []string `json:"slots"`
 	Out     string   `json:"out"`
 }
 

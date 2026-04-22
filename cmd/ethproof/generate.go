@@ -59,7 +59,8 @@ func runGenerateState(args []string) error {
 		"out_path", cfg.Out,
 		"block_number", pkg.Block.BlockNumber,
 		"account", pkg.Account,
-		"slot", pkg.Slot,
+		"slot_count", len(pkg.StorageProofs),
+		"slots", storageProofSlots(pkg.StorageProofs),
 		"state_root", pkg.Block.StateRoot,
 	)
 	return nil
@@ -123,4 +124,12 @@ func runGenerateTransaction(args []string) error {
 		"transactions_root", pkg.Block.TransactionsRoot,
 	)
 	return nil
+}
+
+func storageProofSlots(storageProofs []proof.StateStorageProof) []string {
+	slots := make([]string, len(storageProofs))
+	for i, storageProof := range storageProofs {
+		slots[i] = storageProof.Slot.Hex()
+	}
+	return slots
 }

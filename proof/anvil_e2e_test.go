@@ -121,7 +121,7 @@ func testAnvilAPIFlow(t *testing.T, ctx context.Context, scenario anvilScenario)
 		MinRPCSources: 1,
 		BlockNumber:   scenario.blockNumber,
 		Account:       scenario.contractAddress,
-		Slot:          scenario.slot,
+		Slots:         []common.Hash{scenario.slot},
 	})
 	if err != nil {
 		t.Fatalf("GenerateStateProof: %v", err)
@@ -132,8 +132,11 @@ func testAnvilAPIFlow(t *testing.T, ctx context.Context, scenario anvilScenario)
 	if err := VerifyStateProofPackageAgainstRPCs(ctx, statePkg, verifyReq); err != nil {
 		t.Fatalf("VerifyStateProofPackageAgainstRPCs: %v", err)
 	}
-	if statePkg.StorageValue != common.BigToHash(scenario.newValue) {
-		t.Fatalf("unexpected storage value: got %s want %s", statePkg.StorageValue, common.BigToHash(scenario.newValue))
+	if got, want := len(statePkg.StorageProofs), 1; got != want {
+		t.Fatalf("unexpected storage proof count: got %d want %d", got, want)
+	}
+	if statePkg.StorageProofs[0].Value != common.BigToHash(scenario.newValue) {
+		t.Fatalf("unexpected storage value: got %s want %s", statePkg.StorageProofs[0].Value, common.BigToHash(scenario.newValue))
 	}
 }
 
@@ -337,7 +340,7 @@ func writeAnvilCLIConfig(t *testing.T, dir string, scenario anvilScenario, txPro
 				"minRpcs": 1,
 				"block":   scenario.blockNumber,
 				"account": scenario.contractAddress.Hex(),
-				"slot":    scenario.slot.Hex(),
+				"slots":   []string{scenario.slot.Hex()},
 				"out":     stateProof,
 			},
 		},

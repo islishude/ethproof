@@ -6,7 +6,7 @@ import (
 )
 
 const usageText = `Usage:
-  ethproof generate state   [--config config.json] [--rpc URL ...] [--min-rpcs N] [--block N] [--account 0xADDR] [--slot 0xSLOT] [--out state.json] [--log-level LEVEL] [--log-format text|json]
+  ethproof generate state   [--config config.json] [--rpc URL ...] [--min-rpcs N] [--block N] [--account 0xADDR] [--slot 0xSLOT ...] [--out state.json] [--log-level LEVEL] [--log-format text|json]
   ethproof generate receipt [--config config.json] [--rpc URL ...] [--min-rpcs N] [--tx 0xHASH] [--log-index N] [--out receipt.json] [--log-level LEVEL] [--log-format text|json]
   ethproof generate tx      [--config config.json] [--rpc URL ...] [--min-rpcs N] [--tx 0xHASH] [--out tx.json] [--log-level LEVEL] [--log-format text|json]
 

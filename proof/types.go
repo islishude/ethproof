@@ -46,7 +46,7 @@ type StateProofRequest struct {
 	MinRPCSources int
 	BlockNumber   uint64
 	Account       common.Address
-	Slot          common.Hash
+	Slots         []common.Hash
 }
 
 // ReceiptProofRequest describes the inputs required to generate a receipt proof.
@@ -78,16 +78,21 @@ type StateAccountClaim struct {
 	CodeHash    common.Hash `json:"codeHash"`
 }
 
-// StateProofPackage contains an account proof and one storage proof against stateRoot.
+// StateStorageProof contains one storage proof against the account storage root.
+type StateStorageProof struct {
+	Slot       common.Hash     `json:"slot"`
+	Value      common.Hash     `json:"value"`
+	ProofNodes []hexutil.Bytes `json:"proofNodes"`
+}
+
+// StateProofPackage contains an account proof and one or more storage proofs against stateRoot.
 type StateProofPackage struct {
-	Block             BlockContext      `json:"block"`
-	Account           common.Address    `json:"account"`
-	Slot              common.Hash       `json:"slot"`
-	AccountRLP        hexutil.Bytes     `json:"accountRlp"`
-	AccountProofNodes []hexutil.Bytes   `json:"accountProofNodes"`
-	AccountClaim      StateAccountClaim `json:"accountClaim"`
-	StorageValue      common.Hash       `json:"storageValue"`
-	StorageProofNodes []hexutil.Bytes   `json:"storageProofNodes"`
+	Block             BlockContext        `json:"block"`
+	Account           common.Address      `json:"account"`
+	AccountRLP        hexutil.Bytes       `json:"accountRlp"`
+	AccountProofNodes []hexutil.Bytes     `json:"accountProofNodes"`
+	AccountClaim      StateAccountClaim   `json:"accountClaim"`
+	StorageProofs     []StateStorageProof `json:"storageProofs"`
 }
 
 // EventClaim is the log payload claimed by a receipt proof package.
@@ -126,14 +131,12 @@ type ReceiptExpectations struct {
 }
 
 type accountSnapshot struct {
-	Header       blockSnapshotHeader `json:"header"`
-	Account      common.Address      `json:"account"`
-	Slot         common.Hash         `json:"slot"`
-	AccountRLP   hexutil.Bytes       `json:"accountRlp"`
-	AccountProof []hexutil.Bytes     `json:"accountProof"`
-	AccountClaim StateAccountClaim   `json:"accountClaim"`
-	StorageValue common.Hash         `json:"storageValue"`
-	StorageProof []hexutil.Bytes     `json:"storageProof"`
+	Header        blockSnapshotHeader `json:"header"`
+	Account       common.Address      `json:"account"`
+	AccountRLP    hexutil.Bytes       `json:"accountRlp"`
+	AccountProof  []hexutil.Bytes     `json:"accountProof"`
+	AccountClaim  StateAccountClaim   `json:"accountClaim"`
+	StorageProofs []StateStorageProof `json:"storageProofs"`
 }
 
 type receiptSnapshot struct {

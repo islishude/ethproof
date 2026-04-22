@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb/memorydb"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
 	"github.com/islishude/ethproof/internal/proofutil"
 )
@@ -36,14 +37,15 @@ func buildOfflineStateFixture() (*StateProofPackage, error) {
 		return nil, err
 	}
 	storageRoot := storageTrie.Hash()
-	storageProofDB := memorydb.New()
-	if err := storageTrie.Prove(crypto.Keccak256(slotTarget.Bytes()), storageProofDB); err != nil {
-		return nil, err
-	}
-	storageProofNodes, err := proofutil.DumpProofNodes(storageProofDB)
+	targetStorageProof, err := buildOfflineStorageProof(storageTrie, slotTarget, slotValue)
 	if err != nil {
 		return nil, err
 	}
+	otherStorageProof, err := buildOfflineStorageProof(storageTrie, slotOther, slotOtherValue)
+	if err != nil {
+		return nil, err
+	}
+	storageProofs := []StateStorageProof{targetStorageProof, otherStorageProof}
 
 	accountState := types.StateAccount{
 		Nonce:    7,
@@ -110,35 +112,39 @@ func buildOfflineStateFixture() (*StateProofPackage, error) {
 	}
 	header.BlockHash = ethHeader.Hash()
 
-	digests, err := canonicalOfflineStateDigests(header, proofutil.CanonicalBytes(accountRLPBytes), accountProofNodes, slotTarget, slotValue, storageProofNodes)
+	digests, err := canonicalOfflineStateDigests(header, proofutil.CanonicalBytes(accountRLPBytes), accountProofNodes, storageProofs)
 	if err != nil {
 		return nil, err
+	}
+	fields := []ConsensusField{
+		{Name: "chainId", Value: proofutil.ChainIDString(header.ChainID), Consistent: true},
+		{Name: "blockNumber", Value: fmt.Sprintf("%d", header.BlockNumber), Consistent: true},
+		{Name: "blockHash", Value: header.BlockHash.Hex(), Consistent: true},
+		{Name: "parentHash", Value: header.ParentHash.Hex(), Consistent: true},
+		{Name: "stateRoot", Value: header.StateRoot.Hex(), Consistent: true},
+		{Name: "transactionsRoot", Value: header.TransactionsRoot.Hex(), Consistent: true},
+		{Name: "receiptsRoot", Value: header.ReceiptsRoot.Hex(), Consistent: true},
+		{Name: "account", Value: account.Hex(), Consistent: true},
+		{Name: "account.nonce", Value: "7", Consistent: true},
+		{Name: "account.balance", Value: proofutil.BalanceHex(accountState.Balance.ToBig()), Consistent: true},
+		{Name: "account.storageRoot", Value: storageRoot.Hex(), Consistent: true},
+		{Name: "account.codeHash", Value: common.BytesToHash(accountState.CodeHash).Hex(), Consistent: true},
+	}
+	for i, storageProof := range storageProofs {
+		fields = append(fields,
+			ConsensusField{Name: fmt.Sprintf("storageProofs[%d].slot", i), Value: storageProof.Slot.Hex(), Consistent: true},
+			ConsensusField{Name: fmt.Sprintf("storageProofs[%d].value", i), Value: storageProof.Value.Hex(), Consistent: true},
+		)
 	}
 	consensus := sourceConsensus(
 		"offline-fixture",
 		nil,
 		digests,
-		[]ConsensusField{
-			{Name: "chainId", Value: proofutil.ChainIDString(header.ChainID), Consistent: true},
-			{Name: "blockNumber", Value: fmt.Sprintf("%d", header.BlockNumber), Consistent: true},
-			{Name: "blockHash", Value: header.BlockHash.Hex(), Consistent: true},
-			{Name: "parentHash", Value: header.ParentHash.Hex(), Consistent: true},
-			{Name: "stateRoot", Value: header.StateRoot.Hex(), Consistent: true},
-			{Name: "transactionsRoot", Value: header.TransactionsRoot.Hex(), Consistent: true},
-			{Name: "receiptsRoot", Value: header.ReceiptsRoot.Hex(), Consistent: true},
-			{Name: "account", Value: account.Hex(), Consistent: true},
-			{Name: "slot", Value: slotTarget.Hex(), Consistent: true},
-			{Name: "account.nonce", Value: "7", Consistent: true},
-			{Name: "account.balance", Value: proofutil.BalanceHex(accountState.Balance.ToBig()), Consistent: true},
-			{Name: "account.storageRoot", Value: storageRoot.Hex(), Consistent: true},
-			{Name: "account.codeHash", Value: common.BytesToHash(accountState.CodeHash).Hex(), Consistent: true},
-			{Name: "storage.value", Value: slotValue.Hex(), Consistent: true},
-		},
+		fields,
 	)
 	return &StateProofPackage{
 		Block:             buildBlockContext(header, consensus),
 		Account:           account,
-		Slot:              slotTarget,
 		AccountRLP:        proofutil.CanonicalBytes(accountRLPBytes),
 		AccountProofNodes: accountProofNodes,
 		AccountClaim: StateAccountClaim{
@@ -147,7 +153,22 @@ func buildOfflineStateFixture() (*StateProofPackage, error) {
 			StorageRoot: storageRoot,
 			CodeHash:    common.BytesToHash(accountState.CodeHash),
 		},
-		StorageValue:      slotValue,
-		StorageProofNodes: storageProofNodes,
+		StorageProofs: storageProofs,
+	}, nil
+}
+
+func buildOfflineStorageProof(storageTrie *trie.Trie, slot common.Hash, value common.Hash) (StateStorageProof, error) {
+	storageProofDB := memorydb.New()
+	if err := storageTrie.Prove(crypto.Keccak256(slot.Bytes()), storageProofDB); err != nil {
+		return StateStorageProof{}, err
+	}
+	storageProofNodes, err := proofutil.DumpProofNodes(storageProofDB)
+	if err != nil {
+		return StateStorageProof{}, err
+	}
+	return StateStorageProof{
+		Slot:       slot,
+		Value:      value,
+		ProofNodes: storageProofNodes,
 	}, nil
 }

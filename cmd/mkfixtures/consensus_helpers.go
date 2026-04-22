@@ -46,7 +46,7 @@ func canonicalOfflineReceiptDigests(header blockSnapshotHeader, blockTransaction
 	}, nil
 }
 
-func canonicalOfflineStateDigests(header blockSnapshotHeader, accountRLP hexutil.Bytes, accountProof []hexutil.Bytes, slot, slotValue common.Hash, storageProof []hexutil.Bytes) ([]ConsensusDigest, error) {
+func canonicalOfflineStateDigests(header blockSnapshotHeader, accountRLP hexutil.Bytes, accountProof []hexutil.Bytes, storageProofs []StateStorageProof) ([]ConsensusDigest, error) {
 	headerDigest, err := proofutil.CanonicalDigest(header)
 	if err != nil {
 		return nil, err
@@ -61,22 +61,14 @@ func canonicalOfflineStateDigests(header blockSnapshotHeader, accountRLP hexutil
 	if err != nil {
 		return nil, err
 	}
-	storageDigest, err := proofutil.CanonicalDigest(struct {
-		Slot  common.Hash     `json:"slot"`
-		Value common.Hash     `json:"value"`
-		Proof []hexutil.Bytes `json:"proof"`
-	}{
-		Slot:  slot,
-		Value: slotValue,
-		Proof: storageProof,
-	})
+	storageDigest, err := proofutil.CanonicalDigest(storageProofs)
 	if err != nil {
 		return nil, err
 	}
 	return []ConsensusDigest{
 		{Name: "header", Digest: headerDigest},
 		{Name: "accountProof", Digest: accountDigest},
-		{Name: "storageProof", Digest: storageDigest},
+		{Name: "storageProofs", Digest: storageDigest},
 	}, nil
 }
 

@@ -139,13 +139,13 @@ func TestTamperedStateProofFails(t *testing.T) {
 	}
 
 	storageNodeTampered := cloneStatePackage(pkg)
-	storageNodeTampered.StorageProofNodes[0] = mutateHexNode(t, storageNodeTampered.StorageProofNodes[0])
+	storageNodeTampered.StorageProofs[0].ProofNodes[0] = mutateHexNode(t, storageNodeTampered.StorageProofs[0].ProofNodes[0])
 	if err := VerifyStateProofPackage(&storageNodeTampered); err == nil {
 		t.Fatal("expected modified storage proof node to fail verification")
 	}
 
 	valueTampered := cloneStatePackage(pkg)
-	valueTampered.StorageValue = common.HexToHash("0x7777")
+	valueTampered.StorageProofs[0].Value = common.HexToHash("0x7777")
 	if err := VerifyStateProofPackage(&valueTampered); err == nil {
 		t.Fatal("expected modified storage value to fail verification")
 	}
@@ -172,6 +172,22 @@ func TestTamperedStateProofFails(t *testing.T) {
 	codeHashTampered.AccountClaim.CodeHash = common.HexToHash("0x9999")
 	if err := VerifyStateProofPackage(&codeHashTampered); err == nil {
 		t.Fatal("expected modified account code hash to fail verification")
+	}
+}
+
+func TestStateProofPackageRejectsInvalidStorageProofLists(t *testing.T) {
+	pkg := mustLoadStateFixture(t)
+
+	empty := cloneStatePackage(pkg)
+	empty.StorageProofs = nil
+	if err := VerifyStateProofPackage(&empty); err == nil {
+		t.Fatal("expected empty storage proof list to fail verification")
+	}
+
+	duplicate := cloneStatePackage(pkg)
+	duplicate.StorageProofs = append(duplicate.StorageProofs, cloneStateStorageProofs(duplicate.StorageProofs[:1])...)
+	if err := VerifyStateProofPackage(&duplicate); err == nil {
+		t.Fatal("expected duplicate storage slot to fail verification")
 	}
 }
 
@@ -227,7 +243,7 @@ func cloneStatePackage(in StateProofPackage) StateProofPackage {
 	out := in
 	out.AccountRLP = proofutil.CanonicalBytes(in.AccountRLP)
 	out.AccountProofNodes = cloneHexBytesList(in.AccountProofNodes)
-	out.StorageProofNodes = cloneHexBytesList(in.StorageProofNodes)
+	out.StorageProofs = cloneStateStorageProofs(in.StorageProofs)
 	return out
 }
 

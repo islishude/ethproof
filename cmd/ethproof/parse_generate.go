@@ -29,10 +29,11 @@ func parseGenerateStateArgs(args []string) (generateStateConfig, error) {
 	configPath := fs.String("config", "", "config json file")
 	var rpcURLs multiStringFlag
 	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
+	var slotHexes multiStringFlag
 	minRPCs := fs.Int("min-rpcs", proof.DefaultMinRPCSources, "minimum distinct RPC sources required")
 	blockNumber := fs.Uint64("block", 0, "block number")
 	accountHex := fs.String("account", "", "account address")
-	slotHex := fs.String("slot", "", "32-byte storage slot key")
+	fs.Var(&slotHexes, "slot", "32-byte storage slot key (repeatable)")
 	out := fs.String("out", "state.json", "output proof json")
 	logFlags := addLoggingFlags(fs)
 
@@ -54,12 +55,12 @@ func parseGenerateStateArgs(args []string) (generateStateConfig, error) {
 	}
 	cfg.Request.RPCURLs, cfg.Request.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, nil, nil)
 	rawAccount := mergeString(parseCtx.seen, "account", *accountHex, "", "")
-	rawSlot := mergeString(parseCtx.seen, "slot", *slotHex, "", "")
+	rawSlots := mergeStringSlice(parseCtx.seen, "slot", slotHexes, nil)
 	if section != nil {
 		cfg.Request.RPCURLs, cfg.Request.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, section.RPCs, section.MinRPCs)
 		cfg.Request.BlockNumber = mergeUint64(parseCtx.seen, "block", *blockNumber, section.Block, 0)
 		rawAccount = mergeString(parseCtx.seen, "account", *accountHex, section.Account, "")
-		rawSlot = mergeString(parseCtx.seen, "slot", *slotHex, section.Slot, "")
+		rawSlots = mergeStringSlice(parseCtx.seen, "slot", slotHexes, section.Slots)
 		cfg.Out = mergeString(parseCtx.seen, "out", *out, section.Out, "state.json")
 	}
 	cfg.Logging, err = resolveLoggingConfig(parseCtx.seen, logFlags, configLoggingSection(parseCtx.fileCfg))
@@ -72,11 +73,14 @@ func parseGenerateStateArgs(args []string) (generateStateConfig, error) {
 	if rawAccount == "" {
 		return generateStateConfig{}, newUsageError("generate state requires --account or generate.state.account in --config")
 	}
-	if rawSlot == "" {
-		return generateStateConfig{}, newUsageError("generate state requires --slot or generate.state.slot in --config")
+	if len(rawSlots) == 0 {
+		return generateStateConfig{}, newUsageError("generate state requires at least one --slot or generate.state.slots in --config")
 	}
 	cfg.Request.Account = common.HexToAddress(rawAccount)
-	cfg.Request.Slot = common.HexToHash(rawSlot)
+	cfg.Request.Slots = make([]common.Hash, len(rawSlots))
+	for i, slot := range rawSlots {
+		cfg.Request.Slots[i] = common.HexToHash(slot)
+	}
 	return cfg, nil
 }
 

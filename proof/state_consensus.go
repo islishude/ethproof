@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/islishude/ethproof/internal/proofutil"
 )
@@ -30,18 +29,12 @@ func compareStateSnapshot(base, other *accountSnapshot) []string {
 	if base.Account != other.Account {
 		diffs = append(diffs, "account mismatch")
 	}
-	if base.Slot != other.Slot {
-		diffs = append(diffs, "slot mismatch")
-	}
 	if !bytes.Equal(base.AccountRLP, other.AccountRLP) {
 		diffs = append(diffs, "accountRlp mismatch")
 	}
 	diffs = append(diffs, compareByteSlices("accountProof", base.AccountProof, other.AccountProof)...)
 	diffs = append(diffs, compareStateClaim(base.AccountClaim, other.AccountClaim)...)
-	if base.StorageValue != other.StorageValue {
-		diffs = append(diffs, "storageValue mismatch")
-	}
-	diffs = append(diffs, compareByteSlices("storageProof", base.StorageProof, other.StorageProof)...)
+	diffs = append(diffs, compareStateStorageProofs(base.StorageProofs, other.StorageProofs)...)
 	return diffs
 }
 
@@ -62,17 +55,29 @@ func buildStateConsensus(base *accountSnapshot, rpcs []string) (SourceConsensus,
 	if err != nil {
 		return SourceConsensus{}, err
 	}
-	storageProofDigest, err := proofutil.CanonicalDigest(struct {
-		Slot  common.Hash     `json:"slot"`
-		Value common.Hash     `json:"value"`
-		Proof []hexutil.Bytes `json:"proof"`
-	}{
-		Slot:  base.Slot,
-		Value: base.StorageValue,
-		Proof: base.StorageProof,
-	})
+	storageProofDigest, err := proofutil.CanonicalDigest(base.StorageProofs)
 	if err != nil {
 		return SourceConsensus{}, err
+	}
+	fields := []ConsensusField{
+		{Name: "chainId", Value: proofutil.ChainIDString(base.Header.ChainID), Consistent: true},
+		{Name: "blockNumber", Value: fmt.Sprintf("%d", base.Header.BlockNumber), Consistent: true},
+		{Name: "blockHash", Value: base.Header.BlockHash.Hex(), Consistent: true},
+		{Name: "parentHash", Value: base.Header.ParentHash.Hex(), Consistent: true},
+		{Name: "stateRoot", Value: base.Header.StateRoot.Hex(), Consistent: true},
+		{Name: "transactionsRoot", Value: base.Header.TransactionsRoot.Hex(), Consistent: true},
+		{Name: "receiptsRoot", Value: base.Header.ReceiptsRoot.Hex(), Consistent: true},
+		{Name: "account", Value: base.Account.Hex(), Consistent: true},
+		{Name: "account.nonce", Value: fmt.Sprintf("%d", base.AccountClaim.Nonce), Consistent: true},
+		{Name: "account.balance", Value: base.AccountClaim.Balance, Consistent: true},
+		{Name: "account.storageRoot", Value: base.AccountClaim.StorageRoot.Hex(), Consistent: true},
+		{Name: "account.codeHash", Value: base.AccountClaim.CodeHash.Hex(), Consistent: true},
+	}
+	for i, storageProof := range base.StorageProofs {
+		fields = append(fields,
+			ConsensusField{Name: fmt.Sprintf("storageProofs[%d].slot", i), Value: storageProof.Slot.Hex(), Consistent: true},
+			ConsensusField{Name: fmt.Sprintf("storageProofs[%d].value", i), Value: storageProof.Value.Hex(), Consistent: true},
+		)
 	}
 	return sourceConsensus(
 		"live-rpc",
@@ -80,23 +85,27 @@ func buildStateConsensus(base *accountSnapshot, rpcs []string) (SourceConsensus,
 		[]ConsensusDigest{
 			{Name: "header", Digest: headerDigest},
 			{Name: "accountProof", Digest: accountProofDigest},
-			{Name: "storageProof", Digest: storageProofDigest},
+			{Name: "storageProofs", Digest: storageProofDigest},
 		},
-		[]ConsensusField{
-			{Name: "chainId", Value: proofutil.ChainIDString(base.Header.ChainID), Consistent: true},
-			{Name: "blockNumber", Value: fmt.Sprintf("%d", base.Header.BlockNumber), Consistent: true},
-			{Name: "blockHash", Value: base.Header.BlockHash.Hex(), Consistent: true},
-			{Name: "parentHash", Value: base.Header.ParentHash.Hex(), Consistent: true},
-			{Name: "stateRoot", Value: base.Header.StateRoot.Hex(), Consistent: true},
-			{Name: "transactionsRoot", Value: base.Header.TransactionsRoot.Hex(), Consistent: true},
-			{Name: "receiptsRoot", Value: base.Header.ReceiptsRoot.Hex(), Consistent: true},
-			{Name: "account", Value: base.Account.Hex(), Consistent: true},
-			{Name: "slot", Value: base.Slot.Hex(), Consistent: true},
-			{Name: "account.nonce", Value: fmt.Sprintf("%d", base.AccountClaim.Nonce), Consistent: true},
-			{Name: "account.balance", Value: base.AccountClaim.Balance, Consistent: true},
-			{Name: "account.storageRoot", Value: base.AccountClaim.StorageRoot.Hex(), Consistent: true},
-			{Name: "account.codeHash", Value: base.AccountClaim.CodeHash.Hex(), Consistent: true},
-			{Name: "storage.value", Value: base.StorageValue.Hex(), Consistent: true},
-		},
+		fields,
 	), nil
+}
+
+func compareStateStorageProofs(base, other []StateStorageProof) []string {
+	var diffs []string
+	if len(base) != len(other) {
+		diffs = append(diffs, fmt.Sprintf("storageProofs length mismatch: got %d want %d", len(other), len(base)))
+	}
+
+	limit := min(len(other), len(base))
+	for i := range limit {
+		if base[i].Slot != other[i].Slot {
+			diffs = append(diffs, fmt.Sprintf("storageProofs[%d].slot mismatch", i))
+		}
+		if base[i].Value != other[i].Value {
+			diffs = append(diffs, fmt.Sprintf("storageProofs[%d].value mismatch", i))
+		}
+		diffs = append(diffs, compareByteSlices(fmt.Sprintf("storageProofs[%d].proofNodes", i), base[i].ProofNodes, other[i].ProofNodes)...)
+	}
+	return diffs
 }

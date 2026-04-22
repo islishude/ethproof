@@ -7,6 +7,7 @@ import (
 )
 
 type StateProofPackage = proof.StateProofPackage
+type StateStorageProof = proof.StateStorageProof
 type ReceiptProofPackage = proof.ReceiptProofPackage
 type TransactionProofPackage = proof.TransactionProofPackage
 type StateAccountClaim = proof.StateAccountClaim

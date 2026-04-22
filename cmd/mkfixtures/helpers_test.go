@@ -59,11 +59,11 @@ func TestCanonicalOfflineStateDigestsStable(t *testing.T) {
 		TransactionsRoot: statePkg.Block.TransactionsRoot,
 		ReceiptsRoot:     statePkg.Block.ReceiptsRoot,
 	}
-	first, err := canonicalOfflineStateDigests(header, statePkg.AccountRLP, statePkg.AccountProofNodes, statePkg.Slot, statePkg.StorageValue, statePkg.StorageProofNodes)
+	first, err := canonicalOfflineStateDigests(header, statePkg.AccountRLP, statePkg.AccountProofNodes, statePkg.StorageProofs)
 	if err != nil {
 		t.Fatalf("canonicalOfflineStateDigests(first): %v", err)
 	}
-	second, err := canonicalOfflineStateDigests(header, statePkg.AccountRLP, statePkg.AccountProofNodes, statePkg.Slot, statePkg.StorageValue, statePkg.StorageProofNodes)
+	second, err := canonicalOfflineStateDigests(header, statePkg.AccountRLP, statePkg.AccountProofNodes, statePkg.StorageProofs)
 	if err != nil {
 		t.Fatalf("canonicalOfflineStateDigests(second): %v", err)
 	}

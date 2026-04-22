@@ -17,9 +17,9 @@ func TestLiveGenerateAndVerify(t *testing.T) {
 	logIndex := strings.TrimSpace(os.Getenv("ETH_PROOF_LIVE_LOG_INDEX"))
 	blockNumber := strings.TrimSpace(os.Getenv("ETH_PROOF_LIVE_STATE_BLOCK"))
 	account := strings.TrimSpace(os.Getenv("ETH_PROOF_LIVE_ACCOUNT"))
-	slot := strings.TrimSpace(os.Getenv("ETH_PROOF_LIVE_SLOT"))
-	if len(rpcs) == 0 || txHash == "" || logIndex == "" || blockNumber == "" || account == "" || slot == "" {
-		t.Skip("set ETH_PROOF_RPCS, ETH_PROOF_LIVE_TX, ETH_PROOF_LIVE_LOG_INDEX, ETH_PROOF_LIVE_STATE_BLOCK, ETH_PROOF_LIVE_ACCOUNT, and ETH_PROOF_LIVE_SLOT to run live tests")
+	slots := splitEnvList("ETH_PROOF_LIVE_SLOTS")
+	if len(rpcs) == 0 || txHash == "" || logIndex == "" || blockNumber == "" || account == "" || len(slots) == 0 {
+		t.Skip("set ETH_PROOF_RPCS, ETH_PROOF_LIVE_TX, ETH_PROOF_LIVE_LOG_INDEX, ETH_PROOF_LIVE_STATE_BLOCK, ETH_PROOF_LIVE_ACCOUNT, and ETH_PROOF_LIVE_SLOTS to run live tests")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -62,7 +62,7 @@ func TestLiveGenerateAndVerify(t *testing.T) {
 		RPCURLs:     rpcs,
 		BlockNumber: mustParseUint64(t, blockNumber),
 		Account:     common.HexToAddress(account),
-		Slot:        common.HexToHash(slot),
+		Slots:       parseHashes(slots),
 	})
 	if err != nil {
 		t.Fatalf("GenerateStateProof: %v", err)
@@ -73,6 +73,14 @@ func TestLiveGenerateAndVerify(t *testing.T) {
 	if err := VerifyStateProofPackageAgainstRPCs(ctx, statePkg, verifyReq); err != nil {
 		t.Fatalf("VerifyStateProofPackageAgainstRPCs: %v", err)
 	}
+}
+
+func parseHashes(values []string) []common.Hash {
+	out := make([]common.Hash, len(values))
+	for i, value := range values {
+		out[i] = common.HexToHash(value)
+	}
+	return out
 }
 
 func splitEnvList(key string) []string {

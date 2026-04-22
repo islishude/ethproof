@@ -46,7 +46,7 @@ type StateProofSourcesRequest struct {
 	MinRPCSources int
 	BlockNumber   uint64
 	Account       common.Address
-	Slot          common.Hash
+	Slots         []common.Hash
 }
 
 // ReceiptProofSourcesRequest describes the inputs required to generate a receipt proof from injected sources.

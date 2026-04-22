@@ -20,8 +20,8 @@
           "digest": "0x8f60967a7ffcd6272666d86855ae539cd38c1387cf2848559db2ab8c3a3d52d8"
         },
         {
-          "name": "storageProof",
-          "digest": "0xf66d920c0d0b17cd91b6c1733ae88dbad6ca64a8f93c69f04b527dcc3018e04d"
+          "name": "storageProofs",
+          "digest": "0x8ccb38f556a118b03735f519f7b1331ca1eb8358df0025e17e9a96995e0d4f55"
         }
       ],
       "fields": [
@@ -66,11 +66,6 @@
           "consistent": true
         },
         {
-          "name": "slot",
-          "value": "0x0000000000000000000000000000000000000000000000000000000000000001",
-          "consistent": true
-        },
-        {
           "name": "account.nonce",
           "value": "7",
           "consistent": true
@@ -91,15 +86,29 @@
           "consistent": true
         },
         {
-          "name": "storage.value",
+          "name": "storageProofs[0].slot",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "consistent": true
+        },
+        {
+          "name": "storageProofs[0].value",
           "value": "0x00000000000000000000000000000000000000000000000000000000deadbeef",
+          "consistent": true
+        },
+        {
+          "name": "storageProofs[1].slot",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000002",
+          "consistent": true
+        },
+        {
+          "name": "storageProofs[1].value",
+          "value": "0x00000000000000000000000000000000000000000000000000000000feedface",
           "consistent": true
         }
       ]
     }
   },
   "account": "0x4444444444444444444444444444444444444444",
-  "slot": "0x0000000000000000000000000000000000000000000000000000000000000001",
   "accountRlp": "0xf849078516fee0e524a051e3a6b1ec49bebb3cdc8f533e43b820ca313a5e7d1dfcdb9bb15921352dfce7a0e0dae998fb440c58e6514a416750fe11ea5df675f0b51de17ad77b653e1b25b7",
   "accountProofNodes": [
     "0xf86ea03cfa6af4bfa0111fd5e7625d43e84cd2d40629cf6008219d2c0e30ed48abf8b6b84bf849078516fee0e524a051e3a6b1ec49bebb3cdc8f533e43b820ca313a5e7d1dfcdb9bb15921352dfce7a0e0dae998fb440c58e6514a416750fe11ea5df675f0b51de17ad77b653e1b25b7",
@@ -111,9 +120,22 @@
     "storageRoot": "0x51e3a6b1ec49bebb3cdc8f533e43b820ca313a5e7d1dfcdb9bb15921352dfce7",
     "codeHash": "0xe0dae998fb440c58e6514a416750fe11ea5df675f0b51de17ad77b653e1b25b7"
   },
-  "storageValue": "0x00000000000000000000000000000000000000000000000000000000deadbeef",
-  "storageProofNodes": [
-    "0xe7a0310e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf68584deadbeef",
-    "0xf85180808080a0f0cb9ebd4916b8e8f9ac6a94d3bd71345d47654578f28fe64eecb22197558771808080808080a038b224cdad1072fc3e9bfdfab598188dbc4ac167b80a4d924e959cc95da6ad1c8080808080"
+  "storageProofs": [
+    {
+      "slot": "0x0000000000000000000000000000000000000000000000000000000000000001",
+      "value": "0x00000000000000000000000000000000000000000000000000000000deadbeef",
+      "proofNodes": [
+        "0xe7a0310e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf68584deadbeef",
+        "0xf85180808080a0f0cb9ebd4916b8e8f9ac6a94d3bd71345d47654578f28fe64eecb22197558771808080808080a038b224cdad1072fc3e9bfdfab598188dbc4ac167b80a4d924e959cc95da6ad1c8080808080"
+      ]
+    },
+    {
+      "slot": "0x0000000000000000000000000000000000000000000000000000000000000002",
+      "value": "0x00000000000000000000000000000000000000000000000000000000feedface",
+      "proofNodes": [
+        "0xf85180808080a0f0cb9ebd4916b8e8f9ac6a94d3bd71345d47654578f28fe64eecb22197558771808080808080a038b224cdad1072fc3e9bfdfab598188dbc4ac167b80a4d924e959cc95da6ad1c8080808080",
+        "0xe7a0305787fa12a823e0f2b7631cc41b3ba8828b3321ca811111fa75cd3aa3bb5ace8584feedface"
+      ]
+    }
   ]
 }

@@ -18,10 +18,10 @@ func TestCompareSnapshotsReportChangedFields(t *testing.T) {
 	t.Run("state", func(t *testing.T) {
 		base := testAccountSnapshot()
 		other := cloneAccountSnapshot(base)
-		other.StorageValue = common.HexToHash("0x9999")
+		other.StorageProofs[0].Value = common.HexToHash("0x9999")
 
 		diffs := compareStateSnapshot(base, other)
-		if !slices.Contains(diffs, "storageValue mismatch") {
+		if !slices.Contains(diffs, "storageProofs[0].value mismatch") {
 			t.Fatalf("expected storage value mismatch, got %v", diffs)
 		}
 	})
@@ -207,7 +207,6 @@ func testAccountSnapshot() *accountSnapshot {
 		Account: common.HexToAddress(
 			"0x1111111111111111111111111111111111111111",
 		),
-		Slot:       common.HexToHash("0x01"),
 		AccountRLP: hexutil.Bytes{0xaa, 0xbb},
 		AccountProof: []hexutil.Bytes{
 			{0x01, 0x02},
@@ -218,10 +217,19 @@ func testAccountSnapshot() *accountSnapshot {
 			StorageRoot: common.HexToHash("0x1000"),
 			CodeHash:    common.HexToHash("0x2000"),
 		},
-		StorageValue: common.HexToHash("0x3000"),
-		StorageProof: []hexutil.Bytes{
-			{0x03, 0x04},
-		},
+		StorageProofs: []StateStorageProof{{
+			Slot:  common.HexToHash("0x01"),
+			Value: common.HexToHash("0x3000"),
+			ProofNodes: []hexutil.Bytes{
+				{0x03, 0x04},
+			},
+		}, {
+			Slot:  common.HexToHash("0x02"),
+			Value: common.HexToHash("0x4000"),
+			ProofNodes: []hexutil.Bytes{
+				{0x05, 0x06},
+			},
+		}},
 	}
 }
 
@@ -230,7 +238,7 @@ func cloneAccountSnapshot(in *accountSnapshot) *accountSnapshot {
 	out.Header = cloneBlockSnapshotHeader(in.Header)
 	out.AccountRLP = proofutil.CanonicalBytes(in.AccountRLP)
 	out.AccountProof = cloneHexBytesList(in.AccountProof)
-	out.StorageProof = cloneHexBytesList(in.StorageProof)
+	out.StorageProofs = cloneStateStorageProofs(in.StorageProofs)
 	return &out
 }
 

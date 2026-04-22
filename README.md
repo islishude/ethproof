@@ -2,7 +2,7 @@
 
 This project generates and verifies three Ethereum Merkle Patricia Trie proof types:
 
-- `state`: account proof + single storage slot proof against `stateRoot`
+- `state`: account proof + one or more storage proofs against `stateRoot`
 - `receipt(event)`: receipt inclusion proof against `receiptsRoot`, then event matching inside the receipt
 - `transaction`: transaction inclusion proof against `transactionsRoot`
 
@@ -16,15 +16,15 @@ It also includes a local Anvil-backed e2e path that deploys a minimal test contr
 
 ```text
 account ⊂ state trie -> stateRoot
-slot ⊂ storage trie(account.storageRoot) -> storageRoot ⊂ account
+slot[i] ⊂ storage trie(account.storageRoot) -> storageRoot ⊂ account
 ```
 
 Generation uses `eth_getProof` for account/storage proofs, but verification is fully local:
 
 1. verify `accountProof` against `stateRoot` and `keccak(address)`
 2. decode the verified account RLP and check `nonce/balance/storageRoot/codeHash`
-3. verify `storageProof` against `account.storageRoot` and `keccak(slot)`
-4. normalize the storage value and compare it with the claimed slot value
+3. verify each `storageProofs[i]` against `account.storageRoot` and `keccak(slot[i])`
+4. normalize each storage value and compare it with the claimed slot value
 
 ### Receipt / event proof
 
@@ -55,9 +55,9 @@ For `state` proofs the normalized data includes:
 
 - block header context
 - account proof nodes
-- storage proof nodes
+- storage proofs in requested slot order
 - account RLP / decoded account fields
-- normalized storage slot value
+- normalized storage slot values
 
 For `receipt` and `transaction` proofs the normalized data includes:
 
@@ -83,6 +83,8 @@ go run ./cmd/ethproof generate state --config ./config.example.json
 # or override runtime logging for a single invocation
 go run ./cmd/ethproof generate state --config ./config.example.json --log-level debug --log-format json
 ```
+
+`generate state` accepts repeatable `--slot` flags, and config uses `generate.state.slots`.
 
 ### Generate receipt / event proof
 
@@ -169,7 +171,10 @@ pkg, err := proof.GenerateStateProofFromSources(ctx, proof.StateProofSourcesRequ
 	MinRPCSources: 3,
 	BlockNumber:   22_000_000,
 	Account:       common.HexToAddress("0x..."),
-	Slot:          common.HexToHash("0x..."),
+	Slots: []common.Hash{
+		common.HexToHash("0x..."),
+		common.HexToHash("0x..."),
+	},
 })
 ```
 
@@ -270,7 +275,7 @@ go tool github.com/ethereum/go-ethereum/cmd/abigen \
 - `ETH_PROOF_LIVE_LOG_INDEX`: log index inside that receipt
 - `ETH_PROOF_LIVE_STATE_BLOCK`: block number used for the state proof
 - `ETH_PROOF_LIVE_ACCOUNT`: account address for the state proof
-- `ETH_PROOF_LIVE_SLOT`: 32-byte storage slot key for the state proof
+- `ETH_PROOF_LIVE_SLOTS`: comma-separated 32-byte storage slot keys for the state proof
 
 Example:
 
@@ -280,7 +285,7 @@ ETH_PROOF_LIVE_TX=0x... \
 ETH_PROOF_LIVE_LOG_INDEX=0 \
 ETH_PROOF_LIVE_STATE_BLOCK=22000000 \
 ETH_PROOF_LIVE_ACCOUNT=0x... \
-ETH_PROOF_LIVE_SLOT=0x... \
+ETH_PROOF_LIVE_SLOTS=0x...,0x... \
 make live-test
 ```
 
