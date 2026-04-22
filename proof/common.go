@@ -10,33 +10,8 @@ import (
 	"github.com/islishude/ethproof/internal/proofutil"
 )
 
-const defaultMinRPCSources = 3
-
-func normalizeRPCURLs(urls []string, minSources int) ([]string, error) {
-	seen := make(map[string]struct{}, len(urls))
-	out := make([]string, 0, len(urls))
-	for _, raw := range urls {
-		url := strings.TrimSpace(raw)
-		if url == "" {
-			continue
-		}
-		if _, ok := seen[url]; ok {
-			continue
-		}
-		seen[url] = struct{}{}
-		out = append(out, url)
-	}
-	if minSources == 0 {
-		minSources = defaultMinRPCSources
-	}
-	if minSources < 1 {
-		return nil, fmt.Errorf("min rpc sources must be at least 1, got %d", minSources)
-	}
-	if len(out) < minSources {
-		return nil, fmt.Errorf("need at least %d distinct rpc sources, got %d", minSources, len(out))
-	}
-	return out, nil
-}
+// DefaultMinRPCSources is the default minimum number of distinct RPC sources required for live RPC flows.
+const DefaultMinRPCSources = 3
 
 func buildBlockContext(header blockSnapshotHeader, consensus SourceConsensus) BlockContext {
 	return BlockContext{

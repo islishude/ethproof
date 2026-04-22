@@ -26,7 +26,7 @@ func TestLiveGenerateAndVerify(t *testing.T) {
 	defer cancel()
 	verifyReq := VerifyRPCRequest{
 		RPCURLs:       rpcs,
-		MinRPCSources: defaultMinRPCSources,
+		MinRPCSources: DefaultMinRPCSources,
 	}
 
 	txPkg, err := GenerateTransactionProof(ctx, TransactionProofRequest{

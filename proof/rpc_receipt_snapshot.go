@@ -13,16 +13,14 @@ import (
 	"github.com/islishude/ethproof/internal/proofutil"
 )
 
-func fetchReceiptSnapshot(ctx context.Context, source *rpcSource, txHash common.Hash, logIndex uint) (*receiptSnapshot, error) {
-	logger := loggerFromContext(ctx)
-	logger.Debug("fetching receipt snapshot", "rpc_url", source.url, "tx_hash", txHash, "log_index", logIndex)
+func fetchReceiptSnapshot(ctx context.Context, source ReceiptSource, txHash common.Hash, logIndex uint) (*receiptSnapshot, error) {
 	// Reuse the normalized transaction snapshot so receipt proof generation inherits the exact
 	// transaction bytes and block context that transaction proof generation would see.
 	txSnapshot, err := fetchTransactionSnapshot(ctx, source, txHash)
 	if err != nil {
 		return nil, err
 	}
-	receipt, err := source.eth.TransactionReceipt(ctx, txHash)
+	receipt, err := source.TransactionReceipt(ctx, txHash)
 	if err != nil {
 		return nil, fmt.Errorf("fetch target receipt: %w", err)
 	}
@@ -52,7 +50,6 @@ func fetchReceiptSnapshot(ctx context.Context, source *rpcSource, txHash common.
 	if !bytes.Equal(blockReceipts[txSnapshot.TxIndex], receiptRLP) {
 		return nil, fmt.Errorf("receipt bytes mismatch between block receipts and target receipt lookup")
 	}
-	logger.Debug("validated receipt snapshot locally", "rpc_url", source.url, "block_hash", txSnapshot.Header.BlockHash)
 
 	// Persist the claimed event as simple address/topics/data fields so package verification does
 	// not depend on any geth-specific receipt representation.
@@ -74,13 +71,13 @@ func fetchReceiptSnapshot(ctx context.Context, source *rpcSource, txHash common.
 	}, nil
 }
 
-func fetchBlockReceipts(ctx context.Context, source *rpcSource, blockHash common.Hash, expectedCount int) ([]hexutil.Bytes, error) {
-	receipts, err := source.eth.BlockReceipts(ctx, rpc.BlockNumberOrHashWithHash(blockHash, true))
+func fetchBlockReceipts(ctx context.Context, source ReceiptSource, blockHash common.Hash, expectedCount int) ([]hexutil.Bytes, error) {
+	receipts, err := source.BlockReceiptsByHash(ctx, blockHash)
 	if err != nil {
 		// Some providers do not implement eth_getBlockReceipts. Fall back to scanning each tx so
 		// receipt proof generation still works while remaining strict about normalized results.
 		if isRPCMethodNotFound(err) {
-			return fetchBlockReceiptsWithFallback(ctx, source, blockHash, expectedCount, func() ([]hexutil.Bytes, error) {
+			return fetchBlockReceiptsWithFallback(source, blockHash, expectedCount, func() ([]hexutil.Bytes, error) {
 				return fetchBlockReceiptsByTransactionScan(ctx, source, blockHash, expectedCount)
 			})
 		}
@@ -89,18 +86,15 @@ func fetchBlockReceipts(ctx context.Context, source *rpcSource, blockHash common
 	return encodeAndValidateBlockReceipts(receipts, blockHash, expectedCount)
 }
 
-func fetchBlockReceiptsWithFallback(ctx context.Context, source *rpcSource, blockHash common.Hash, expectedCount int, fallback func() ([]hexutil.Bytes, error)) ([]hexutil.Bytes, error) {
-	logger := loggerFromContext(ctx)
-	logger.Warn("eth_getBlockReceipts unavailable; falling back to transaction scan",
-		"rpc_url", source.url,
-		"block_hash", blockHash,
-		"expected_count", expectedCount,
-	)
+func fetchBlockReceiptsWithFallback(source ReceiptSource, blockHash common.Hash, expectedCount int, fallback func() ([]hexutil.Bytes, error)) ([]hexutil.Bytes, error) {
+	_ = source
+	_ = blockHash
+	_ = expectedCount
 	return fallback()
 }
 
-func fetchBlockReceiptsByTransactionScan(ctx context.Context, source *rpcSource, blockHash common.Hash, expectedCount int) ([]hexutil.Bytes, error) {
-	block, err := source.eth.BlockByHash(ctx, blockHash)
+func fetchBlockReceiptsByTransactionScan(ctx context.Context, source ReceiptSource, blockHash common.Hash, expectedCount int) ([]hexutil.Bytes, error) {
+	block, err := source.BlockByHash(ctx, blockHash)
 	if err != nil {
 		return nil, fmt.Errorf("fetch block for receipts: %w", err)
 	}
@@ -112,7 +106,7 @@ func fetchBlockReceiptsByTransactionScan(ctx context.Context, source *rpcSource,
 	// and validate that each receipt still points back to the expected block position.
 	blockReceipts := make([]hexutil.Bytes, len(block.Transactions()))
 	for i, blockTx := range block.Transactions() {
-		receipt, receiptErr := source.eth.TransactionReceipt(ctx, blockTx.Hash())
+		receipt, receiptErr := source.TransactionReceipt(ctx, blockTx.Hash())
 		if receiptErr != nil {
 			return nil, fmt.Errorf("fetch receipt %d/%d (%s): %w", i+1, len(block.Transactions()), blockTx.Hash(), receiptErr)
 		}

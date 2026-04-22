@@ -1,6 +1,16 @@
 package proof
 
-import "testing"
+import (
+	"context"
+	"slices"
+	"testing"
+)
+
+type stubNamedSource string
+
+func (s stubNamedSource) SourceName() string {
+	return string(s)
+}
 
 func TestNormalizeRPCURLsDefaultMinimum(t *testing.T) {
 	if _, err := normalizeRPCURLs([]string{"http://one"}, 0); err == nil {
@@ -28,5 +38,90 @@ func TestNormalizeRPCURLsCustomMinimum(t *testing.T) {
 func TestNormalizeRPCURLsRejectsInvalidMinimum(t *testing.T) {
 	if _, err := normalizeRPCURLs([]string{"http://one"}, -1); err == nil {
 		t.Fatal("expected invalid minimum to fail")
+	}
+}
+
+func TestNormalizeSourceNamesRejectsDuplicateNames(t *testing.T) {
+	_, err := normalizeSourceNames([]stubNamedSource{"one", "one"}, 1)
+	if err == nil {
+		t.Fatal("expected duplicate source names to fail")
+	}
+}
+
+func TestNormalizeSourceNamesRejectsEmptyNames(t *testing.T) {
+	_, err := normalizeSourceNames([]stubNamedSource{" "}, 1)
+	if err == nil {
+		t.Fatal("expected empty source name to fail")
+	}
+}
+
+func TestWithNormalizedRPCSourcesUsingNormalizesURLsAndClosesSources(t *testing.T) {
+	openCalls := 0
+	closeCalls := 0
+
+	got, err := withNormalizedRPCSourcesUsing(
+		context.Background(),
+		[]string{" http://one ", "http://one", "http://two "},
+		1,
+		func(_ context.Context, urls []string) ([]*rpcSource, error) {
+			openCalls++
+			if !slices.Equal(urls, []string{"http://one", "http://two"}) {
+				t.Fatalf("unexpected normalized urls: %v", urls)
+			}
+			return []*rpcSource{
+				{url: "http://one"},
+				{url: "http://two"},
+			}, nil
+		},
+		func(sources []*rpcSource) {
+			closeCalls++
+			if len(sources) != 2 {
+				t.Fatalf("unexpected source count passed to closer: %d", len(sources))
+			}
+		},
+		func(sources []*rpcSource) ([]string, error) {
+			headerSources := headerSourcesFromRPCSources(sources)
+			names := make([]string, len(headerSources))
+			for i, source := range headerSources {
+				names[i] = source.SourceName()
+			}
+			return names, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("withNormalizedRPCSourcesUsing returned error: %v", err)
+	}
+	if !slices.Equal(got, []string{"http://one", "http://two"}) {
+		t.Fatalf("unexpected source names: %v", got)
+	}
+	if openCalls != 1 {
+		t.Fatalf("expected opener to be called once, got %d", openCalls)
+	}
+	if closeCalls != 1 {
+		t.Fatalf("expected closer to be called once, got %d", closeCalls)
+	}
+}
+
+func TestWithNormalizedRPCSourcesUsingSkipsOpenOnNormalizationError(t *testing.T) {
+	openCalls := 0
+
+	_, err := withNormalizedRPCSourcesUsing(
+		context.Background(),
+		[]string{"http://one"},
+		-1,
+		func(_ context.Context, urls []string) ([]*rpcSource, error) {
+			openCalls++
+			return nil, nil
+		},
+		func([]*rpcSource) {},
+		func([]*rpcSource) (struct{}, error) {
+			return struct{}{}, nil
+		},
+	)
+	if err == nil {
+		t.Fatal("expected normalization error")
+	}
+	if openCalls != 0 {
+		t.Fatalf("expected opener to be skipped, got %d calls", openCalls)
 	}
 }

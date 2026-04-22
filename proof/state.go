@@ -4,44 +4,39 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
 )
 
 // GenerateStateProof fetches a state proof from every RPC source, requires normalized agreement,
 // and returns the agreed proof package.
 func GenerateStateProof(ctx context.Context, req StateProofRequest) (*StateProofPackage, error) {
-	logger := loggerFromContext(ctx).With("proof_type", "state")
-	logger.Info("generate proof started",
-		"block_number", req.BlockNumber,
-		"account", req.Account,
-		"slot", req.Slot,
-	)
+	return withNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources, func(sources []*rpcSource) (*StateProofPackage, error) {
+		return GenerateStateProofFromSources(ctx, StateProofSourcesRequest{
+			Sources:       stateSourcesFromRPCSources(sources),
+			MinRPCSources: req.MinRPCSources,
+			BlockNumber:   req.BlockNumber,
+			Account:       req.Account,
+			Slot:          req.Slot,
+		})
+	})
+}
 
-	// Normalize and deduplicate RPC inputs before any network work so every downstream
-	// step sees the exact source set that participates in consensus.
-	rpcs, err := normalizeRPCURLs(req.RPCURLs, req.MinRPCSources)
+// GenerateStateProofFromSources fetches a state proof from every source, requires normalized
+// agreement, and returns the agreed proof package.
+func GenerateStateProofFromSources(ctx context.Context, req StateProofSourcesRequest) (*StateProofPackage, error) {
+	sourceNames, err := normalizeSourceNames(req.Sources, req.MinRPCSources)
 	if err != nil {
 		return nil, err
 	}
-	logger.Debug("normalized rpc sources", "rpc_count", len(rpcs))
-
-	// Fetch the same logical snapshot from every source. Any source-specific error is
-	// wrapped with the RPC URL by collectFromRPCs.
-	snapshots, err := collectFromRPCs(ctx, rpcs, func(ctx context.Context, source *rpcSource) (*accountSnapshot, error) {
+	snapshots, err := collectFromSources(ctx, req.Sources, func(ctx context.Context, source StateSource) (*accountSnapshot, error) {
 		return fetchStateSnapshot(ctx, source, req.BlockNumber, req.Account, req.Slot)
 	})
 	if err != nil {
 		return nil, err
 	}
-	logger.Debug("fetched state snapshots", "snapshot_count", len(snapshots))
-
-	// Require byte-level agreement across sources, then embed the canonical snapshot and
-	// the consensus metadata derived from that agreed view.
-	base, consensus, err := consensusForStateSnapshots(rpcs, snapshots)
+	base, consensus, err := consensusForStateSnapshots(sourceNames, snapshots)
 	if err != nil {
 		return nil, err
 	}
-	logger.Info("rpc consensus established", "rpc_count", len(rpcs), "block_hash", base.Header.BlockHash)
 	pkg := &StateProofPackage{
 		Block:             buildBlockContext(base.Header, consensus),
 		Account:           base.Account,
@@ -52,19 +47,17 @@ func GenerateStateProof(ctx context.Context, req StateProofRequest) (*StateProof
 		StorageValue:      base.StorageValue,
 		StorageProofNodes: base.StorageProof,
 	}
-	logger.Info("generate proof completed", "block_number", pkg.Block.BlockNumber, "state_root", pkg.Block.StateRoot)
 	return pkg, nil
 }
 
 // VerifyStateProofPackage verifies the embedded account proof and storage proof locally.
 func VerifyStateProofPackage(pkg *StateProofPackage) error {
-	return verifyStateProofPackageWithLogger(discardLogger, pkg)
+	return verifyStateProofPackage(pkg)
 }
 
-func verifyStateProofPackageWithLogger(logger *slog.Logger, pkg *StateProofPackage) error {
+func verifyStateProofPackage(pkg *StateProofPackage) error {
 	// First prove the account leaf against stateRoot and verify that the decoded account
 	// fields match the claim embedded in the package.
-	logger.Debug("verifying local state proof", "block_hash", pkg.Block.BlockHash, "account", pkg.Account, "slot", pkg.Slot)
 	accountRLP, err := verifyAccountProof(pkg.Block.StateRoot, pkg.Account, pkg.AccountProofNodes, pkg.AccountClaim)
 	if err != nil {
 		return err
@@ -80,6 +73,5 @@ func verifyStateProofPackageWithLogger(logger *slog.Logger, pkg *StateProofPacka
 	if _, err := verifyStorageProof(pkg.AccountClaim.StorageRoot, pkg.Slot, pkg.StorageProofNodes, pkg.StorageValue); err != nil {
 		return err
 	}
-	logger.Debug("local state proof verified", "block_hash", pkg.Block.BlockHash, "account", pkg.Account, "slot", pkg.Slot)
 	return nil
 }

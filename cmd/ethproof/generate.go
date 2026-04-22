@@ -46,7 +46,6 @@ func runGenerateState(args []string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), stateProofTimeout)
 	defer cancel()
-	ctx = proof.WithLogger(ctx, logger)
 
 	pkg, err := proof.GenerateStateProof(ctx, cfg.Request)
 	if err != nil {
@@ -78,7 +77,6 @@ func runGenerateReceipt(args []string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), receiptProofTimeout)
 	defer cancel()
-	ctx = proof.WithLogger(ctx, logger)
 
 	pkg, err := proof.GenerateReceiptProof(ctx, cfg.Request)
 	if err != nil {
@@ -109,7 +107,6 @@ func runGenerateTransaction(args []string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), transactionProofTimeout)
 	defer cancel()
-	ctx = proof.WithLogger(ctx, logger)
 
 	pkg, err := proof.GenerateTransactionProof(ctx, cfg.Request)
 	if err != nil {

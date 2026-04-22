@@ -62,11 +62,11 @@ func TestVerifyTransactionProofPackageAgainstRPCsRejectsTamperedBlockHash(t *tes
 		MinRPCSources: 3,
 	}
 
-	err := verifyTransactionProofPackageAgainstRPCsWithFetcher(context.Background(), &pkg, req, func(_ context.Context, urls []string, blockHash common.Hash) ([]blockHeaderSource, error) {
+	err := verifyTransactionProofPackageAgainstRPCsWithFetcher(context.Background(), &pkg, req, func(_ context.Context, sources []HeaderSource, blockHash common.Hash) ([]blockHeaderSource, error) {
 		if blockHash != originalHash {
 			return nil, fmt.Errorf("fetch header: block %s not found", blockHash)
 		}
-		return fixedBlockHeaderFetcher(originalBlock)(context.Background(), urls, blockHash)
+		return fixedBlockHeaderFetcher(originalBlock)(context.Background(), sources, blockHash)
 	})
 	if err == nil {
 		t.Fatal("expected tampered block hash to fail rpc-aware verification")
@@ -86,18 +86,18 @@ func TestVerifyTransactionProofPackageAgainstRPCsRejectsVerifyRPCMismatch(t *tes
 	mismatch := cloneBlockSnapshotHeader(base)
 	mismatch.ParentHash = common.HexToHash("0xbeef")
 
-	err := verifyTransactionProofPackageAgainstRPCsWithFetcher(context.Background(), &pkg, req, func(_ context.Context, urls []string, blockHash common.Hash) ([]blockHeaderSource, error) {
+	err := verifyTransactionProofPackageAgainstRPCsWithFetcher(context.Background(), &pkg, req, func(_ context.Context, sources []HeaderSource, blockHash common.Hash) ([]blockHeaderSource, error) {
 		if blockHash != pkg.Block.BlockHash {
 			return nil, fmt.Errorf("fetch header: block %s not found", blockHash)
 		}
-		out := make([]blockHeaderSource, 0, len(urls))
-		for i, url := range urls {
+		out := make([]blockHeaderSource, 0, len(sources))
+		for i, source := range sources {
 			header := cloneBlockSnapshotHeader(base)
 			if i == 1 {
 				header = cloneBlockSnapshotHeader(mismatch)
 			}
 			out = append(out, blockHeaderSource{
-				source: url,
+				source: source.SourceName(),
 				header: header,
 			})
 		}
@@ -114,14 +114,14 @@ func TestVerifyTransactionProofPackageAgainstRPCsRejectsVerifyRPCMismatch(t *tes
 func fixedBlockHeaderFetcher(block BlockContext) blockHeaderFetcher {
 	expectedHash := block.BlockHash
 	template := blockSnapshotHeaderFromBlockContext(block)
-	return func(_ context.Context, urls []string, blockHash common.Hash) ([]blockHeaderSource, error) {
+	return func(_ context.Context, sources []HeaderSource, blockHash common.Hash) ([]blockHeaderSource, error) {
 		if blockHash != expectedHash {
 			return nil, fmt.Errorf("fetch header: block %s not found", blockHash)
 		}
-		out := make([]blockHeaderSource, 0, len(urls))
-		for _, url := range urls {
+		out := make([]blockHeaderSource, 0, len(sources))
+		for _, source := range sources {
 			out = append(out, blockHeaderSource{
-				source: url,
+				source: source.SourceName(),
 				header: cloneBlockSnapshotHeader(template),
 			})
 		}

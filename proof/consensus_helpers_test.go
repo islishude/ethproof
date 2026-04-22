@@ -3,8 +3,6 @@ package proof
 import (
 	"context"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -105,19 +103,14 @@ func TestRequireMatchingSnapshotsRejectsMismatch(t *testing.T) {
 	}
 }
 
-func TestCollectFromRPCsWrapsSourceErrors(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	_, err := collectFromRPCs(context.Background(), []string{server.URL}, func(_ context.Context, _ *rpcSource) (int, error) {
+func TestCollectFromSourcesWrapsSourceErrors(t *testing.T) {
+	_, err := collectFromSources(context.Background(), []stubNamedSource{"source-a"}, func(_ context.Context, _ stubNamedSource) (int, error) {
 		return 0, errors.New("boom")
 	})
 	if err == nil {
 		t.Fatal("expected source error")
 	}
-	if !strings.Contains(err.Error(), server.URL+": boom") {
+	if !strings.Contains(err.Error(), "source-a: boom") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

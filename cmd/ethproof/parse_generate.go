@@ -29,7 +29,7 @@ func parseGenerateStateArgs(args []string) (generateStateConfig, error) {
 	configPath := fs.String("config", "", "config json file")
 	var rpcURLs multiStringFlag
 	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
-	minRPCs := fs.Int("min-rpcs", proofMinRPCsDefault(), "minimum distinct RPC sources required")
+	minRPCs := fs.Int("min-rpcs", proof.DefaultMinRPCSources, "minimum distinct RPC sources required")
 	blockNumber := fs.Uint64("block", 0, "block number")
 	accountHex := fs.String("account", "", "account address")
 	slotHex := fs.String("slot", "", "32-byte storage slot key")
@@ -85,7 +85,7 @@ func parseGenerateReceiptArgs(args []string) (generateReceiptConfig, error) {
 	configPath := fs.String("config", "", "config json file")
 	var rpcURLs multiStringFlag
 	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
-	minRPCs := fs.Int("min-rpcs", proofMinRPCsDefault(), "minimum distinct RPC sources required")
+	minRPCs := fs.Int("min-rpcs", proof.DefaultMinRPCSources, "minimum distinct RPC sources required")
 	txHashHex := fs.String("tx", "", "transaction hash")
 	logIndex := fs.Uint("log-index", 0, "log index within receipt")
 	out := fs.String("out", "receipt.json", "output proof json")
@@ -134,7 +134,7 @@ func parseGenerateTransactionArgs(args []string) (generateTransactionConfig, err
 	configPath := fs.String("config", "", "config json file")
 	var rpcURLs multiStringFlag
 	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
-	minRPCs := fs.Int("min-rpcs", proofMinRPCsDefault(), "minimum distinct RPC sources required")
+	minRPCs := fs.Int("min-rpcs", proof.DefaultMinRPCSources, "minimum distinct RPC sources required")
 	txHashHex := fs.String("tx", "", "transaction hash")
 	out := fs.String("out", "tx.json", "output proof json")
 	logFlags := addLoggingFlags(fs)

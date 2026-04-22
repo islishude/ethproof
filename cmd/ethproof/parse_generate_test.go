@@ -6,6 +6,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/islishude/ethproof/internal/logutil"
+	"github.com/islishude/ethproof/proof"
 )
 
 func TestParseGenerateStateArgsPassesMinRPCs(t *testing.T) {
@@ -48,8 +49,8 @@ func TestParseGenerateReceiptArgsDefaultsMinRPCs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseGenerateReceiptArgs: %v", err)
 	}
-	if cfg.Request.MinRPCSources != proofMinRPCsDefault() {
-		t.Fatalf("expected default MinRPCSources=%d, got %d", proofMinRPCsDefault(), cfg.Request.MinRPCSources)
+	if cfg.Request.MinRPCSources != proof.DefaultMinRPCSources {
+		t.Fatalf("expected default MinRPCSources=%d, got %d", proof.DefaultMinRPCSources, cfg.Request.MinRPCSources)
 	}
 	if cfg.Request.LogIndex != 3 {
 		t.Fatalf("expected log index 3, got %d", cfg.Request.LogIndex)

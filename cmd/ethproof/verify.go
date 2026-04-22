@@ -41,7 +41,6 @@ func runVerifyState(args []string) error {
 	)
 	ctx, cancel := context.WithTimeout(context.Background(), verifyProofTimeout)
 	defer cancel()
-	ctx = proof.WithLogger(ctx, logger)
 
 	var pkg proof.StateProofPackage
 	if err := proof.LoadJSON(cfg.ProofPath, &pkg); err != nil {
@@ -66,7 +65,6 @@ func runVerifyReceipt(args []string) error {
 	)
 	ctx, cancel := context.WithTimeout(context.Background(), verifyProofTimeout)
 	defer cancel()
-	ctx = proof.WithLogger(ctx, logger)
 
 	var pkg proof.ReceiptProofPackage
 	if err := proof.LoadJSON(cfg.ProofPath, &pkg); err != nil {
@@ -91,7 +89,6 @@ func runVerifyTransaction(args []string) error {
 	)
 	ctx, cancel := context.WithTimeout(context.Background(), verifyProofTimeout)
 	defer cancel()
-	ctx = proof.WithLogger(ctx, logger)
 
 	var pkg proof.TransactionProofPackage
 	if err := proof.LoadJSON(cfg.ProofPath, &pkg); err != nil {

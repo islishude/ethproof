@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -15,33 +14,33 @@ import (
 // GenerateReceiptProof fetches the target receipt data from every RPC source, requires normalized
 // agreement, rebuilds the receipts trie locally, and returns the inclusion proof package.
 func GenerateReceiptProof(ctx context.Context, req ReceiptProofRequest) (*ReceiptProofPackage, error) {
-	logger := loggerFromContext(ctx).With("proof_type", "receipt")
-	logger.Info("generate proof started", "tx_hash", req.TxHash, "log_index", req.LogIndex)
+	return withNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources, func(sources []*rpcSource) (*ReceiptProofPackage, error) {
+		return GenerateReceiptProofFromSources(ctx, ReceiptProofSourcesRequest{
+			Sources:       receiptSourcesFromRPCSources(sources),
+			MinRPCSources: req.MinRPCSources,
+			TxHash:        req.TxHash,
+			LogIndex:      req.LogIndex,
+		})
+	})
+}
 
-	// Normalize the RPC set up front so consensus is evaluated over the exact sources we use.
-	rpcs, err := normalizeRPCURLs(req.RPCURLs, req.MinRPCSources)
+// GenerateReceiptProofFromSources fetches the target receipt data from every source, requires
+// normalized agreement, rebuilds the receipts trie locally, and returns the inclusion proof package.
+func GenerateReceiptProofFromSources(ctx context.Context, req ReceiptProofSourcesRequest) (*ReceiptProofPackage, error) {
+	sourceNames, err := normalizeSourceNames(req.Sources, req.MinRPCSources)
 	if err != nil {
 		return nil, err
 	}
-	logger.Debug("normalized rpc sources", "rpc_count", len(rpcs))
-
-	// Each source yields a fully normalized receipt snapshot: header context, transaction bytes,
-	// receipt bytes, full block receipt list, and the claimed log payload.
-	snapshots, err := collectFromRPCs(ctx, rpcs, func(ctx context.Context, source *rpcSource) (*receiptSnapshot, error) {
+	snapshots, err := collectFromSources(ctx, req.Sources, func(ctx context.Context, source ReceiptSource) (*receiptSnapshot, error) {
 		return fetchReceiptSnapshot(ctx, source, req.TxHash, req.LogIndex)
 	})
 	if err != nil {
 		return nil, err
 	}
-	logger.Debug("fetched receipt snapshots", "snapshot_count", len(snapshots))
-
-	// Receipt proof generation is intentionally strict: any normalized mismatch aborts instead
-	// of falling back to a quorum result.
-	base, consensus, err := consensusForReceiptSnapshots(rpcs, snapshots)
+	base, consensus, err := consensusForReceiptSnapshots(sourceNames, snapshots)
 	if err != nil {
 		return nil, err
 	}
-	logger.Info("rpc consensus established", "rpc_count", len(rpcs), "block_hash", base.Header.BlockHash)
 
 	// Rebuild the receipts trie locally from the agreed receipt bytes so the returned proof is
 	// anchored to the same receiptsRoot that appears in the agreed block header.
@@ -57,7 +56,6 @@ func GenerateReceiptProof(ctx context.Context, req ReceiptProofRequest) (*Receip
 	if err != nil {
 		return nil, err
 	}
-	logger.Debug("rebuilt receipt trie locally", "tx_index", base.TxIndex, "receipt_count", len(base.BlockReceipts))
 	pkg := &ReceiptProofPackage{
 		Block:          buildBlockContext(base.Header, consensus),
 		TxHash:         base.TxHash,
@@ -68,24 +66,22 @@ func GenerateReceiptProof(ctx context.Context, req ReceiptProofRequest) (*Receip
 		ProofNodes:     proofNodes,
 		Event:          base.Event,
 	}
-	logger.Info("generate proof completed", "block_number", pkg.Block.BlockNumber, "receipts_root", pkg.Block.ReceiptsRoot)
 	return pkg, nil
 }
 
 // VerifyReceiptProofPackage verifies the embedded receipt proof without extra caller expectations.
 func VerifyReceiptProofPackage(pkg *ReceiptProofPackage) error {
-	return verifyReceiptProofPackageWithExpectationsWithLogger(discardLogger, pkg, nil)
+	return verifyReceiptProofPackageLocal(pkg, nil)
 }
 
 // VerifyReceiptProofPackageWithExpectations verifies the receipt proof locally and optionally checks
 // additional caller-provided expectations against the claimed log.
 func VerifyReceiptProofPackageWithExpectations(pkg *ReceiptProofPackage, expect *ReceiptExpectations) error {
-	return verifyReceiptProofPackageWithExpectationsWithLogger(discardLogger, pkg, expect)
+	return verifyReceiptProofPackageLocal(pkg, expect)
 }
 
-func verifyReceiptProofPackageWithExpectationsWithLogger(logger *slog.Logger, pkg *ReceiptProofPackage, expect *ReceiptExpectations) error {
+func verifyReceiptProofPackageLocal(pkg *ReceiptProofPackage, expect *ReceiptExpectations) error {
 	// Verify inclusion first using the provided proof nodes and the package's receiptsRoot.
-	logger.Debug("verifying local receipt proof", "block_hash", pkg.Block.BlockHash, "tx_hash", pkg.TxHash, "log_index", pkg.LogIndex)
 	proofDB, err := proofutil.ProofDBFromHexNodes(pkg.ProofNodes)
 	if err != nil {
 		return err
@@ -148,7 +144,6 @@ func verifyReceiptProofPackageWithExpectationsWithLogger(logger *slog.Logger, pk
 			return fmt.Errorf("expected data mismatch")
 		}
 	}
-	logger.Debug("local receipt proof verified", "block_hash", pkg.Block.BlockHash, "tx_hash", pkg.TxHash, "log_index", pkg.LogIndex)
 	return nil
 }
 

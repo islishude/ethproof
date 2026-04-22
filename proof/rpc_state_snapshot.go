@@ -9,10 +9,8 @@ import (
 	"github.com/islishude/ethproof/internal/proofutil"
 )
 
-func fetchStateSnapshot(ctx context.Context, source *rpcSource, blockNumber uint64, account common.Address, slot common.Hash) (*accountSnapshot, error) {
-	logger := loggerFromContext(ctx)
-	logger.Debug("fetching state snapshot", "rpc_url", source.url, "block_number", blockNumber, "account", account, "slot", slot)
-	chainID, err := source.eth.ChainID(ctx)
+func fetchStateSnapshot(ctx context.Context, source StateSource, blockNumber uint64, account common.Address, slot common.Hash) (*accountSnapshot, error) {
+	chainID, err := source.ChainID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("chain id: %w", err)
 	}
@@ -20,18 +18,17 @@ func fetchStateSnapshot(ctx context.Context, source *rpcSource, blockNumber uint
 	// Fetch both the block header and eth_getProof payload at the requested block so the snapshot
 	// can later be compared across RPCs without any additional interpretation.
 	blockArg := new(big.Int).SetUint64(blockNumber)
-	header, err := source.eth.HeaderByNumber(ctx, blockArg)
+	header, err := source.HeaderByNumber(ctx, blockArg)
 	if err != nil {
 		return nil, fmt.Errorf("fetch header: %w", err)
 	}
-	proof, err := source.geth.GetProof(ctx, account, []string{slot.Hex()}, blockArg)
+	proof, err := source.GetProof(ctx, account, []string{slot.Hex()}, blockArg)
 	if err != nil {
 		return nil, fmt.Errorf("eth_getProof: %w", err)
 	}
 	if len(proof.StorageProof) != 1 {
 		return nil, fmt.Errorf("expected exactly one storage proof, got %d", len(proof.StorageProof))
 	}
-	logger.Debug("fetched state rpc payloads", "rpc_url", source.url, "block_hash", header.Hash())
 
 	// Normalize proof node ordering before consensus comparison. Different RPCs can return
 	// equivalent node sets in different orders.
@@ -43,19 +40,9 @@ func fetchStateSnapshot(ctx context.Context, source *rpcSource, blockNumber uint
 	if err != nil {
 		return nil, err
 	}
-	chainIDValue, err := proofutil.ChainIDFromBig(chainID)
+	headerSnapshot, err := blockSnapshotHeaderFromHeader(chainID, header)
 	if err != nil {
 		return nil, err
-	}
-
-	headerSnapshot := blockSnapshotHeader{
-		ChainID:          chainIDValue,
-		BlockNumber:      header.Number.Uint64(),
-		BlockHash:        header.Hash(),
-		ParentHash:       header.ParentHash,
-		StateRoot:        header.Root,
-		TransactionsRoot: header.TxHash,
-		ReceiptsRoot:     header.ReceiptHash,
 	}
 	accountClaim := StateAccountClaim{
 		Nonce:       proof.Nonce,
@@ -74,7 +61,6 @@ func fetchStateSnapshot(ctx context.Context, source *rpcSource, blockNumber uint
 	if _, err := verifyStorageProof(proof.StorageHash, slot, storageProof, expectedStorageValue); err != nil {
 		return nil, fmt.Errorf("verify source storage proof: %w", err)
 	}
-	logger.Debug("validated state snapshot locally", "rpc_url", source.url, "block_hash", header.Hash())
 
 	return &accountSnapshot{
 		Header:       headerSnapshot,

@@ -73,7 +73,7 @@ The default minimum is `3` distinct RPC sources. This can be overridden per requ
 
 The CLI is now primarily config-driven. Start from [config.example.json](/Users/sudoless/codespace/coding/eth-proof/config.example.json) and pass `--config`; explicit flags still override the matching config fields.
 
-Runtime logs use the standard library `log/slog`. By default the CLI writes `info`-level text logs to `stderr`; `--log-level` and `--log-format` override the top-level `logging.level` / `logging.format` config values. Help text still prints to `stdout`, and usage errors still print to `stderr` without going through the logger.
+Runtime logs use the standard library `log/slog`. By default the CLI writes `info`-level text logs to `stderr`; `--log-level` and `--log-format` override the top-level `logging.level` / `logging.format` config values. Help text still prints to `stdout`, and usage errors still print to `stderr` without going through the logger. The `proof` package itself is silent by default and does not emit runtime logs.
 
 ### Generate state proof
 
@@ -121,6 +121,59 @@ go run ./cmd/ethproof verify tx \
 ```
 
 `verify receipt` always validates all fields embedded in the proof package. `--expect-*` flags add extra assertions on top of the package’s own claims, and CLI verify also re-fetches the block header from the independent verify RPC set to anchor the included roots.
+
+## Library Integration
+
+The library now supports two integration styles:
+
+- URL-driven helpers such as `GenerateStateProof` and `VerifyTransactionProofPackageAgainstRPCs`
+- source-driven helpers such as `GenerateStateProofFromSources` and `VerifyTransactionProofPackageAgainstSources`
+
+The source-driven APIs are intended for embedders that want to control transport, auth, retries, caching, or a forked `go-ethereum` build.
+
+If your application uses a modified geth module, a normal module replacement is enough:
+
+```go
+replace github.com/ethereum/go-ethereum => ../your-go-ethereum-fork
+```
+
+Then wrap your client(s) behind the `proof.HeaderSource` / `proof.StateSource` / `proof.TransactionSource` / `proof.ReceiptSource` interfaces:
+
+```go
+type myStateSource struct {
+	name string
+	eth  *ethclient.Client
+	geth *gethclient.Client
+}
+
+func (s *myStateSource) SourceName() string { return s.name }
+func (s *myStateSource) ChainID(ctx context.Context) (*big.Int, error) {
+	return s.eth.ChainID(ctx)
+}
+func (s *myStateSource) HeaderByHash(ctx context.Context, hash common.Hash) (*types.Header, error) {
+	return s.eth.HeaderByHash(ctx, hash)
+}
+func (s *myStateSource) HeaderByNumber(ctx context.Context, num *big.Int) (*types.Header, error) {
+	return s.eth.HeaderByNumber(ctx, num)
+}
+func (s *myStateSource) GetProof(ctx context.Context, account common.Address, slots []string, num *big.Int) (*gethclient.AccountResult, error) {
+	return s.geth.GetProof(ctx, account, slots, num)
+}
+
+pkg, err := proof.GenerateStateProofFromSources(ctx, proof.StateProofSourcesRequest{
+	Sources: []proof.StateSource{
+		&myStateSource{name: "rpc-a", eth: ethA, geth: gethA},
+		&myStateSource{name: "rpc-b", eth: ethB, geth: gethB},
+		&myStateSource{name: "rpc-c", eth: ethC, geth: gethC},
+	},
+	MinRPCSources: 3,
+	BlockNumber:   22_000_000,
+	Account:       common.HexToAddress("0x..."),
+	Slot:          common.HexToHash("0x..."),
+})
+```
+
+`SourceName()` values are persisted into `block.sourceConsensus.rpcs`, so they must be non-empty and unique within each request.
 
 ## Offline fixtures
 

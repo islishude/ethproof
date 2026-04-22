@@ -3,7 +3,11 @@ package proof
 import (
 	"context"
 	"fmt"
+	"math/big"
+	"strings"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethclient/gethclient"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -16,11 +20,71 @@ type rpcSource struct {
 	geth *gethclient.Client
 }
 
+func normalizeRPCURLs(urls []string, minSources int) ([]string, error) {
+	seen := make(map[string]struct{}, len(urls))
+	out := make([]string, 0, len(urls))
+	for _, raw := range urls {
+		url := strings.TrimSpace(raw)
+		if url == "" {
+			continue
+		}
+		if _, ok := seen[url]; ok {
+			continue
+		}
+		seen[url] = struct{}{}
+		out = append(out, url)
+	}
+	if minSources == 0 {
+		minSources = DefaultMinRPCSources
+	}
+	if minSources < 1 {
+		return nil, fmt.Errorf("min rpc sources must be at least 1, got %d", minSources)
+	}
+	if len(out) < minSources {
+		return nil, fmt.Errorf("need at least %d distinct rpc sources, got %d", minSources, len(out))
+	}
+	return out, nil
+}
+
+func (s *rpcSource) SourceName() string {
+	return s.url
+}
+
+func (s *rpcSource) ChainID(ctx context.Context) (*big.Int, error) {
+	return s.eth.ChainID(ctx)
+}
+
+func (s *rpcSource) HeaderByHash(ctx context.Context, blockHash common.Hash) (*types.Header, error) {
+	return s.eth.HeaderByHash(ctx, blockHash)
+}
+
+func (s *rpcSource) HeaderByNumber(ctx context.Context, blockNumber *big.Int) (*types.Header, error) {
+	return s.eth.HeaderByNumber(ctx, blockNumber)
+}
+
+func (s *rpcSource) GetProof(ctx context.Context, account common.Address, keys []string, blockNumber *big.Int) (*gethclient.AccountResult, error) {
+	return s.geth.GetProof(ctx, account, keys, blockNumber)
+}
+
+func (s *rpcSource) TransactionByHash(ctx context.Context, txHash common.Hash) (*types.Transaction, bool, error) {
+	return s.eth.TransactionByHash(ctx, txHash)
+}
+
+func (s *rpcSource) TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error) {
+	return s.eth.TransactionReceipt(ctx, txHash)
+}
+
+func (s *rpcSource) BlockByHash(ctx context.Context, blockHash common.Hash) (*types.Block, error) {
+	return s.eth.BlockByHash(ctx, blockHash)
+}
+
+func (s *rpcSource) BlockReceiptsByHash(ctx context.Context, blockHash common.Hash) ([]*types.Receipt, error) {
+	return s.eth.BlockReceipts(ctx, rpc.BlockNumberOrHashWithHash(blockHash, true))
+}
+
 func openRPCSources(ctx context.Context, urls []string) ([]*rpcSource, error) {
-	logger := loggerFromContext(ctx)
 	sources := make([]*rpcSource, 0, len(urls))
 	for _, url := range urls {
-		logger.Debug("dialing rpc source", "rpc_url", url)
 		raw, err := rpc.DialContext(ctx, url)
 		if err != nil {
 			closeRPCSources(sources)
@@ -32,7 +96,6 @@ func openRPCSources(ctx context.Context, urls []string) ([]*rpcSource, error) {
 			eth:  ethclient.NewClient(raw),
 			geth: gethclient.New(raw),
 		})
-		logger.Debug("rpc source connected", "rpc_url", url)
 	}
 	return sources, nil
 }
@@ -45,26 +108,61 @@ func closeRPCSources(sources []*rpcSource) {
 	}
 }
 
-func collectFromRPCs[T any](ctx context.Context, urls []string, fetch func(context.Context, *rpcSource) (T, error)) ([]T, error) {
-	// Open and close the full source set in one place so callers only describe how to fetch a
-	// single-source snapshot and do not repeat lifecycle/error-wrapping code.
-	logger := loggerFromContext(ctx)
-	sources, err := openRPCSources(ctx, urls)
-	if err != nil {
-		return nil, err
-	}
-	defer closeRPCSources(sources)
+func withNormalizedRPCSources[T any](ctx context.Context, urls []string, minSources int, fn func([]*rpcSource) (T, error)) (T, error) {
+	return withNormalizedRPCSourcesUsing(ctx, urls, minSources, openRPCSources, closeRPCSources, fn)
+}
 
-	out := make([]T, 0, len(sources))
-	for _, source := range sources {
-		// Prefix every fetch error with the source URL so strict multi-RPC failures are actionable.
-		logger.Debug("fetching normalized snapshot", "rpc_url", source.url)
-		value, fetchErr := fetch(ctx, source)
-		if fetchErr != nil {
-			return nil, fmt.Errorf("%s: %w", source.url, fetchErr)
-		}
-		out = append(out, value)
-		logger.Debug("fetched normalized snapshot", "rpc_url", source.url)
+func withNormalizedRPCSourcesUsing[T any](
+	ctx context.Context,
+	urls []string,
+	minSources int,
+	opener func(context.Context, []string) ([]*rpcSource, error),
+	closer func([]*rpcSource),
+	fn func([]*rpcSource) (T, error),
+) (T, error) {
+	var zero T
+
+	rpcs, err := normalizeRPCURLs(urls, minSources)
+	if err != nil {
+		return zero, err
 	}
-	return out, nil
+	sources, err := opener(ctx, rpcs)
+	if err != nil {
+		return zero, err
+	}
+	defer closer(sources)
+
+	return fn(sources)
+}
+
+func mapRPCSources[T any](sources []*rpcSource, convert func(*rpcSource) T) []T {
+	out := make([]T, len(sources))
+	for i, source := range sources {
+		out[i] = convert(source)
+	}
+	return out
+}
+
+func stateSourcesFromRPCSources(sources []*rpcSource) []StateSource {
+	return mapRPCSources(sources, func(source *rpcSource) StateSource {
+		return source
+	})
+}
+
+func receiptSourcesFromRPCSources(sources []*rpcSource) []ReceiptSource {
+	return mapRPCSources(sources, func(source *rpcSource) ReceiptSource {
+		return source
+	})
+}
+
+func transactionSourcesFromRPCSources(sources []*rpcSource) []TransactionSource {
+	return mapRPCSources(sources, func(source *rpcSource) TransactionSource {
+		return source
+	})
+}
+
+func headerSourcesFromRPCSources(sources []*rpcSource) []HeaderSource {
+	return mapRPCSources(sources, func(source *rpcSource) HeaderSource {
+		return source
+	})
 }

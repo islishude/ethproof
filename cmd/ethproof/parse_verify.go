@@ -29,7 +29,7 @@ func parseVerifyStateArgs(args []string) (verifyStateConfig, error) {
 	configPath := fs.String("config", "", "config json file")
 	var rpcURLs multiStringFlag
 	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
-	minRPCs := fs.Int("min-rpcs", proofMinRPCsDefault(), "minimum distinct RPC sources required")
+	minRPCs := fs.Int("min-rpcs", proof.DefaultMinRPCSources, "minimum distinct RPC sources required")
 	proofPath := fs.String("proof", "state.json", "proof json file")
 	logFlags := addLoggingFlags(fs)
 
@@ -66,7 +66,7 @@ func parseVerifyReceiptArgs(args []string) (verifyReceiptConfig, error) {
 	configPath := fs.String("config", "", "config json file")
 	var rpcURLs multiStringFlag
 	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
-	minRPCs := fs.Int("min-rpcs", proofMinRPCsDefault(), "minimum distinct RPC sources required")
+	minRPCs := fs.Int("min-rpcs", proof.DefaultMinRPCSources, "minimum distinct RPC sources required")
 	proofPath := fs.String("proof", "receipt.json", "proof json file")
 	expectEmitterHex := fs.String("expect-emitter", "", "optional expected emitter address")
 	expectDataHex := fs.String("expect-data", "", "optional expected event data hex")
@@ -118,7 +118,7 @@ func parseVerifyTransactionArgs(args []string) (verifyTransactionConfig, error) 
 	configPath := fs.String("config", "", "config json file")
 	var rpcURLs multiStringFlag
 	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
-	minRPCs := fs.Int("min-rpcs", proofMinRPCsDefault(), "minimum distinct RPC sources required")
+	minRPCs := fs.Int("min-rpcs", proof.DefaultMinRPCSources, "minimum distinct RPC sources required")
 	proofPath := fs.String("proof", "tx.json", "proof json file")
 	logFlags := addLoggingFlags(fs)
 

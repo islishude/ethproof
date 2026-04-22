@@ -10,14 +10,12 @@ import (
 	"github.com/islishude/ethproof/internal/proofutil"
 )
 
-func fetchTransactionSnapshot(ctx context.Context, source *rpcSource, txHash common.Hash) (*transactionSnapshot, error) {
-	logger := loggerFromContext(ctx)
-	logger.Debug("fetching transaction snapshot", "rpc_url", source.url, "tx_hash", txHash)
-	chainID, err := source.eth.ChainID(ctx)
+func fetchTransactionSnapshot(ctx context.Context, source TransactionSource, txHash common.Hash) (*transactionSnapshot, error) {
+	chainID, err := source.ChainID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("chain id: %w", err)
 	}
-	tx, isPending, err := source.eth.TransactionByHash(ctx, txHash)
+	tx, isPending, err := source.TransactionByHash(ctx, txHash)
 	if err != nil {
 		return nil, fmt.Errorf("fetch tx: %w", err)
 	}
@@ -27,11 +25,11 @@ func fetchTransactionSnapshot(ctx context.Context, source *rpcSource, txHash com
 
 	// Use the receipt to anchor the transaction to a block hash and transaction index before
 	// rebuilding the surrounding block transaction list.
-	receipt, err := source.eth.TransactionReceipt(ctx, txHash)
+	receipt, err := source.TransactionReceipt(ctx, txHash)
 	if err != nil {
 		return nil, fmt.Errorf("fetch receipt: %w", err)
 	}
-	block, err := source.eth.BlockByHash(ctx, receipt.BlockHash)
+	block, err := source.BlockByHash(ctx, receipt.BlockHash)
 	if err != nil {
 		return nil, fmt.Errorf("fetch block: %w", err)
 	}
@@ -71,7 +69,6 @@ func fetchTransactionSnapshot(ctx context.Context, source *rpcSource, txHash com
 	if !bytes.Equal(blockTransactions[targetIndex], transactionRLP) {
 		return nil, fmt.Errorf("transaction bytes mismatch between block body and tx lookup")
 	}
-	logger.Debug("validated transaction snapshot locally", "rpc_url", source.url, "block_hash", headerSnapshot.BlockHash, "tx_index", targetIndex)
 
 	return &transactionSnapshot{
 		Header:            headerSnapshot,

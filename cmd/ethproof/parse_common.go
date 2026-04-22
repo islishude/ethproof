@@ -139,7 +139,7 @@ func mergeUint64(seen map[string]bool, flagName string, flagValue uint64, config
 }
 
 func mergeRPCInputs(seen map[string]bool, rpcValues multiStringFlag, minRPCs int, configRPCs []string, configMinRPCs *int) ([]string, int) {
-	return mergeStringSlice(seen, "rpc", rpcValues, configRPCs), mergeInt(seen, "min-rpcs", minRPCs, configMinRPCs, proofMinRPCsDefault())
+	return mergeStringSlice(seen, "rpc", rpcValues, configRPCs), mergeInt(seen, "min-rpcs", minRPCs, configMinRPCs, proof.DefaultMinRPCSources)
 }
 
 func validateRPCInputs(rpcURLs []string, minRPCs int, missingMessage string) error {
@@ -171,10 +171,6 @@ func buildReceiptExpectations(expectEmitterHex string, expectDataHex string, top
 		return nil, nil
 	}
 	return &expect, nil
-}
-
-func proofMinRPCsDefault() int {
-	return 3
 }
 
 func resolveLoggingConfig(seen map[string]bool, flags loggingFlags, fileCfg *cliLoggingConfigFile) (logutil.Config, error) {
