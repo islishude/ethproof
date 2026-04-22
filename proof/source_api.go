@@ -105,14 +105,49 @@ func normalizeSourceNames[S namedSource](sources []S, minSources int) ([]string,
 }
 
 func collectFromSources[S namedSource, T any](ctx context.Context, sources []S, fetch func(context.Context, S) (T, error)) ([]T, error) {
-	out := make([]T, 0, len(sources))
-	for _, source := range sources {
-		value, err := fetch(ctx, source)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", strings.TrimSpace(source.SourceName()), err)
-		}
-		out = append(out, value)
+	type sourceResult struct {
+		index int
+		value T
+		err   error
 	}
+
+	out := make([]T, len(sources))
+	if len(sources) == 0 {
+		return out, nil
+	}
+
+	fetchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	results := make(chan sourceResult, len(sources))
+	for i, source := range sources {
+		go func(index int, source S) {
+			value, err := fetch(fetchCtx, source)
+			if err != nil {
+				err = fmt.Errorf("%s: %w", strings.TrimSpace(source.SourceName()), err)
+			}
+			results <- sourceResult{
+				index: index,
+				value: value,
+				err:   err,
+			}
+		}(i, source)
+	}
+
+	for range sources {
+		select {
+		case <-ctx.Done():
+			cancel()
+			return nil, ctx.Err()
+		case result := <-results:
+			if result.err != nil {
+				cancel()
+				return nil, result.err
+			}
+			out[result.index] = result.value
+		}
+	}
+
 	return out, nil
 }
 
