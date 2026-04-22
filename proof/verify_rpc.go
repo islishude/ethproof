@@ -14,13 +14,16 @@ func VerifyStateProofPackageAgainstRPCs(ctx context.Context, pkg *StateProofPack
 }
 
 func verifyStateProofPackageAgainstRPCsWithFetcher(ctx context.Context, pkg *StateProofPackage, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
-	_, err := withNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources, func(sources []*rpcSource) (struct{}, error) {
-		return struct{}{}, verifyStateProofPackageAgainstSourcesWithFetcher(ctx, pkg, VerifySourcesRequest{
-			Sources:       headerSourcesFromRPCSources(sources),
-			MinRPCSources: req.MinRPCSources,
-		}, fetcher)
-	})
-	return err
+	sourceSet, err := openNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources)
+	if err != nil {
+		return err
+	}
+	defer sourceSet.Close()
+
+	return verifyStateProofPackageAgainstSourcesWithFetcher(ctx, pkg, VerifySourcesRequest{
+		Sources:       sourceSet.HeaderSources(),
+		MinRPCSources: req.MinRPCSources,
+	}, fetcher)
 }
 
 // VerifyStateProofPackageAgainstSources verifies the state proof locally and then checks that the
@@ -30,9 +33,10 @@ func VerifyStateProofPackageAgainstSources(ctx context.Context, pkg *StateProofP
 }
 
 func verifyStateProofPackageAgainstSourcesWithFetcher(ctx context.Context, pkg *StateProofPackage, req VerifySourcesRequest, fetcher blockHeaderFetcher) error {
-	return verifyPackageAgainstSources(ctx, pkg.Block, req, func() error {
-		return verifyStateProofPackage(pkg)
-	}, fetcher)
+	if err := verifyStateProofPackage(pkg); err != nil {
+		return err
+	}
+	return verifyBlockContextAgainstSources(ctx, pkg.Block, req, fetcher)
 }
 
 // VerifyReceiptProofPackageWithExpectationsAgainstRPCs verifies the receipt proof locally,
@@ -43,13 +47,16 @@ func VerifyReceiptProofPackageWithExpectationsAgainstRPCs(ctx context.Context, p
 }
 
 func verifyReceiptProofPackageWithExpectationsAgainstRPCsWithFetcher(ctx context.Context, pkg *ReceiptProofPackage, expect *ReceiptExpectations, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
-	_, err := withNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources, func(sources []*rpcSource) (struct{}, error) {
-		return struct{}{}, verifyReceiptProofPackageWithExpectationsAgainstSourcesWithFetcher(ctx, pkg, expect, VerifySourcesRequest{
-			Sources:       headerSourcesFromRPCSources(sources),
-			MinRPCSources: req.MinRPCSources,
-		}, fetcher)
-	})
-	return err
+	sourceSet, err := openNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources)
+	if err != nil {
+		return err
+	}
+	defer sourceSet.Close()
+
+	return verifyReceiptProofPackageWithExpectationsAgainstSourcesWithFetcher(ctx, pkg, expect, VerifySourcesRequest{
+		Sources:       sourceSet.HeaderSources(),
+		MinRPCSources: req.MinRPCSources,
+	}, fetcher)
 }
 
 // VerifyReceiptProofPackageWithExpectationsAgainstSources verifies the receipt proof locally,
@@ -60,9 +67,10 @@ func VerifyReceiptProofPackageWithExpectationsAgainstSources(ctx context.Context
 }
 
 func verifyReceiptProofPackageWithExpectationsAgainstSourcesWithFetcher(ctx context.Context, pkg *ReceiptProofPackage, expect *ReceiptExpectations, req VerifySourcesRequest, fetcher blockHeaderFetcher) error {
-	return verifyPackageAgainstSources(ctx, pkg.Block, req, func() error {
-		return verifyReceiptProofPackageLocal(pkg, expect)
-	}, fetcher)
+	if err := verifyReceiptProofPackageLocal(pkg, expect); err != nil {
+		return err
+	}
+	return verifyBlockContextAgainstSources(ctx, pkg.Block, req, fetcher)
 }
 
 // VerifyTransactionProofPackageAgainstRPCs verifies the transaction proof locally and then checks
@@ -72,13 +80,16 @@ func VerifyTransactionProofPackageAgainstRPCs(ctx context.Context, pkg *Transact
 }
 
 func verifyTransactionProofPackageAgainstRPCsWithFetcher(ctx context.Context, pkg *TransactionProofPackage, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
-	_, err := withNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources, func(sources []*rpcSource) (struct{}, error) {
-		return struct{}{}, verifyTransactionProofPackageAgainstSourcesWithFetcher(ctx, pkg, VerifySourcesRequest{
-			Sources:       headerSourcesFromRPCSources(sources),
-			MinRPCSources: req.MinRPCSources,
-		}, fetcher)
-	})
-	return err
+	sourceSet, err := openNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources)
+	if err != nil {
+		return err
+	}
+	defer sourceSet.Close()
+
+	return verifyTransactionProofPackageAgainstSourcesWithFetcher(ctx, pkg, VerifySourcesRequest{
+		Sources:       sourceSet.HeaderSources(),
+		MinRPCSources: req.MinRPCSources,
+	}, fetcher)
 }
 
 // VerifyTransactionProofPackageAgainstSources verifies the transaction proof locally and then checks
@@ -88,16 +99,10 @@ func VerifyTransactionProofPackageAgainstSources(ctx context.Context, pkg *Trans
 }
 
 func verifyTransactionProofPackageAgainstSourcesWithFetcher(ctx context.Context, pkg *TransactionProofPackage, req VerifySourcesRequest, fetcher blockHeaderFetcher) error {
-	return verifyPackageAgainstSources(ctx, pkg.Block, req, func() error {
-		return verifyTransactionProofPackage(pkg)
-	}, fetcher)
-}
-
-func verifyPackageAgainstSources(ctx context.Context, block BlockContext, req VerifySourcesRequest, verifyLocal func() error, fetcher blockHeaderFetcher) error {
-	if err := verifyLocal(); err != nil {
+	if err := verifyTransactionProofPackage(pkg); err != nil {
 		return err
 	}
-	return verifyBlockContextAgainstSources(ctx, block, req, fetcher)
+	return verifyBlockContextAgainstSources(ctx, pkg.Block, req, fetcher)
 }
 
 func verifyBlockContextAgainstSources(ctx context.Context, block BlockContext, req VerifySourcesRequest, fetcher blockHeaderFetcher) error {

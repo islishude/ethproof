@@ -4,19 +4,31 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+
+	"github.com/ethereum/go-ethereum/common"
 )
+
+type stateSnapshotCollector struct {
+	blockNumber uint64
+	account     common.Address
+	slot        common.Hash
+}
 
 // GenerateStateProof fetches a state proof from every RPC source, requires normalized agreement,
 // and returns the agreed proof package.
 func GenerateStateProof(ctx context.Context, req StateProofRequest) (*StateProofPackage, error) {
-	return withNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources, func(sources []*rpcSource) (*StateProofPackage, error) {
-		return GenerateStateProofFromSources(ctx, StateProofSourcesRequest{
-			Sources:       stateSourcesFromRPCSources(sources),
-			MinRPCSources: req.MinRPCSources,
-			BlockNumber:   req.BlockNumber,
-			Account:       req.Account,
-			Slot:          req.Slot,
-		})
+	sourceSet, err := openNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources)
+	if err != nil {
+		return nil, err
+	}
+	defer sourceSet.Close()
+
+	return GenerateStateProofFromSources(ctx, StateProofSourcesRequest{
+		Sources:       sourceSet.StateSources(),
+		MinRPCSources: req.MinRPCSources,
+		BlockNumber:   req.BlockNumber,
+		Account:       req.Account,
+		Slot:          req.Slot,
 	})
 }
 
@@ -27,9 +39,7 @@ func GenerateStateProofFromSources(ctx context.Context, req StateProofSourcesReq
 	if err != nil {
 		return nil, err
 	}
-	snapshots, err := collectFromSources(ctx, req.Sources, func(ctx context.Context, source StateSource) (*accountSnapshot, error) {
-		return fetchStateSnapshot(ctx, source, req.BlockNumber, req.Account, req.Slot)
-	})
+	snapshots, err := collectStateSnapshots(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -74,4 +84,17 @@ func verifyStateProofPackage(pkg *StateProofPackage) error {
 		return err
 	}
 	return nil
+}
+
+func collectStateSnapshots(ctx context.Context, req StateProofSourcesRequest) ([]*accountSnapshot, error) {
+	collector := stateSnapshotCollector{
+		blockNumber: req.BlockNumber,
+		account:     req.Account,
+		slot:        req.Slot,
+	}
+	return collectFromSources(ctx, req.Sources, collector.fetch)
+}
+
+func (c stateSnapshotCollector) fetch(ctx context.Context, source StateSource) (*accountSnapshot, error) {
+	return fetchStateSnapshot(ctx, source, c.blockNumber, c.account, c.slot)
 }

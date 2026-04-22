@@ -55,11 +55,11 @@ func TestNormalizeSourceNamesRejectsEmptyNames(t *testing.T) {
 	}
 }
 
-func TestWithNormalizedRPCSourcesUsingNormalizesURLsAndClosesSources(t *testing.T) {
+func TestOpenNormalizedRPCSourcesUsingNormalizesURLsAndClosesSources(t *testing.T) {
 	openCalls := 0
 	closeCalls := 0
 
-	got, err := withNormalizedRPCSourcesUsing(
+	sourceSet, err := openNormalizedRPCSourcesUsing(
 		context.Background(),
 		[]string{" http://one ", "http://one", "http://two "},
 		1,
@@ -79,21 +79,23 @@ func TestWithNormalizedRPCSourcesUsingNormalizesURLsAndClosesSources(t *testing.
 				t.Fatalf("unexpected source count passed to closer: %d", len(sources))
 			}
 		},
-		func(sources []*rpcSource) ([]string, error) {
-			headerSources := headerSourcesFromRPCSources(sources)
-			names := make([]string, len(headerSources))
-			for i, source := range headerSources {
-				names[i] = source.SourceName()
-			}
-			return names, nil
-		},
 	)
 	if err != nil {
-		t.Fatalf("withNormalizedRPCSourcesUsing returned error: %v", err)
+		t.Fatalf("openNormalizedRPCSourcesUsing returned error: %v", err)
+	}
+
+	headerSources := sourceSet.HeaderSources()
+	got := make([]string, len(headerSources))
+	for i, source := range headerSources {
+		got[i] = source.SourceName()
 	}
 	if !slices.Equal(got, []string{"http://one", "http://two"}) {
 		t.Fatalf("unexpected source names: %v", got)
 	}
+
+	sourceSet.Close()
+	sourceSet.Close()
+
 	if openCalls != 1 {
 		t.Fatalf("expected opener to be called once, got %d", openCalls)
 	}
@@ -102,10 +104,10 @@ func TestWithNormalizedRPCSourcesUsingNormalizesURLsAndClosesSources(t *testing.
 	}
 }
 
-func TestWithNormalizedRPCSourcesUsingSkipsOpenOnNormalizationError(t *testing.T) {
+func TestOpenNormalizedRPCSourcesUsingSkipsOpenOnNormalizationError(t *testing.T) {
 	openCalls := 0
 
-	_, err := withNormalizedRPCSourcesUsing(
+	_, err := openNormalizedRPCSourcesUsing(
 		context.Background(),
 		[]string{"http://one"},
 		-1,
@@ -114,9 +116,6 @@ func TestWithNormalizedRPCSourcesUsingSkipsOpenOnNormalizationError(t *testing.T
 			return nil, nil
 		},
 		func([]*rpcSource) {},
-		func([]*rpcSource) (struct{}, error) {
-			return struct{}{}, nil
-		},
 	)
 	if err == nil {
 		t.Fatal("expected normalization error")

@@ -5,22 +5,32 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/islishude/ethproof/internal/proofutil"
 )
 
+type receiptSnapshotCollector struct {
+	txHash   common.Hash
+	logIndex uint
+}
+
 // GenerateReceiptProof fetches the target receipt data from every RPC source, requires normalized
 // agreement, rebuilds the receipts trie locally, and returns the inclusion proof package.
 func GenerateReceiptProof(ctx context.Context, req ReceiptProofRequest) (*ReceiptProofPackage, error) {
-	return withNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources, func(sources []*rpcSource) (*ReceiptProofPackage, error) {
-		return GenerateReceiptProofFromSources(ctx, ReceiptProofSourcesRequest{
-			Sources:       receiptSourcesFromRPCSources(sources),
-			MinRPCSources: req.MinRPCSources,
-			TxHash:        req.TxHash,
-			LogIndex:      req.LogIndex,
-		})
+	sourceSet, err := openNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources)
+	if err != nil {
+		return nil, err
+	}
+	defer sourceSet.Close()
+
+	return GenerateReceiptProofFromSources(ctx, ReceiptProofSourcesRequest{
+		Sources:       sourceSet.ReceiptSources(),
+		MinRPCSources: req.MinRPCSources,
+		TxHash:        req.TxHash,
+		LogIndex:      req.LogIndex,
 	})
 }
 
@@ -31,9 +41,7 @@ func GenerateReceiptProofFromSources(ctx context.Context, req ReceiptProofSource
 	if err != nil {
 		return nil, err
 	}
-	snapshots, err := collectFromSources(ctx, req.Sources, func(ctx context.Context, source ReceiptSource) (*receiptSnapshot, error) {
-		return fetchReceiptSnapshot(ctx, source, req.TxHash, req.LogIndex)
-	})
+	snapshots, err := collectReceiptSnapshots(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -157,4 +165,16 @@ func decodeReceiptList(hexReceipts []hexutil.Bytes) (types.Receipts, error) {
 		out[i] = receipt
 	}
 	return out, nil
+}
+
+func collectReceiptSnapshots(ctx context.Context, req ReceiptProofSourcesRequest) ([]*receiptSnapshot, error) {
+	collector := receiptSnapshotCollector{
+		txHash:   req.TxHash,
+		logIndex: req.LogIndex,
+	}
+	return collectFromSources(ctx, req.Sources, collector.fetch)
+}
+
+func (c receiptSnapshotCollector) fetch(ctx context.Context, source ReceiptSource) (*receiptSnapshot, error) {
+	return fetchReceiptSnapshot(ctx, source, c.txHash, c.logIndex)
 }

@@ -5,21 +5,30 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/islishude/ethproof/internal/proofutil"
 )
 
+type transactionSnapshotCollector struct {
+	txHash common.Hash
+}
+
 // GenerateTransactionProof fetches the target transaction data from every RPC source, requires
 // normalized agreement, rebuilds the transactions trie locally, and returns the inclusion proof package.
 func GenerateTransactionProof(ctx context.Context, req TransactionProofRequest) (*TransactionProofPackage, error) {
-	return withNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources, func(sources []*rpcSource) (*TransactionProofPackage, error) {
-		return GenerateTransactionProofFromSources(ctx, TransactionProofSourcesRequest{
-			Sources:       transactionSourcesFromRPCSources(sources),
-			MinRPCSources: req.MinRPCSources,
-			TxHash:        req.TxHash,
-		})
+	sourceSet, err := openNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources)
+	if err != nil {
+		return nil, err
+	}
+	defer sourceSet.Close()
+
+	return GenerateTransactionProofFromSources(ctx, TransactionProofSourcesRequest{
+		Sources:       sourceSet.TransactionSources(),
+		MinRPCSources: req.MinRPCSources,
+		TxHash:        req.TxHash,
 	})
 }
 
@@ -30,9 +39,7 @@ func GenerateTransactionProofFromSources(ctx context.Context, req TransactionPro
 	if err != nil {
 		return nil, err
 	}
-	snapshots, err := collectFromSources(ctx, req.Sources, func(ctx context.Context, source TransactionSource) (*transactionSnapshot, error) {
-		return fetchTransactionSnapshot(ctx, source, req.TxHash)
-	})
+	snapshots, err := collectTransactionSnapshots(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -107,4 +114,13 @@ func decodeTransactionList(hexTransactions []hexutil.Bytes) (types.Transactions,
 		out[i] = tx
 	}
 	return out, nil
+}
+
+func collectTransactionSnapshots(ctx context.Context, req TransactionProofSourcesRequest) ([]*transactionSnapshot, error) {
+	collector := transactionSnapshotCollector{txHash: req.TxHash}
+	return collectFromSources(ctx, req.Sources, collector.fetch)
+}
+
+func (c transactionSnapshotCollector) fetch(ctx context.Context, source TransactionSource) (*transactionSnapshot, error) {
+	return fetchTransactionSnapshot(ctx, source, c.txHash)
 }

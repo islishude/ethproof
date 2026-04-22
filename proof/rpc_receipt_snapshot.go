@@ -77,20 +77,11 @@ func fetchBlockReceipts(ctx context.Context, source ReceiptSource, blockHash com
 		// Some providers do not implement eth_getBlockReceipts. Fall back to scanning each tx so
 		// receipt proof generation still works while remaining strict about normalized results.
 		if isRPCMethodNotFound(err) {
-			return fetchBlockReceiptsWithFallback(source, blockHash, expectedCount, func() ([]hexutil.Bytes, error) {
-				return fetchBlockReceiptsByTransactionScan(ctx, source, blockHash, expectedCount)
-			})
+			return fetchBlockReceiptsByTransactionScan(ctx, source, blockHash, expectedCount)
 		}
 		return nil, fmt.Errorf("fetch block receipts: %w", err)
 	}
 	return encodeAndValidateBlockReceipts(receipts, blockHash, expectedCount)
-}
-
-func fetchBlockReceiptsWithFallback(source ReceiptSource, blockHash common.Hash, expectedCount int, fallback func() ([]hexutil.Bytes, error)) ([]hexutil.Bytes, error) {
-	_ = source
-	_ = blockHash
-	_ = expectedCount
-	return fallback()
 }
 
 func fetchBlockReceiptsByTransactionScan(ctx context.Context, source ReceiptSource, blockHash common.Hash, expectedCount int) ([]hexutil.Bytes, error) {

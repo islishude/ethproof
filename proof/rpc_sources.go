@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -108,61 +109,77 @@ func closeRPCSources(sources []*rpcSource) {
 	}
 }
 
-func withNormalizedRPCSources[T any](ctx context.Context, urls []string, minSources int, fn func([]*rpcSource) (T, error)) (T, error) {
-	return withNormalizedRPCSourcesUsing(ctx, urls, minSources, openRPCSources, closeRPCSources, fn)
+type rpcSourceSet struct {
+	sources   []*rpcSource
+	closer    func([]*rpcSource)
+	closeOnce sync.Once
 }
 
-func withNormalizedRPCSourcesUsing[T any](
+func openNormalizedRPCSources(ctx context.Context, urls []string, minSources int) (*rpcSourceSet, error) {
+	return openNormalizedRPCSourcesUsing(ctx, urls, minSources, openRPCSources, closeRPCSources)
+}
+
+func openNormalizedRPCSourcesUsing(
 	ctx context.Context,
 	urls []string,
 	minSources int,
 	opener func(context.Context, []string) ([]*rpcSource, error),
 	closer func([]*rpcSource),
-	fn func([]*rpcSource) (T, error),
-) (T, error) {
-	var zero T
-
+) (*rpcSourceSet, error) {
 	rpcs, err := normalizeRPCURLs(urls, minSources)
 	if err != nil {
-		return zero, err
+		return nil, err
 	}
 	sources, err := opener(ctx, rpcs)
 	if err != nil {
-		return zero, err
+		return nil, err
 	}
-	defer closer(sources)
 
-	return fn(sources)
+	return &rpcSourceSet{
+		sources: sources,
+		closer:  closer,
+	}, nil
 }
 
-func mapRPCSources[T any](sources []*rpcSource, convert func(*rpcSource) T) []T {
-	out := make([]T, len(sources))
-	for i, source := range sources {
-		out[i] = convert(source)
+func (s *rpcSourceSet) Close() {
+	if s == nil {
+		return
+	}
+	s.closeOnce.Do(func() {
+		if s.closer != nil {
+			s.closer(s.sources)
+		}
+	})
+}
+
+func (s *rpcSourceSet) StateSources() []StateSource {
+	out := make([]StateSource, len(s.sources))
+	for i, source := range s.sources {
+		out[i] = source
 	}
 	return out
 }
 
-func stateSourcesFromRPCSources(sources []*rpcSource) []StateSource {
-	return mapRPCSources(sources, func(source *rpcSource) StateSource {
-		return source
-	})
+func (s *rpcSourceSet) ReceiptSources() []ReceiptSource {
+	out := make([]ReceiptSource, len(s.sources))
+	for i, source := range s.sources {
+		out[i] = source
+	}
+	return out
 }
 
-func receiptSourcesFromRPCSources(sources []*rpcSource) []ReceiptSource {
-	return mapRPCSources(sources, func(source *rpcSource) ReceiptSource {
-		return source
-	})
+func (s *rpcSourceSet) TransactionSources() []TransactionSource {
+	out := make([]TransactionSource, len(s.sources))
+	for i, source := range s.sources {
+		out[i] = source
+	}
+	return out
 }
 
-func transactionSourcesFromRPCSources(sources []*rpcSource) []TransactionSource {
-	return mapRPCSources(sources, func(source *rpcSource) TransactionSource {
-		return source
-	})
-}
-
-func headerSourcesFromRPCSources(sources []*rpcSource) []HeaderSource {
-	return mapRPCSources(sources, func(source *rpcSource) HeaderSource {
-		return source
-	})
+func (s *rpcSourceSet) HeaderSources() []HeaderSource {
+	out := make([]HeaderSource, len(s.sources))
+	for i, source := range s.sources {
+		out[i] = source
+	}
+	return out
 }

@@ -17,17 +17,13 @@ type blockHeaderSource struct {
 
 type blockHeaderFetcher func(ctx context.Context, sources []HeaderSource, blockHash common.Hash) ([]blockHeaderSource, error)
 
+type blockHeaderSnapshotCollector struct {
+	blockHash common.Hash
+}
+
 func fetchBlockHeadersFromSources(ctx context.Context, sources []HeaderSource, blockHash common.Hash) ([]blockHeaderSource, error) {
-	return collectFromSources(ctx, sources, func(ctx context.Context, source HeaderSource) (blockHeaderSource, error) {
-		header, err := fetchBlockHeaderSnapshotByHash(ctx, source, blockHash)
-		if err != nil {
-			return blockHeaderSource{}, err
-		}
-		return blockHeaderSource{
-			source: source.SourceName(),
-			header: header,
-		}, nil
-	})
+	collector := blockHeaderSnapshotCollector{blockHash: blockHash}
+	return collectFromSources(ctx, sources, collector.fetch)
 }
 
 func blockSnapshotHeaderFromHeader(chainID *big.Int, header *types.Header) (blockSnapshotHeader, error) {
@@ -68,4 +64,15 @@ func fetchBlockHeaderSnapshotByHash(ctx context.Context, source HeaderSource, bl
 		return blockSnapshotHeader{}, err
 	}
 	return snapshot, nil
+}
+
+func (c blockHeaderSnapshotCollector) fetch(ctx context.Context, source HeaderSource) (blockHeaderSource, error) {
+	header, err := fetchBlockHeaderSnapshotByHash(ctx, source, c.blockHash)
+	if err != nil {
+		return blockHeaderSource{}, err
+	}
+	return blockHeaderSource{
+		source: source.SourceName(),
+		header: header,
+	}, nil
 }
