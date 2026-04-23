@@ -6,7 +6,7 @@ This project generates and verifies three Ethereum Merkle Patricia Trie proof ty
 - `receipt(event)`: receipt inclusion proof against `receiptsRoot`, then event matching inside the receipt
 - `transaction`: transaction inclusion proof against `transactionsRoot`
 
-It ships with deterministic offline fixtures under [proof/testdata](./proof/testdata) plus a local Anvil-backed e2e path that deploys a minimal test contract, generates all three proof types from a real local transaction, and validates them through both the Go API and the CLI.
+It ships with deterministic offline fixtures under [proof/testdata](./proof/testdata) plus a local Anvil-backed e2e path that deploys demo contracts, generates all three proof types from a real local transaction, and validates them through both the Go API and the CLI.
 
 ## Proof model
 
@@ -71,17 +71,20 @@ The default minimum is `3` distinct RPC sources. This can be overridden per requ
 
 The CLI is now primarily config-driven. Start from [config.example.json](./config.example.json) and pass `--config`; explicit flags still override the matching config fields.
 
-The CLI keeps runtime output minimal. Successful `generate`, `verify`, and `mkfixtures` runs print a short status line to `stderr`; help text still prints to `stdout`, and usage/runtime errors still print to `stderr`. The `proof` package itself is silent by default and does not emit runtime logs.
+The CLI keeps runtime output minimal. Successful `generate`, `verify`, and `mkfixtures` runs print a short status line to `stderr`; `resolve slot` writes JSON to `stdout` unless `--out` is set. Help text still prints to `stdout`, and usage/runtime errors still print to `stderr`. The `proof` package itself is silent by default and does not emit runtime logs.
 
-## Build and install the CLI with:
+## Build and install
 
 ```bash
 make build
 ```
 
-You'll have a compiled `ethproof` binary in `./bin/ethproof` that you can run with `--help` for usage info.
+This writes both binaries to `./bin/`:
 
-You can install it to your `$GOPATH/bin` with:
+- `./bin/ethproof`
+- `./bin/mkfixtures`
+
+Install `ethproof` into your `$GOPATH/bin` with:
 
 ```bash
 make install
@@ -126,6 +129,8 @@ Dynamic containers must be indexed explicitly. Examples:
 - `blob@word(1)`: the second 32-byte data word of a dynamic `bytes` or `string` value. `@word(n)` is only valid as the final suffix on a `bytes` / `string` query and addresses the storage slot at `keccak256(headSlot) + n`.
 
 For dynamic `bytes` / `string` values, the bare variable path such as `blob` resolves the head slot, while `blob@word(0)`, `blob@word(1)`, and so on resolve individual 32-byte words from the value's hashed data area.
+
+Without `--out`, the resolved JSON is written to `stdout`. With `--out`, it is saved to the requested file.
 
 Foundry artifact example:
 
@@ -230,7 +235,7 @@ pkg, err := proof.GenerateStateProofFromSources(ctx, proof.StateProofSourcesRequ
 
 ## Offline fixtures
 
-The repository includes three offline fixtures:
+The repository includes three generated offline proof fixtures:
 
 - [transaction_fixture.json](./proof/testdata/transaction_fixture.json)
 - [receipt_fixture.json](./proof/testdata/receipt_fixture.json)
@@ -246,11 +251,11 @@ go run ./cmd/mkfixtures --out-dir ./proof/testdata
 
 ## Testing
 
-The default test flow is offline and deterministic:
+Testing is split between an offline-stable path and a local e2e path:
 
-- `make unit-test` runs the unit and offline integration suites with `go test -v -race ./...`.
-- `make e2e-test` only runs the local Anvil-backed `TestAnvilE2E` mainline path.
-- `TestAnvilE2E` is skipped unless `ETH_PROOF_REQUIRE_E2E=1`, so plain `go test ./...` remains offline-stable.
+- `make unit-test` runs `go test -v -race ./...`. `TestAnvilE2E` is skipped unless `ETH_PROOF_REQUIRE_E2E=1`, so this path remains offline-stable.
+- `make e2e-test` starts Anvil with `docker compose` and runs only `./proof -run TestAnvilE2E`.
+- `make test` runs the full suite: `make unit-test` followed by `make e2e-test`.
 
 ### Local Anvil E2E
 

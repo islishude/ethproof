@@ -14,6 +14,7 @@ This document describes the code organization, runtime architecture, key data fl
   - `state`
   - `receipt`
   - `transaction`
+- Provide compiler-output-driven storage slot resolution for discovering concrete `state` proof keys.
 - Support two verification modes:
   - fully offline verification
   - offline verification + independent RPC block header revalidation
@@ -54,10 +55,11 @@ flowchart TD
 
 - `cmd/ethproof`
   - Responsible for argument parsing, config merging, output, and exit codes.
+  - Owns `generate`, `verify`, and `resolve slot` command wiring.
   - Does not contain proof correctness logic.
 - `proof`
   - The core of the repository.
-  - Owns the public APIs for the three proof types, snapshot collection, strict consistency checks, local trie proof verification, and independent RPC block revalidation.
+  - Owns the public APIs for the three proof types, the source-injected API surface, snapshot collection, strict consistency checks, local trie proof verification, independent RPC block revalidation, compiler-output loading, and storage slot resolution.
 - `internal/proofutil`
   - Contains only low-level infrastructure:
     - transaction/receipt encoding and decoding
@@ -77,8 +79,9 @@ flowchart TD
 | `proof/state.go` | Public generation/verification entrypoints for `state` proof |
 | `proof/receipt.go` | Public generation/verification entrypoints for `receipt` proof |
 | `proof/transaction.go` | Public generation/verification entrypoints for `transaction` proof |
-| `proof/verify_rpc.go` | Entry for “offline verification + independent RPC block header revalidation” |
-| `proof/rpc_sources.go` | RPC connection lifecycle and `collectFromRPCs` |
+| `proof/source_api.go` | Source-injected interfaces plus shared source collection helpers for embedders and tests |
+| `proof/verify_rpc.go` | Independent block-header revalidation against injected sources or RPC URLs |
+| `proof/rpc_sources.go` | RPC URL normalization, connection lifecycle, and URL-backed source adapters |
 | `proof/rpc_headers.go` | Block header fetching and header snapshots |
 | `proof/rpc_state_snapshot.go` | Normalization of a single-RPC state snapshot |
 | `proof/rpc_receipt_snapshot.go` | Normalization of a single-RPC receipt snapshot |
@@ -88,12 +91,15 @@ flowchart TD
 | `proof/transaction_consensus.go` | Transaction snapshot comparison and consensus metadata generation |
 | `proof/consensus_shared.go` | Shared consistency-comparison entrypoint reused across proof types |
 | `proof/proof_helpers.go` | Trie proof construction and local proof verification helpers |
-| `proof/common.go` | Generic comparisons, `BlockContext` assembly, RPC URL normalization |
+| `proof/storage_layout.go` | Compiler-output format detection and `storageLayout` extraction |
+| `proof/storage_resolver.go` | Solidity storage query parsing and slot expansion |
+| `proof/common.go` | Generic comparisons, `BlockContext` assembly, and shared consensus helpers |
 | `internal/proofutil/proofutil.go` | Encoding, digest, proof node, and trie helpers |
-| `cmd/ethproof/*.go` | CLI command dispatch, config parsing, thin generate/verify wrappers |
+| `cmd/ethproof/*.go` | CLI command dispatch, config parsing, and thin generate/verify/resolve wrappers |
 | `cmd/mkfixtures/*.go` | Fixture construction, offline digests, shared helpers |
-| `proof/testdata/*.json` | Deterministic offline fixtures |
-| `proof/*_test.go` | Core proof unit tests, fixture regression tests, verify-RPC tests, e2e |
+| `config.example.json` | Example config for `generate` / `verify` |
+| `proof/testdata/*.json` | Deterministic proof fixtures plus storage-layout fixtures used by tests |
+| `proof/*_test.go` | Proof, consensus, storage resolver, and e2e tests |
 | `contracts/ProofDemo.sol` | Minimal fixed-slot contract used by local e2e |
 | `contracts/ProofComplexDemo.sol` | Complex mapping/array/string/bytes contract used by local e2e |
 | `internal/e2e/bindings/*.go` | Generated Go bindings, must not be edited by hand |
@@ -120,7 +126,7 @@ flowchart TD
 ### 5.2 Design Notes
 
 - A proof package itself is fully verifiable offline.
-- `verify ... AgainstRPCs` only performs an additional independent check of the block context after offline verification succeeds.
+- `verify ... AgainstSources` and `verify ... AgainstRPCs` only perform an additional independent check of the block context after offline verification succeeds.
 - RPC metadata from generation is never reused by verify logic.
 
 ## 6. Shared Processing Pipeline for the Three Proof Types
@@ -131,34 +137,37 @@ The architecture of the three live generation flows is the same; only the snapsh
 sequenceDiagram
     participant Caller
     participant API as proof.Generate*
-    participant Norm as normalizeRPCURLs
-    participant Col as collectFromRPCs
-    participant Src as fetch*Snapshot
+    participant RPC as openNormalizedRPCSources
+    participant SrcAPI as proof.Generate*FromSources
+    participant Col as collectFromSources
+    participant Snap as fetch*Snapshot
     participant Con as consensusFor*Snapshots
     participant Trie as Local Trie Rebuild
 
     Caller->>API: Generate*(ctx, req)
-    API->>Norm: Normalize RPC input
-    API->>Col: Fetch a snapshot from each RPC
-    Col->>Src: Normalize single-RPC snapshot
-    Src-->>Col: snapshot
-    Col-->>API: []snapshot
-    API->>Con: Strictly compare all snapshots
-    Con-->>API: canonical snapshot + SourceConsensus
-    API->>Trie: Rebuild trie locally / extract proof nodes
-    Trie-->>API: proof bytes + nodes
-    API-->>Caller: *ProofPackage
+    API->>RPC: Normalize URLs + open RPC-backed sources
+    RPC-->>API: source set
+    API->>SrcAPI: delegate to source-driven entrypoint
+    SrcAPI->>Col: Fetch a snapshot from each source
+    Col->>Snap: Normalize single-source snapshot
+    Snap-->>Col: snapshot
+    Col-->>SrcAPI: []snapshot
+    SrcAPI->>Con: Strictly compare all snapshots
+    Con-->>SrcAPI: canonical snapshot + SourceConsensus
+    SrcAPI->>Trie: Rebuild trie locally / extract proof nodes
+    Trie-->>SrcAPI: proof bytes + nodes
+    SrcAPI-->>Caller: *ProofPackage
 ```
 
 ### 6.1 Shared Steps
 
-1. `normalizeRPCURLs`
-   - trims whitespace, deduplicates, and validates the minimum RPC count.
-2. `collectFromRPCs`
-   - centralizes RPC connection open/close lifecycle.
-   - uniformly prefixes per-source errors with the RPC URL.
+1. `openNormalizedRPCSources`
+   - trims whitespace, deduplicates RPC URLs, validates the minimum source count, and wraps each URL as a `StateSource` / `ReceiptSource` / `TransactionSource` / `HeaderSource`.
+2. `Generate*FromSources` + `collectFromSources`
+   - provide the shared source-driven path used by embedders, tests, and the URL-backed helpers.
+   - preserve source order and uniformly prefix per-source errors with `SourceName()`.
 3. `fetch*Snapshot`
-   - converts raw responses from a single RPC into a comparable normalized structure.
+   - converts raw responses from a single source into a comparable normalized structure.
 4. `requireMatchingSnapshots`
    - compares every snapshot against the normalized view from the first source.
    - any difference is a hard failure.
@@ -303,7 +312,7 @@ transaction ⊂ transactions trie -> transactionsRoot
 - `proof/transaction_consensus.go`
 - `proof/common.go`
 
-## 11. Offline Verification and RPC Revalidation
+## 11. Offline Verification and Independent Revalidation
 
 ### 11.1 Offline Verification
 
@@ -320,22 +329,22 @@ Characteristics:
 - Does not access the network.
 - Core logic lives in `proof/proof_helpers.go` and the verify flow inside `proof/*.go`.
 
-### 11.2 RPC-aware Verification
+### 11.2 Source-aware and RPC-aware Verification
 
 Public entrypoints:
 
-- `VerifyStateProofPackageAgainstRPCs`
-- `VerifyReceiptProofPackageWithExpectationsAgainstRPCs`
-- `VerifyTransactionProofPackageAgainstRPCs`
+- `VerifyStateProofPackageAgainstSources` / `VerifyStateProofPackageAgainstRPCs`
+- `VerifyReceiptProofPackageWithExpectationsAgainstSources` / `VerifyReceiptProofPackageWithExpectationsAgainstRPCs`
+- `VerifyTransactionProofPackageAgainstSources` / `VerifyTransactionProofPackageAgainstRPCs`
 
 Processing order:
 
 1. Perform local proof verification first.
-2. Re-fetch the block header from an independent verify RPC set.
-3. First require agreement across the verify RPCs.
+2. Re-fetch the block header from an independent verify source set.
+3. First require agreement across the verify sources.
 4. Then require the proof package’s `BlockContext` to match that independent view.
 
-This logic is centralized in `proof/verify_rpc.go`.
+The `...AgainstRPCs` helpers only normalize/open URL-backed sources and then delegate into the same source-driven verification logic in `proof/verify_rpc.go`.
 
 ## 12. CLI Design
 
@@ -351,20 +360,34 @@ This logic is centralized in `proof/verify_rpc.go`.
 | `cmd/ethproof/run.go` | root command dispatch, error rendering, exit codes |
 | `cmd/ethproof/generate.go` | thin wrapper for generate subcommands |
 | `cmd/ethproof/verify.go` | thin wrapper for verify subcommands |
+| `cmd/ethproof/resolve.go` | thin wrapper for `resolve slot` |
 | `cmd/ethproof/config.go` | config JSON structure and loading |
 | `cmd/ethproof/parse_common.go` | shared flag/config/default merge logic |
 | `cmd/ethproof/parse_generate.go` | generate argument parsing |
 | `cmd/ethproof/parse_verify.go` | verify argument parsing |
+| `cmd/ethproof/parse_resolve.go` | resolve argument parsing |
 | `cmd/ethproof/usage.go` | usage error / help semantics |
 
 ### 12.3 Runtime Flow
 
 1. `main -> runMain -> run`
-2. Dispatch subcommands to `generate` / `verify`
-3. Parse configuration
-4. Create a timeout-bounded context
-5. Call the `proof` package
-6. Print the result
+2. Dispatch subcommands to `generate`, `verify`, or `resolve`
+3. Parse flags and optional config JSON for `generate` / `verify`
+4. For `generate` / `verify`, create a timeout-bounded context and call the `proof` package
+5. For `resolve`, load compiler output via `proof.LoadStorageLayout`, then resolve the query via `proof.ResolveStorageSlots`
+6. `generate` / `verify` write JSON files plus a short status line to `stderr`; `resolve` writes JSON to `stdout` unless `--out` is provided
+
+### 12.4 `resolve slot`
+
+`resolve slot` is intentionally kept outside the proof-generation flow, but its core logic still lives in `proof/`:
+
+1. Parse `--compiler-output`, `--contract`, `--var`, and `--format`.
+2. Detect or enforce one of three compiler-output shapes:
+   - raw `storageLayout` JSON
+   - Foundry artifact JSON containing `storageLayout`
+   - Hardhat build-info JSON via `output.contracts`
+3. Walk the query path across structs, mappings, arrays, and optional `@word(n)` suffixes.
+4. Return `StorageSlotResolution` with the head slot plus the concrete slot/offset/size entries to read or prove.
 
 ## 13. Fixture and Test Design
 
@@ -385,19 +408,28 @@ This logic is centralized in `proof/verify_rpc.go`.
 
 ### 13.2 Test Layers
 
-- `proof/proof_test.go`
-  - fixture golden comparisons
-  - tamper regression
-- `proof/verify_rpc_test.go`
-  - verify-RPC revalidation path
+- `cmd/mkfixtures/fixtures_golden_test.go`
+  - checked-in proof fixtures match regenerated offline fixtures
+- `proof/state_verify_test.go`, `proof/receipt_verify_test.go`, `proof/transaction_verify_test.go`
+  - local verification and tamper-style regression coverage for each proof type
+- `proof/state_sources_test.go`, `proof/receipt_sources_test.go`, `proof/transaction_sources_test.go`
+  - source-driven generation and snapshot normalization
+- `proof/verify_sources_test.go`
+  - independent source/RPC revalidation and generation-metadata isolation
 - `proof/consensus_helpers_test.go`
-  - compare / consensus builder / `collectFromRPCs`
+  - compare / consensus builder helpers
+- `proof/source_consensus_test.go`, `proof/rpc_threshold_test.go`
+  - source-name validation, `collectFromSources`, and RPC minimum-threshold normalization
 - `proof/rpc_test.go`
   - receipt list encoding and validation
+- `proof/storage_layout_test.go`
+  - compiler-output parsing and slot resolution
+- `cmd/ethproof/*_test.go`
+  - CLI parsing, usage behavior, status output, and runtime wrapper behavior
 - `cmd/mkfixtures/helpers_test.go`
   - offline digest stability, proof node ordering, encoding roundtrip
 - `proof/anvil_e2e_test.go`
-  - local Anvil end-to-end path
+  - local Anvil end-to-end path, including CLI `resolve` / `generate` / `verify`
 
 ### 13.3 Why It Is Designed This Way
 
@@ -428,7 +460,8 @@ The recommended pattern is to add a matching set of files:
 
 And reuse:
 
-- `collectFromRPCs`
+- `collectFromSources`
+- `openNormalizedRPCSources`
 - `requireMatchingSnapshots`
 - `proofutil`
 
@@ -438,7 +471,9 @@ The following must be checked together:
 
 - `proof/testdata/*.json`
 - `cmd/mkfixtures/*`
-- `proof/proof_test.go`
+- `cmd/mkfixtures/fixtures_golden_test.go`
+- `proof/*_verify_test.go`
+- `proof/*_sources_test.go`
 - `proof/anvil_e2e_test.go`
 
 ### 15.3 If the CLI Changes

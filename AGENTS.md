@@ -9,12 +9,14 @@ Start with [README.md](README.md) for proof semantics and CLI examples. Use [Mak
 ## Project Layout
 
 - `proof/`: core proof generation, verification, RPC normalization, JSON I/O, and tests.
+- `proof/source_api.go`: source-injected interfaces and shared collection helpers used by embedders and tests.
+- `proof/storage_layout.go` and `proof/storage_resolver.go`: compiler-output loading plus `resolve slot` logic for Solidity storage paths.
 - `cmd/ethproof/`: CLI entrypoint; keep it thin and delegate logic into `proof`.
 - `cmd/mkfixtures/`: generator for deterministic offline fixtures under `proof/testdata/`.
 - `contracts/ProofDemo.sol`: minimal fixed-slot contract used by local end-to-end tests.
 - `contracts/ProofComplexDemo.sol`: complex mapping/array/string/bytes contract used by local end-to-end tests.
 - `internal/e2e/bindings/`: generated Go bindings for the demo contracts. Do not hand-edit generated files.
-- `internal/proofutil/`: helper functions for proof verification and test assertions.
+- `internal/proofutil/`: low-level trie, encoding, digest, and proof helpers shared by production code and tests.
 - `scripts/generate_bindings.sh`: binding generation workflow.
 
 ## Core Architecture
@@ -25,7 +27,9 @@ The codebase supports exactly three proof flows, defined in [proof/types.go](pro
 - `ReceiptProofPackage`: receipt inclusion proof plus event claim against `receiptsRoot`.
 - `TransactionProofPackage`: transaction inclusion proof against `transactionsRoot`.
 
-`cmd/ethproof` is only a flag parser and dispatcher. If a change affects proof correctness, serialization, or RPC behavior, update `proof/` first and keep CLI changes minimal.
+The storage-slot resolver in [proof/storage_layout.go](proof/storage_layout.go) and [proof/storage_resolver.go](proof/storage_resolver.go) is an auxiliary path for `ethproof resolve slot`; it is not a fourth proof type.
+
+`cmd/ethproof` is only a flag parser and dispatcher. If a change affects proof correctness, serialization, RPC behavior, or storage-slot resolution semantics, update `proof/` first and keep CLI changes minimal.
 
 ## External Tooling
 
@@ -48,14 +52,16 @@ The codebase supports exactly three proof flows, defined in [proof/types.go](pro
 
 Use these commands before finishing work:
 
-- `make build`: build both CLI binaries into `bin/`.
+- `make build`: build both CLI binaries (`ethproof` and `mkfixtures`) into `bin/`.
 - `make lint`: run `golangci-lint` with the configured linters.
 - `make fmt-check`: check that `gofmt` formatting is correct.
 - `make fmt`: apply `gofmt` and `forge fmt` to the codebase.
-- `make test`: run the default Go test suite.
-- `make fixtures`: regenerate deterministic fixtures.
+- `make fixtures`: regenerate deterministic proof fixtures.
 - `make bindings`: rebuild Solidity artifacts and Go bindings.
-- `make test`: the full three-layer suite. `make unit-test` for default unit tests. use `make e2e-test` to start Anvil, and run the local end-to-end test.
+- `make unit-test`: run the default offline-stable Go test suite with `go test -v -race ./...`.
+- `make e2e-test`: start Anvil via `docker compose` and run only the local `TestAnvilE2E` path.
+- `make e2e`: regenerate bindings if needed, then run the e2e path.
+- `make test`: run the full suite (`make unit-test` + `make e2e-test`).
 
 ## Change Guidance
 
@@ -67,6 +73,9 @@ Use these commands before finishing work:
 ## Useful References
 
 - [README.md](README.md): proof model, RPC consistency rules, CLI usage, and e2e overview.
+- [design.md](design.md): internal architecture, source-driven APIs, resolver flow, and test layers.
 - [Makefile](Makefile): supported build and test entrypoints.
+- [config.example.json](config.example.json): example config for `generate` / `verify`.
 - [foundry.toml](foundry.toml): Foundry project configuration.
+- [docker-compose.yml](docker-compose.yml): local Anvil environment used by `make e2e-test`.
 - [scripts/generate_bindings.sh](scripts/generate_bindings.sh): exact binding generation steps.
