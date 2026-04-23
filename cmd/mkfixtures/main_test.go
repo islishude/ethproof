@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestRunMainLogsRuntimeErrors(t *testing.T) {
+func TestRunMainPrintsRuntimeErrors(t *testing.T) {
 	parent := t.TempDir()
 	filePath := filepath.Join(parent, "not-a-dir")
 	if err := os.WriteFile(filePath, []byte("x"), 0o644); err != nil {
@@ -26,11 +26,27 @@ func TestRunMainLogsRuntimeErrors(t *testing.T) {
 	if stdout != "" {
 		t.Fatalf("expected empty stdout, got %q", stdout)
 	}
-	if !strings.Contains(stderr, "level=ERROR") {
-		t.Fatalf("expected structured error log on stderr, got %q", stderr)
+	if !strings.Contains(stderr, "error: create output dir") {
+		t.Fatalf("expected readable runtime error on stderr, got %q", stderr)
 	}
-	if !strings.Contains(stderr, "create output dir") {
-		t.Fatalf("expected runtime error message in stderr, got %q", stderr)
+}
+
+func TestRunMainPrintsReadableSuccessStatus(t *testing.T) {
+	outDir := filepath.Join(t.TempDir(), "fixtures")
+
+	var exit int
+	stdout, stderr := captureOutput(t, func() {
+		exit = runMain([]string{"--out-dir", outDir})
+	})
+
+	if exit != 0 {
+		t.Fatalf("expected exit code 0, got %d", exit)
+	}
+	if stdout != "" {
+		t.Fatalf("expected empty stdout, got %q", stdout)
+	}
+	if !strings.Contains(stderr, "wrote offline fixtures to "+outDir) {
+		t.Fatalf("expected readable success status on stderr, got %q", stderr)
 	}
 }
 

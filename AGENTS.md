@@ -14,7 +14,6 @@ Start with [README.md](README.md) for proof semantics and CLI examples. Use [Mak
 - `contracts/ProofDemo.sol`: minimal fixed-slot contract used by local end-to-end tests.
 - `contracts/ProofComplexDemo.sol`: complex mapping/array/string/bytes contract used by local end-to-end tests.
 - `internal/e2e/bindings/`: generated Go bindings for the demo contracts. Do not hand-edit generated files.
-- `internal/logutil/`: simple logging utilities for CLI output.
 - `internal/proofutil/`: helper functions for proof verification and test assertions.
 - `scripts/generate_bindings.sh`: binding generation workflow.
 

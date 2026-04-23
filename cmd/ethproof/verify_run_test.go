@@ -201,6 +201,35 @@ func TestRunMainVerifyRuntimeErrorWritesErrorLog(t *testing.T) {
 	}
 }
 
+func TestRunMainVerifySuccessWritesReadableStatus(t *testing.T) {
+	withCLIDeps(t, func(deps *commandDeps) {
+		deps.loadJSON = func(_ string, v any) error {
+			*(v.(*proof.TransactionProofPackage)) = *stubTransactionProofPackage()
+			return nil
+		}
+		deps.verifyTransaction = func(context.Context, *proof.TransactionProofPackage, proof.VerifyRPCRequest) error {
+			return nil
+		}
+	})
+
+	var exit int
+	stdout, stderr := captureCommandOutput(t, func() {
+		exit = runMain([]string{
+			"verify", "tx",
+			"--rpc", "http://127.0.0.1:8545",
+			"--min-rpcs", "1",
+			"--proof", "tx.json",
+		})
+	})
+
+	if exit != 0 || stdout != "" {
+		t.Fatalf("unexpected result: exit=%d stdout=%q", exit, stdout)
+	}
+	if !strings.Contains(stderr, "verified transaction proof tx.json") {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+}
+
 type verifyCalls struct {
 	loadPath       string
 	stateReq       *proof.VerifyRPCRequest

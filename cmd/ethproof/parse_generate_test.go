@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/islishude/ethproof/internal/logutil"
 	"github.com/islishude/ethproof/proof"
 )
 
@@ -156,7 +155,7 @@ func TestParseGenerateStateArgsScenarios(t *testing.T) {
 			},
 		},
 		{
-			name: "uses config logging and flag overrides",
+			name: "rejects removed logging config",
 			run: func(t *testing.T) {
 				configPath := writeTestConfig(t, `{
   "logging": {
@@ -173,35 +172,14 @@ func TestParseGenerateStateArgsScenarios(t *testing.T) {
     }
   }
 }`)
-				cfg, err := parseGenerateStateArgs([]string{"--config", configPath, "--log-level", "debug"})
-				if err != nil {
-					t.Fatalf("parseGenerateStateArgs: %v", err)
-				}
-				if cfg.Logging.Level != "debug" || cfg.Logging.Format != "json" {
-					t.Fatalf("unexpected logging config: %+v", cfg.Logging)
+				_, err := parseGenerateStateArgs([]string{"--config", configPath})
+				if err == nil || !strings.Contains(err.Error(), "unknown field \"logging\"") {
+					t.Fatalf("unexpected error: %v", err)
 				}
 			},
 		},
 		{
-			name: "defaults logging",
-			run: func(t *testing.T) {
-				cfg, err := parseGenerateStateArgs([]string{
-					"--rpc", "http://127.0.0.1:8545",
-					"--min-rpcs", "1",
-					"--block", "12",
-					"--account", "0x1111111111111111111111111111111111111111",
-					"--slot", "0x01",
-				})
-				if err != nil {
-					t.Fatalf("parseGenerateStateArgs: %v", err)
-				}
-				if cfg.Logging != logutil.DefaultConfig() {
-					t.Fatalf("unexpected default logging config: %+v", cfg.Logging)
-				}
-			},
-		},
-		{
-			name: "rejects invalid log level",
+			name: "rejects removed log level flag",
 			run: func(t *testing.T) {
 				_, err := parseGenerateStateArgs([]string{
 					"--rpc", "http://127.0.0.1:8545",
@@ -211,7 +189,7 @@ func TestParseGenerateStateArgsScenarios(t *testing.T) {
 					"--slot", "0x01",
 					"--log-level", "verbose",
 				})
-				if err == nil || !strings.Contains(err.Error(), "unsupported log level") {
+				if err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -log-level") {
 					t.Fatalf("unexpected error: %v", err)
 				}
 			},

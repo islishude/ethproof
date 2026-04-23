@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"github.com/islishude/ethproof/proof"
 )
 
 const (
@@ -39,29 +37,24 @@ func runGenerateState(args []string) error {
 	if err != nil {
 		return err
 	}
-	logger := newCommandLogger(cfg.Logging).With(
-		"command", "generate",
-		"proof_type", "state",
-	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), stateProofTimeout)
 	defer cancel()
 
 	pkg, err := cliDeps.generateState(ctx, cfg.Request)
 	if err != nil {
-		return wrapRuntimeError(logger, fmt.Errorf("generate state proof: %w", err))
+		return fmt.Errorf("generate state proof: %w", err)
 	}
 	if err := cliDeps.saveJSON(cfg.Out, pkg); err != nil {
-		return wrapRuntimeError(logger, fmt.Errorf("write state proof: %w", err))
+		return fmt.Errorf("write state proof: %w", err)
 	}
-
-	logger.Info("state proof written",
-		"out_path", cfg.Out,
-		"block_number", pkg.Block.BlockNumber,
-		"account", pkg.Account,
-		"slot_count", len(pkg.StorageProofs),
-		"slots", storageProofSlots(pkg.StorageProofs),
-		"state_root", pkg.Block.StateRoot,
+	printStatusLine(
+		"wrote state proof to %s (block %d, account %s, %d %s)",
+		cfg.Out,
+		pkg.Block.BlockNumber,
+		pkg.Account,
+		len(pkg.StorageProofs),
+		pluralize(len(pkg.StorageProofs), "slot", "slots"),
 	)
 	return nil
 }
@@ -71,27 +64,23 @@ func runGenerateReceipt(args []string) error {
 	if err != nil {
 		return err
 	}
-	logger := newCommandLogger(cfg.Logging).With(
-		"command", "generate",
-		"proof_type", "receipt",
-	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), receiptProofTimeout)
 	defer cancel()
 
 	pkg, err := cliDeps.generateReceipt(ctx, cfg.Request)
 	if err != nil {
-		return wrapRuntimeError(logger, fmt.Errorf("generate receipt proof: %w", err))
+		return fmt.Errorf("generate receipt proof: %w", err)
 	}
 	if err := cliDeps.saveJSON(cfg.Out, pkg); err != nil {
-		return wrapRuntimeError(logger, fmt.Errorf("write receipt proof: %w", err))
+		return fmt.Errorf("write receipt proof: %w", err)
 	}
-
-	logger.Info("receipt proof written",
-		"out_path", cfg.Out,
-		"block_number", pkg.Block.BlockNumber,
-		"tx_index", pkg.TxIndex,
-		"receipts_root", pkg.Block.ReceiptsRoot,
+	printStatusLine(
+		"wrote receipt proof to %s (block %d, tx %s, log %d)",
+		cfg.Out,
+		pkg.Block.BlockNumber,
+		pkg.TxHash,
+		pkg.LogIndex,
 	)
 	return nil
 }
@@ -101,35 +90,22 @@ func runGenerateTransaction(args []string) error {
 	if err != nil {
 		return err
 	}
-	logger := newCommandLogger(cfg.Logging).With(
-		"command", "generate",
-		"proof_type", "transaction",
-	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), transactionProofTimeout)
 	defer cancel()
 
 	pkg, err := cliDeps.generateTransaction(ctx, cfg.Request)
 	if err != nil {
-		return wrapRuntimeError(logger, fmt.Errorf("generate transaction proof: %w", err))
+		return fmt.Errorf("generate transaction proof: %w", err)
 	}
 	if err := cliDeps.saveJSON(cfg.Out, pkg); err != nil {
-		return wrapRuntimeError(logger, fmt.Errorf("write transaction proof: %w", err))
+		return fmt.Errorf("write transaction proof: %w", err)
 	}
-
-	logger.Info("transaction proof written",
-		"out_path", cfg.Out,
-		"block_number", pkg.Block.BlockNumber,
-		"tx_index", pkg.TxIndex,
-		"transactions_root", pkg.Block.TransactionsRoot,
+	printStatusLine(
+		"wrote transaction proof to %s (block %d, tx %s)",
+		cfg.Out,
+		pkg.Block.BlockNumber,
+		pkg.TxHash,
 	)
 	return nil
-}
-
-func storageProofSlots(storageProofs []proof.StateStorageProof) []string {
-	slots := make([]string, len(storageProofs))
-	for i, storageProof := range storageProofs {
-		slots[i] = storageProof.Slot.Hex()
-	}
-	return slots
 }

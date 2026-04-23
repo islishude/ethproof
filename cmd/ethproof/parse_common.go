@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/islishude/ethproof/internal/logutil"
 	"github.com/islishude/ethproof/proof"
 )
 
@@ -17,11 +16,6 @@ type multiStringFlag []string
 type parseContext struct {
 	seen    map[string]bool
 	fileCfg *cliConfig
-}
-
-type loggingFlags struct {
-	level  *string
-	format *string
 }
 
 func (m *multiStringFlag) String() string {
@@ -37,13 +31,6 @@ func newFlagSet(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	return fs
-}
-
-func addLoggingFlags(fs *flag.FlagSet) loggingFlags {
-	return loggingFlags{
-		level:  fs.String("log-level", "", "log level (debug|info|warn|error)"),
-		format: fs.String("log-format", "", "log format (text|json)"),
-	}
 }
 
 func prepareParse(fs *flag.FlagSet, args []string, configPath *string, parseErrPrefix string) (parseContext, error) {
@@ -171,21 +158,4 @@ func buildReceiptExpectations(expectEmitterHex string, expectDataHex string, top
 		return nil, nil
 	}
 	return &expect, nil
-}
-
-func resolveLoggingConfig(seen map[string]bool, flags loggingFlags, fileCfg *cliLoggingConfigFile) (logutil.Config, error) {
-	var configLevel string
-	var configFormat string
-	if fileCfg != nil {
-		configLevel = fileCfg.Level
-		configFormat = fileCfg.Format
-	}
-	cfg, err := logutil.NormalizeConfig(logutil.Config{
-		Level:  mergeString(seen, "log-level", *flags.level, configLevel, logutil.DefaultLevel),
-		Format: mergeString(seen, "log-format", *flags.format, configFormat, logutil.DefaultFormat),
-	})
-	if err != nil {
-		return logutil.Config{}, newUsageError("%v", err)
-	}
-	return cfg, nil
 }

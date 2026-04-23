@@ -218,6 +218,33 @@ func TestRunMainGenerateRuntimeErrorWritesErrorLog(t *testing.T) {
 	}
 }
 
+func TestRunMainGenerateSuccessWritesReadableStatus(t *testing.T) {
+	withCLIDeps(t, func(deps *commandDeps) {
+		deps.generateTransaction = func(context.Context, proof.TransactionProofRequest) (*proof.TransactionProofPackage, error) {
+			return stubTransactionProofPackage(), nil
+		}
+		deps.saveJSON = func(string, any) error { return nil }
+	})
+
+	var exit int
+	stdout, stderr := captureCommandOutput(t, func() {
+		exit = runMain([]string{
+			"generate", "tx",
+			"--rpc", "http://127.0.0.1:8545",
+			"--min-rpcs", "1",
+			"--tx", "0x03",
+			"--out", "tx.json",
+		})
+	})
+
+	if exit != 0 || stdout != "" {
+		t.Fatalf("unexpected result: exit=%d stdout=%q", exit, stdout)
+	}
+	if !strings.Contains(stderr, "wrote transaction proof to tx.json") {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+}
+
 type generateCalls struct {
 	state       *proof.StateProofRequest
 	receipt     *proof.ReceiptProofRequest

@@ -71,7 +71,7 @@ The default minimum is `3` distinct RPC sources. This can be overridden per requ
 
 The CLI is now primarily config-driven. Start from [config.example.json](./config.example.json) and pass `--config`; explicit flags still override the matching config fields.
 
-Runtime logs use the standard library `log/slog`. By default the CLI writes `info`-level text logs to `stderr`; `--log-level` and `--log-format` override the top-level `logging.level` / `logging.format` config values. Help text still prints to `stdout`, and usage errors still print to `stderr` without going through the logger. The `proof` package itself is silent by default and does not emit runtime logs.
+The CLI keeps runtime output minimal. Successful `generate`, `verify`, and `mkfixtures` runs print a short status line to `stderr`; help text still prints to `stdout`, and usage/runtime errors still print to `stderr`. The `proof` package itself is silent by default and does not emit runtime logs.
 
 ## Build and install the CLI with:
 
@@ -91,9 +91,6 @@ make install
 
 ```bash
 ethproof generate state --config ./config.example.json
-
-# or override runtime logging for a single invocation
-ethproof generate state --config ./config.example.json --log-level debug --log-format json
 ```
 
 `generate state` accepts repeatable `--slot` flags, and config uses `generate.state.slots`.
@@ -170,8 +167,7 @@ ethproof verify tx \
   --rpc https://verify-rpc-1.example \
   --rpc https://verify-rpc-2.example \
   --rpc https://verify-rpc-3.example \
-  --min-rpcs 3 \
-  --log-level warn
+  --min-rpcs 3
 ```
 
 `verify receipt` always validates all fields embedded in the proof package. `--expect-*` flags add extra assertions on top of the package’s own claims, and CLI verify also re-fetches the block header from the independent verify RPC set to anchor the included roots.
@@ -245,7 +241,7 @@ These are deterministic synthetic Ethereum examples built with real Ethereum enc
 Regenerate them with:
 
 ```bash
-go run ./cmd/mkfixtures --out-dir ./proof/testdata --log-level info
+go run ./cmd/mkfixtures --out-dir ./proof/testdata
 ```
 
 ## Testing

@@ -99,7 +99,7 @@ func TestParseVerifyArgsScenarios(t *testing.T) {
 			},
 		},
 		{
-			name: "uses logging config and flag override",
+			name: "rejects removed logging config",
 			run: func(t *testing.T) {
 				configPath := writeTestConfig(t, `{
   "logging": {
@@ -114,17 +114,14 @@ func TestParseVerifyArgsScenarios(t *testing.T) {
     }
   }
 }`)
-				cfg, err := parseVerifyTransactionArgs([]string{"--config", configPath, "--log-format", "json"})
-				if err != nil {
-					t.Fatalf("parseVerifyTransactionArgs: %v", err)
-				}
-				if cfg.Logging.Level != "error" || cfg.Logging.Format != "json" {
-					t.Fatalf("unexpected logging config: %+v", cfg.Logging)
+				_, err := parseVerifyTransactionArgs([]string{"--config", configPath})
+				if err == nil || !strings.Contains(err.Error(), "unknown field \"logging\"") {
+					t.Fatalf("unexpected error: %v", err)
 				}
 			},
 		},
 		{
-			name: "rejects invalid log format",
+			name: "rejects removed log format flag",
 			run: func(t *testing.T) {
 				_, err := parseVerifyTransactionArgs([]string{
 					"--rpc", "http://127.0.0.1:8545",
@@ -132,7 +129,7 @@ func TestParseVerifyArgsScenarios(t *testing.T) {
 					"--proof", "tx.json",
 					"--log-format", "yaml",
 				})
-				if err == nil || !strings.Contains(err.Error(), "unsupported log format") {
+				if err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -log-format") {
 					t.Fatalf("unexpected error: %v", err)
 				}
 			},

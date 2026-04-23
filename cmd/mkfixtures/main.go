@@ -9,22 +9,18 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/islishude/ethproof/internal/logutil"
 	"github.com/islishude/ethproof/proof"
 )
 
 const mkfixturesUsageText = `Usage:
-  mkfixtures [--out-dir DIR] [--log-level LEVEL] [--log-format text|json]
+  mkfixtures [--out-dir DIR]
 
 Options:
   -h, --help                  Show this help message.
-  --log-level LEVEL           Runtime log level: debug, info, warn, error.
-  --log-format text|json      Runtime log format.
 `
 
 type fixturesConfig struct {
-	OutDir  string
-	Logging logutil.Config
+	OutDir string
 }
 
 func main() {
@@ -43,21 +39,18 @@ func runMain(args []string) int {
 			_, _ = fmt.Fprint(os.Stderr, mkfixturesUsageText)
 			return 2
 		}
-		logutil.MustNewLogger(os.Stderr, logutil.DefaultConfig()).Error(err.Error())
+		fmt.Fprintf(os.Stderr, "error: %s\n", err)
 		return 1
 	}
 
-	logger := logutil.MustNewLogger(os.Stderr, cfg.Logging).With("command", "mkfixtures")
-	if err := run(cfg, logger); err != nil {
-		logger.Error(err.Error())
+	if err := run(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %s\n", err)
 		return 1
 	}
 	return 0
 }
 
-func run(cfg fixturesConfig, logger interface {
-	Info(string, ...any)
-}) error {
+func run(cfg fixturesConfig) error {
 	fixtures, err := BuildOfflineFixtures()
 	if err != nil {
 		return fmt.Errorf("build offline fixtures: %w", err)
@@ -74,7 +67,7 @@ func run(cfg fixturesConfig, logger interface {
 	if err := proof.SaveJSON(filepath.Join(cfg.OutDir, "transaction_fixture.json"), fixtures.Transaction); err != nil {
 		return fmt.Errorf("write transaction fixture: %w", err)
 	}
-	logger.Info("offline fixtures written", "out_dir", cfg.OutDir)
+	_, _ = fmt.Fprintf(os.Stderr, "wrote offline fixtures to %s\n", cfg.OutDir)
 	return nil
 }
 
@@ -83,8 +76,6 @@ func parseArgs(args []string) (fixturesConfig, error) {
 	fs.SetOutput(io.Discard)
 
 	outDir := fs.String("out-dir", "proof/testdata", "output directory for offline fixtures")
-	logLevel := fs.String("log-level", "", "log level (debug|info|warn|error)")
-	logFormat := fs.String("log-format", "", "log format (text|json)")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -96,17 +87,8 @@ func parseArgs(args []string) (fixturesConfig, error) {
 		return fixturesConfig{}, usageError{message: fmt.Sprintf("mkfixtures does not accept positional arguments: %s", strings.Join(fs.Args(), " "))}
 	}
 
-	logging, err := logutil.NormalizeConfig(logutil.Config{
-		Level:  *logLevel,
-		Format: *logFormat,
-	})
-	if err != nil {
-		return fixturesConfig{}, usageError{message: err.Error()}
-	}
-
 	return fixturesConfig{
-		OutDir:  *outDir,
-		Logging: logging,
+		OutDir: *outDir,
 	}, nil
 }
 
