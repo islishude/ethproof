@@ -122,11 +122,13 @@ The command supports three input shapes:
 
 Dynamic containers must be indexed explicitly. Examples:
 
-- `value`
-- `config.owner`
-- `balances[0x1111111111111111111111111111111111111111]`
-- `data[4][9].b`
-- `blob@word(1)`
+- `value`: a top-level storage variable.
+- `config.owner`: a struct member path.
+- `balances[0x1111111111111111111111111111111111111111]`: a mapping entry keyed by the given address.
+- `data[4][9].b`: nested array or mapping indexing followed by a struct field selection.
+- `blob@word(1)`: the second 32-byte data word of a dynamic `bytes` or `string` value. `@word(n)` is only valid as the final suffix on a `bytes` / `string` query and addresses the storage slot at `keccak256(headSlot) + n`.
+
+For dynamic `bytes` / `string` values, the bare variable path such as `blob` resolves the head slot, while `blob@word(0)`, `blob@word(1)`, and so on resolve individual 32-byte words from the value's hashed data area.
 
 Foundry artifact example:
 
