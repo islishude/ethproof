@@ -54,6 +54,12 @@ func fetchReceiptSnapshot(ctx context.Context, source ReceiptSource, txHash comm
 	// Persist the claimed event as simple address/topics/data fields so package verification does
 	// not depend on any geth-specific receipt representation.
 	log := receipt.Logs[logIndex]
+	if log == nil {
+		return nil, fmt.Errorf("target receipt log %d is nil", logIndex)
+	}
+	if log.Removed {
+		return nil, fmt.Errorf("target receipt log %d is marked removed", logIndex)
+	}
 	return &receiptSnapshot{
 		Header:            txSnapshot.Header,
 		TxHash:            txHash,

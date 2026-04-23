@@ -94,6 +94,13 @@ func TestFetchReceiptSnapshotFailures(t *testing.T) {
 			},
 			want: "receipt bytes mismatch between block receipts and target receipt lookup",
 		},
+		{
+			name: "target receipt log removed",
+			mutate: func(receipt *types.Receipt) {
+				receipt.Logs[0].Removed = true
+			},
+			want: "target receipt log 0 is marked removed",
+		},
 	}
 
 	for _, tt := range tests {
