@@ -19,10 +19,6 @@ type stateSnapshotCollector struct {
 // GenerateStateProof fetches a state proof from every RPC source, requires normalized agreement,
 // and returns the agreed proof package.
 func GenerateStateProof(ctx context.Context, req StateProofRequest) (*StateProofPackage, error) {
-	if err := validateStateSlots(req.Slots); err != nil {
-		return nil, err
-	}
-
 	sourceSet, err := openNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources)
 	if err != nil {
 		return nil, err
