@@ -3,7 +3,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       github-actions:
         patterns:
@@ -13,12 +13,8 @@ updates:
     directory: /
     schedule:
       interval: monthly
-    groups:
-      aws-sdk:
-        patterns:
-          - "github.com/aws/*"
 
   - package-ecosystem: "docker"
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
