@@ -53,23 +53,26 @@ func GenerateStateProofFromSources(ctx context.Context, req StateProofSourcesReq
 	if err != nil {
 		return nil, err
 	}
+	return buildVerifiedStateProofPackage(base, consensus)
+}
+
+func buildVerifiedStateProofPackage(base *accountSnapshot, consensus SourceConsensus) (*StateProofPackage, error) {
 	pkg := &StateProofPackage{
 		Block:             buildBlockContext(base.Header, consensus),
 		Account:           base.Account,
-		AccountRLP:        base.AccountRLP,
-		AccountProofNodes: base.AccountProof,
+		AccountRLP:        hexutil.Bytes(common.CopyBytes(base.AccountRLP)),
 		AccountClaim:      base.AccountClaim,
 		StorageProofs:     cloneStateStorageProofs(base.StorageProofs),
+		AccountProofNodes: cloneHexBytesNodes(base.AccountProof),
+	}
+	if err := VerifyStateProofPackage(pkg); err != nil {
+		return nil, fmt.Errorf("verify generated state proof package: %w", err)
 	}
 	return pkg, nil
 }
 
 // VerifyStateProofPackage verifies the embedded account proof and storage proof locally.
 func VerifyStateProofPackage(pkg *StateProofPackage) error {
-	return verifyStateProofPackage(pkg)
-}
-
-func verifyStateProofPackage(pkg *StateProofPackage) error {
 	if err := validateStateStorageProofs(pkg.StorageProofs); err != nil {
 		return err
 	}
@@ -143,13 +146,18 @@ func cloneStateStorageProofs(in []StateStorageProof) []StateStorageProof {
 	out := make([]StateStorageProof, len(in))
 	for i, storageProof := range in {
 		out[i] = StateStorageProof{
-			Slot:  storageProof.Slot,
-			Value: storageProof.Value,
+			Slot:       storageProof.Slot,
+			Value:      storageProof.Value,
+			ProofNodes: cloneHexBytesNodes(storageProof.ProofNodes),
 		}
-		out[i].ProofNodes = make([]hexutil.Bytes, len(storageProof.ProofNodes))
-		for j, node := range storageProof.ProofNodes {
-			out[i].ProofNodes[j] = common.CopyBytes(node)
-		}
+	}
+	return out
+}
+
+func cloneHexBytesNodes(in []hexutil.Bytes) []hexutil.Bytes {
+	out := make([]hexutil.Bytes, len(in))
+	for i, node := range in {
+		out[i] = hexutil.Bytes(common.CopyBytes(node))
 	}
 	return out
 }

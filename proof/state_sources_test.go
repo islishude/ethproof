@@ -113,6 +113,60 @@ func TestGenerateStateProofFromSources(t *testing.T) {
 	}
 }
 
+func TestBuildVerifiedStateProofPackage(t *testing.T) {
+	base := stateSnapshotFromFixture(t)
+	consensus, err := buildStateConsensus(base, []string{"source-a", "source-b", "source-c"})
+	if err != nil {
+		t.Fatalf("buildStateConsensus: %v", err)
+	}
+
+	t.Run("success", func(t *testing.T) {
+		pkg, err := buildVerifiedStateProofPackage(cloneAccountSnapshot(base), consensus)
+		if err != nil {
+			t.Fatalf("buildVerifiedStateProofPackage: %v", err)
+		}
+		if err := VerifyStateProofPackage(pkg); err != nil {
+			t.Fatalf("VerifyStateProofPackage: %v", err)
+		}
+	})
+
+	tests := []struct {
+		name string
+		edit func(*accountSnapshot)
+		want string
+	}{
+		{
+			name: "invalid account rlp",
+			edit: func(snapshot *accountSnapshot) {
+				snapshot.AccountRLP = mutateHexNode(t, snapshot.AccountRLP)
+			},
+			want: "verify generated state proof package: verified account bytes do not match claimed account bytes",
+		},
+		{
+			name: "invalid storage value",
+			edit: func(snapshot *accountSnapshot) {
+				snapshot.StorageProofs[0].Value = common.HexToHash("0x7777")
+			},
+			want: "verify generated state proof package: verify storageProofs[0]: storage value mismatch",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			snapshot := cloneAccountSnapshot(base)
+			tt.edit(snapshot)
+
+			_, err := buildVerifiedStateProofPackage(snapshot, consensus)
+			if err == nil {
+				t.Fatal("expected buildVerifiedStateProofPackage to fail")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestGenerateStateProofFromSourcesRejectsInvalidSlots(t *testing.T) {
 	baseReq, _, _ := testStateProofSourcesRequest(t)
 	tests := []struct {
@@ -148,5 +202,19 @@ func TestGenerateStateProofFromSourcesRejectsInvalidSlots(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func stateSnapshotFromFixture(t *testing.T) *accountSnapshot {
+	t.Helper()
+
+	fixture := cloneStatePackage(mustLoadStateFixture(t))
+	return &accountSnapshot{
+		Header:        blockSnapshotHeaderFromBlockContext(fixture.Block),
+		Account:       fixture.Account,
+		AccountRLP:    fixture.AccountRLP,
+		AccountProof:  cloneHexBytesList(fixture.AccountProofNodes),
+		AccountClaim:  fixture.AccountClaim,
+		StorageProofs: cloneStateStorageProofs(fixture.StorageProofs),
 	}
 }
