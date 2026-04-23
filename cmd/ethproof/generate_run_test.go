@@ -213,7 +213,7 @@ func TestRunMainGenerateRuntimeErrorWritesErrorLog(t *testing.T) {
 	if exit != 1 || stdout != "" {
 		t.Fatalf("unexpected result: exit=%d stdout=%q", exit, stdout)
 	}
-	if !strings.Contains(stderr, "level=ERROR") || !strings.Contains(stderr, "generate transaction proof") {
+	if !strings.Contains(stderr, "generate transaction proof") {
 		t.Fatalf("unexpected stderr: %s", stderr)
 	}
 }

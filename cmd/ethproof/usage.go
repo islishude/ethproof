@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"runtime/debug"
 )
 
 const usageText = `Usage:
@@ -24,11 +25,15 @@ Options:
 type usageError struct {
 	message string
 	help    bool
+	version bool
 }
 
 func (e usageError) Error() string {
 	if e.help {
 		return "help requested"
+	}
+	if e.version {
+		return "version requested"
 	}
 	if e.message == "" {
 		return "invalid usage"
@@ -47,10 +52,27 @@ func newHelpError() error {
 	return usageError{help: true}
 }
 
+func newVersionError() error {
+	return usageError{version: true}
+}
+
 func asUsageError(err error) (usageError, bool) {
 	return errors.AsType[usageError](err)
 }
 
 func isHelpArg(arg string) bool {
 	return arg == "-h" || arg == "--help"
+}
+
+func isVersionArg(arg string) bool {
+	return arg == "-v" || arg == "--version"
+}
+
+// buildVersion returns the embedded module version for the running binary.
+func buildVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info == nil || info.Main.Version == "" {
+		return "devel"
+	}
+	return info.Main.Version
 }

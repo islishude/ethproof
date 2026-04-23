@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestRunMainHelpPrintsUsageToStdout(t *testing.T) {
 	tests := []struct {
@@ -25,6 +28,30 @@ func TestRunMainHelpPrintsUsageToStdout(t *testing.T) {
 
 			if exit != 0 || stdout != usageText || stderr != "" {
 				t.Fatalf("unexpected result: exit=%d stdout=%q stderr=%q", exit, stdout, stderr)
+			}
+		})
+	}
+}
+
+func TestRunMainVersionPrintsVersionToStdout(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "version", args: []string{"-v"}},
+		{name: "version long", args: []string{"--version"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var exit int
+			stdout, stderr := captureCommandOutput(t, func() {
+				exit = runMain(tt.args)
+			})
+
+			version := fmt.Sprintln(buildVersion())
+			if exit != 0 || stderr != "" || stdout != version {
+				t.Fatalf("unexpected result: exit=%d stdout=%q stderr=%q version=%q", exit, stdout, stderr, version)
 			}
 		})
 	}

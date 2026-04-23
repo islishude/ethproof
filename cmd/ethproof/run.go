@@ -7,11 +7,7 @@ import (
 
 func runMain(args []string) int {
 	if err := run(args); err != nil {
-		if _, ok := asUsageError(err); ok {
-			renderError(err)
-		} else {
-			loggerForError(err).Error(err.Error())
-		}
+		renderError(err)
 		return exitCode(err)
 	}
 	return 0
@@ -23,6 +19,9 @@ func run(args []string) error {
 	}
 	if isHelpArg(args[0]) {
 		return newHelpError()
+	}
+	if isVersionArg(args[0]) {
+		return newVersionError()
 	}
 
 	switch args[0] {
@@ -43,17 +42,23 @@ func renderError(err error) {
 			_, _ = fmt.Fprint(os.Stdout, usageText)
 			return
 		}
+		if usageErr.version {
+			_, _ = fmt.Fprintln(os.Stdout, buildVersion())
+			return
+		}
 		if usageErr.message != "" {
 			fmt.Fprintf(os.Stderr, "error: %s\n\n", usageErr.message)
 		}
 		fmt.Fprint(os.Stderr, usageText)
 		return
+	} else {
+		fmt.Fprintf(os.Stderr, "error: %s\n", err.Error())
 	}
 }
 
 func exitCode(err error) int {
 	if usageErr, ok := asUsageError(err); ok {
-		if usageErr.help {
+		if usageErr.help || usageErr.version {
 			return 0
 		}
 		return 2

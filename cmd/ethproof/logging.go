@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"log/slog"
 	"os"
 
@@ -33,12 +32,4 @@ func wrapRuntimeError(logger *slog.Logger, err error) error {
 		err:    err,
 		logger: logger,
 	}
-}
-
-func loggerForError(err error) *slog.Logger {
-	var runtimeErr runtimeCommandError
-	if errors.As(err, &runtimeErr) && runtimeErr.logger != nil {
-		return runtimeErr.logger
-	}
-	return logutil.MustNewLogger(os.Stderr, logutil.DefaultConfig())
 }
