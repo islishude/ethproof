@@ -6,7 +6,7 @@ This project generates and verifies three Ethereum Merkle Patricia Trie proof ty
 - `receipt(event)`: receipt inclusion proof against `receiptsRoot`, then event matching inside the receipt
 - `transaction`: transaction inclusion proof against `transactionsRoot`
 
-It ships with deterministic offline fixtures under [proof/testdata](/Users/sudoless/codespace/coding/eth-proof/proof/testdata) plus a local Anvil-backed e2e path that deploys a minimal test contract, generates all three proof types from a real local transaction, and validates them through both the Go API and the CLI.
+It ships with deterministic offline fixtures under [proof/testdata](./proof/testdata) plus a local Anvil-backed e2e path that deploys a minimal test contract, generates all three proof types from a real local transaction, and validates them through both the Go API and the CLI.
 
 ## Proof model
 
@@ -69,7 +69,7 @@ The default minimum is `3` distinct RPC sources. This can be overridden per requ
 
 ## Commands
 
-The CLI is now primarily config-driven. Start from [config.example.json](/Users/sudoless/codespace/coding/eth-proof/config.example.json) and pass `--config`; explicit flags still override the matching config fields.
+The CLI is now primarily config-driven. Start from [config.example.json](./config.example.json) and pass `--config`; explicit flags still override the matching config fields.
 
 Runtime logs use the standard library `log/slog`. By default the CLI writes `info`-level text logs to `stderr`; `--log-level` and `--log-format` override the top-level `logging.level` / `logging.format` config values. Help text still prints to `stdout`, and usage errors still print to `stderr` without going through the logger. The `proof` package itself is silent by default and does not emit runtime logs.
 
@@ -234,9 +234,9 @@ pkg, err := proof.GenerateStateProofFromSources(ctx, proof.StateProofSourcesRequ
 
 The repository includes three offline fixtures:
 
-- [transaction_fixture.json](/Users/sudoless/codespace/coding/eth-proof/proof/testdata/transaction_fixture.json)
-- [receipt_fixture.json](/Users/sudoless/codespace/coding/eth-proof/proof/testdata/receipt_fixture.json)
-- [state_fixture.json](/Users/sudoless/codespace/coding/eth-proof/proof/testdata/state_fixture.json)
+- [transaction_fixture.json](./proof/testdata/transaction_fixture.json)
+- [receipt_fixture.json](./proof/testdata/receipt_fixture.json)
+- [state_fixture.json](./proof/testdata/state_fixture.json)
 
 These are deterministic synthetic Ethereum examples built with real Ethereum encodings and trie rules, so tests do not depend on network access.
 
@@ -250,16 +250,16 @@ go run ./cmd/mkfixtures --out-dir ./proof/testdata --log-level info
 
 The default test flow is offline and deterministic:
 
-- `make test` runs the unit and offline integration suites with `go test -v -race ./...`.
+- `make unit-test` runs the unit and offline integration suites with `go test -v -race ./...`.
 - `make e2e-test` only runs the local Anvil-backed `TestAnvilE2E` mainline path.
 - `TestAnvilE2E` is skipped unless `ETH_PROOF_REQUIRE_E2E=1`, so plain `go test ./...` remains offline-stable.
 
-## Local Anvil e2e
+### Local Anvil E2E
 
-The local e2e flow uses the checked-in [docker-compose.yml](/Users/sudoless/codespace/coding/eth-proof/docker-compose.yml) plus the two demo contracts:
+The local e2e flow uses the checked-in [docker-compose.yml](./docker-compose.yml) plus the two demo contracts:
 
-- [contracts/ProofDemo.sol](/Users/sudoless/codespace/coding/eth-proof/contracts/ProofDemo.sol) drives the proof-generation mainline.
-- [contracts/ProofComplexDemo.sol](/Users/sudoless/codespace/coding/eth-proof/contracts/ProofComplexDemo.sol) provides a narrow resolver compatibility regression against real Foundry artifacts and real chain storage.
+- [contracts/ProofDemo.sol](./contracts/ProofDemo.sol) drives the proof-generation mainline.
+- [contracts/ProofComplexDemo.sol](./contracts/ProofComplexDemo.sol) provides a narrow resolver compatibility regression against real Foundry artifacts and real chain storage.
 - `api_mainline` deploys the simple contract, then generates and verifies `transaction`, `receipt`, and `state` proofs.
 - `cli_mainline` first resolves the `value` slot from the simple contract artifact and runs the CLI `generate` / `verify` flow, then runs a focused `ProofComplexDemo` `resolve slot` regression for:
   - `balances[caller]`
@@ -268,12 +268,6 @@ The local e2e flow uses the checked-in [docker-compose.yml](/Users/sudoless/code
   - `note@word(0)`
   - `payload@word(0)`
 - the complex resolver stage compares each resolved slot against the contract's actual storage word at the mined block, rather than generating a proof.
-
-Start the node and run e2e:
-
-```bash
-make e2e-test
-```
 
 The e2e test expects Anvil on `http://127.0.0.1:8545` with chain ID `1337`. You can override the RPC URL with `ETH_PROOF_E2E_RPC`.
 
@@ -299,7 +293,7 @@ Regenerate them with:
 make bindings
 ```
 
-The target runs `forge build`, then emits bindings for both demo contracts into [internal/e2e/bindings](/Users/sudoless/codespace/coding/eth-proof/internal/e2e/bindings):
+The target runs `forge build`, then emits bindings for both demo contracts into [internal/e2e/bindings](./internal/e2e/bindings):
 
 ```bash
 internal/e2e/bindings/proofdemo.go
