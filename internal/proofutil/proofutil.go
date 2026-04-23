@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"sort"
@@ -42,7 +43,7 @@ func CanonicalBytes(data []byte) hexutil.Bytes {
 // ChainIDFromBig converts a big.Int chain ID into uint256 form.
 func ChainIDFromBig(v *big.Int) (*uint256.Int, error) {
 	if v == nil {
-		return nil, nil
+		return nil, errors.New("nil *big.Int")
 	}
 	out, overflow := uint256.FromBig(v)
 	if overflow {
