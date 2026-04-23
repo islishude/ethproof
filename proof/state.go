@@ -19,11 +19,9 @@ type stateSnapshotCollector struct {
 // GenerateStateProof fetches a state proof from every RPC source, requires normalized agreement,
 // and returns the agreed proof package.
 func GenerateStateProof(ctx context.Context, req StateProofRequest) (*StateProofPackage, error) {
-	slots, err := validateStateSlots(req.Slots)
-	if err != nil {
+	if err := validateStateSlots(req.Slots); err != nil {
 		return nil, err
 	}
-	req.Slots = slots
 
 	sourceSet, err := openNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources)
 	if err != nil {
@@ -43,11 +41,9 @@ func GenerateStateProof(ctx context.Context, req StateProofRequest) (*StateProof
 // GenerateStateProofFromSources fetches a state proof from every source, requires normalized
 // agreement, and returns the agreed proof package.
 func GenerateStateProofFromSources(ctx context.Context, req StateProofSourcesRequest) (*StateProofPackage, error) {
-	slots, err := validateStateSlots(req.Slots)
-	if err != nil {
+	if err := validateStateSlots(req.Slots); err != nil {
 		return nil, err
 	}
-	req.Slots = slots
 
 	sourceNames, err := normalizeSourceNames(req.Sources, req.MinRPCSources)
 	if err != nil {
@@ -117,21 +113,19 @@ func (c stateSnapshotCollector) fetch(ctx context.Context, source StateSource) (
 	return fetchStateSnapshot(ctx, source, c.blockNumber, c.account, c.slots)
 }
 
-func validateStateSlots(slots []common.Hash) ([]common.Hash, error) {
+func validateStateSlots(slots []common.Hash) error {
 	if len(slots) == 0 {
-		return nil, fmt.Errorf("state proof requires at least one storage slot")
+		return fmt.Errorf("state proof requires at least one storage slot")
 	}
 
-	out := make([]common.Hash, len(slots))
 	seen := make(map[common.Hash]struct{}, len(slots))
-	for i, slot := range slots {
+	for _, slot := range slots {
 		if _, ok := seen[slot]; ok {
-			return nil, fmt.Errorf("duplicate storage slot %s", slot.Hex())
+			return fmt.Errorf("duplicate storage slot %s", slot.Hex())
 		}
 		seen[slot] = struct{}{}
-		out[i] = slot
 	}
-	return out, nil
+	return nil
 }
 
 func validateStateStorageProofs(storageProofs []StateStorageProof) error {
