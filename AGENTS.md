@@ -54,12 +54,7 @@ Use these commands before finishing work:
 - `make test`: run the default Go test suite.
 - `make fixtures`: regenerate deterministic fixtures.
 - `make bindings`: rebuild Solidity artifacts and Go bindings.
-- `make e2e`: regenerate bindings, start Anvil, and run the local end-to-end test.
-
-Additional targeted commands:
-
-- `go test ./proof -run TestAnvilE2E -count=1` with `ETH_PROOF_REQUIRE_E2E=1` for local e2e only.
-- `make live-test` only when the required `ETH_PROOF_*` environment variables are intentionally provided.
+- `make test`: the full three-layer suite. `make unit-test` for default unit tests. use `make e2e-test` to start Anvil, and run the local end-to-end test.
 
 ## Change Guidance
 
