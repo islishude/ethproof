@@ -36,7 +36,7 @@ jobs:
           version: latest
       - run: make lint
 
-  test:
+  unit-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -47,9 +47,9 @@ jobs:
         with:
           version: ${{ env.FOUNDRY_VERSION }}
       - run: make build
-      - run: make test
+      - run: make unit-test
 
-  e2e:
+  e2e-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
