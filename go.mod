@@ -1,6 +1,6 @@
 module github.com/islishude/ethproof
 
-go 1.26.1
+go 1.26.2
 
 require (
 	github.com/ethereum/go-ethereum v1.17.2
