@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 env:
-  FOUNDRY_VERSION: 1.5.1
+  FOUNDRY_VERSION: 1.7.0
 
 jobs:
   format:

@@ -417,7 +417,7 @@ func testReceiptSourceSet(t *testing.T) ([]ReceiptSource, common.Hash, uint, []s
 		sources[i] = &fakeReceiptSource{
 			fakeHeaderSource: &fakeHeaderSource{
 				name:    name,
-				chainID: big.NewInt(1337),
+				chainID: big.NewInt(31337),
 				header:  block.Header(),
 			},
 			block:         block,

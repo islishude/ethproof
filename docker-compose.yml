@@ -2,13 +2,12 @@ name: testnet
 
 services:
   anvil:
-    image: ghcr.io/foundry-rs/foundry:v1.5.1
+    image: ghcr.io/foundry-rs/foundry:v1.7.0
     entrypoint:
       - anvil
       - --host=0.0.0.0
       - --auto-impersonate
       - --no-request-size-limit
-      - --chain-id=1337
     healthcheck:
       test: [ "CMD", "cast", "chain-id" ]
       interval: 1s
