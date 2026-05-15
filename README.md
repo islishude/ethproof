@@ -283,9 +283,10 @@ Go contract bindings are generated with geth `abigen v1`, not `--v2`.
 The Foundry profile is pinned for deterministic output across platforms and toolchain updates:
 
 - `solc_version = "0.8.35"`
-- `evm_version = "prague"`
+- `evm_version = "osaka"`
 - `bytecode_hash = "none"`
 - `cbor_metadata = false`
+- `via_ir = true`
 - `extra_output = ["storageLayout"]`
 
 This keeps `forge inspect ... bytecode` stable for binding generation instead of depending on Foundry defaults or metadata hashes embedded at the end of the bytecode.
