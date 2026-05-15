@@ -13,8 +13,7 @@ Start with [README.md](README.md) for proof semantics and CLI examples. Use [Mak
 - `proof/storage_layout.go` and `proof/storage_resolver.go`: compiler-output loading plus `resolve slot` logic for Solidity storage paths.
 - `cmd/ethproof/`: CLI entrypoint; keep it thin and delegate logic into `proof`.
 - `cmd/mkfixtures/`: generator for deterministic offline fixtures under `proof/testdata/`.
-- `contracts/ProofDemo.sol`: minimal fixed-slot contract used by local end-to-end tests.
-- `contracts/ProofComplexDemo.sol`: complex mapping/array/string/bytes contract used by local end-to-end tests.
+- `contracts/ProofComplexDemo.sol`: demo contract used by local proof-generation and resolver end-to-end tests.
 - `internal/e2e/bindings/`: generated Go bindings for the demo contracts. Do not hand-edit generated files.
 - `internal/proofutil/`: low-level trie, encoding, digest, and proof helpers shared by production code and tests.
 - `scripts/generate_bindings.sh`: binding generation workflow.
@@ -44,7 +43,7 @@ The storage-slot resolver in [proof/storage_layout.go](proof/storage_layout.go) 
 - Do not weaken the multi-RPC consensus model. Live proof generation is intentionally strict and fails on any normalized mismatch.
 - Preserve the public JSON shape in [proof/types.go](proof/types.go) unless the task explicitly requires a schema change.
 - Prefer adding or fixing logic in `proof/` over duplicating behavior in `cmd/ethproof/`.
-- Treat [internal/e2e/bindings/proofdemo.go](internal/e2e/bindings/proofdemo.go) and [internal/e2e/bindings/proofcomplexdemo.go](internal/e2e/bindings/proofcomplexdemo.go) as generated output. Regenerate them instead of editing them manually.
+- Treat [internal/e2e/bindings/proofcomplexdemo.go](internal/e2e/bindings/proofcomplexdemo.go) and [internal/e2e/bindings/erc7201customlayoutdemo.go](internal/e2e/bindings/erc7201customlayoutdemo.go) as generated output. Regenerate them instead of editing them manually.
 - When changing proof encoding, verification, or serialization, check whether offline fixtures in [proof/testdata](proof/testdata) need to be regenerated.
 - When changing the Solidity demo contract, regenerate bindings and re-run the Anvil e2e path.
 

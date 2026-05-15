@@ -100,8 +100,7 @@ flowchart TD
 | `config.example.json` | Example config for `generate` / `verify` |
 | `proof/testdata/*.json` | Deterministic proof fixtures plus storage-layout fixtures used by tests |
 | `proof/*_test.go` | Proof, consensus, storage resolver, and e2e tests |
-| `contracts/ProofDemo.sol` | Minimal fixed-slot contract used by local e2e |
-| `contracts/ProofComplexDemo.sol` | Complex mapping/array/string/bytes contract used by local e2e |
+| `contracts/ProofComplexDemo.sol` | Demo contract used by local proof-generation and resolver e2e |
 | `internal/e2e/bindings/*.go` | Generated Go bindings, must not be edited by hand |
 
 ## 5. Public Data Model

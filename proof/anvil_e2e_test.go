@@ -22,30 +22,17 @@ import (
 )
 
 const (
-	anvilDefaultRPCURL       = "http://127.0.0.1:8545"
-	anvilDefaultPrivateKey   = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-	anvilExpectedChainID     = 31337
-	anvilReadyTimeout        = 5 * time.Second
-	anvilPollInterval        = 500 * time.Millisecond
-	anvilE2ETimeout          = 5 * time.Minute
-	proofDemoEventSignature  = "ValueUpdated(address,bytes32,uint256)"
-	proofDemoContractName    = "ProofDemo"
-	proofComplexContractName = "ProofComplexDemo"
-	erc7201LayoutDemoName    = "ERC7201CustomLayoutDemo"
-	proofComplexNoteWord0    = "abcdefghijklmnopqrstuvwxyz123456"
+	anvilDefaultRPCURL         = "http://127.0.0.1:8545"
+	anvilDefaultPrivateKey     = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+	anvilExpectedChainID       = 31337
+	anvilReadyTimeout          = 5 * time.Second
+	anvilPollInterval          = 500 * time.Millisecond
+	anvilE2ETimeout            = 5 * time.Minute
+	proofComplexEventSignature = "ComplexStateUpdated(address,uint256,bytes32,uint256,uint256,uint256,uint256)"
+	proofComplexContractName   = "ProofComplexDemo"
+	erc7201LayoutDemoName      = "ERC7201CustomLayoutDemo"
+	proofComplexNoteWord0      = "abcdefghijklmnopqrstuvwxyz123456"
 )
-
-type simpleAnvilScenario struct {
-	rpcURL          string
-	blockNumber     uint64
-	contractAddress common.Address
-	txHash          common.Hash
-	logIndex        uint
-	slot            common.Hash
-	newValue        *big.Int
-	eventData       []byte
-	eventTopics     []common.Hash
-}
 
 type complexResolveTarget struct {
 	query          string
@@ -55,10 +42,17 @@ type complexResolveTarget struct {
 	expectedWord   common.Hash
 }
 
-type complexResolveScenario struct {
+type complexAnvilScenario struct {
 	rpcURL          string
 	blockNumber     uint64
 	contractAddress common.Address
+	txHash          common.Hash
+	logIndex        uint
+	mainlineQuery   string
+	mainlineSlot    common.Hash
+	mainlineValue   *big.Int
+	eventData       []byte
+	eventTopics     []common.Hash
 	caller          common.Address
 	positionID      *big.Int
 	targets         []complexResolveTarget
@@ -77,17 +71,17 @@ func TestAnvilE2E(t *testing.T) {
 	client, rpcURL := requireAnvilClient(t, ctx)
 	defer client.Close()
 
-	scenario := deployProofDemoScenario(t, ctx, client, rpcURL)
+	scenario := deployProofComplexScenario(t, ctx, client, rpcURL)
 
 	t.Run("api_mainline", func(t *testing.T) {
-		testSimpleAnvilAPIFlow(t, ctx, scenario)
+		testAnvilAPIFlow(t, ctx, scenario)
 	})
 	t.Run("cli_mainline", func(t *testing.T) {
 		testAnvilCLIFlow(t, ctx, client, scenario)
 	})
 }
 
-func testSimpleAnvilAPIFlow(t *testing.T, ctx context.Context, scenario simpleAnvilScenario) {
+func testAnvilAPIFlow(t *testing.T, ctx context.Context, scenario complexAnvilScenario) {
 	t.Helper()
 
 	verifyReq := VerifyRPCRequest{
@@ -136,7 +130,7 @@ func testSimpleAnvilAPIFlow(t *testing.T, ctx context.Context, scenario simpleAn
 		MinRPCSources: 1,
 		BlockNumber:   scenario.blockNumber,
 		Account:       scenario.contractAddress,
-		Slots:         []common.Hash{scenario.slot},
+		Slots:         []common.Hash{scenario.mainlineSlot},
 	})
 	if err != nil {
 		t.Fatalf("GenerateStateProof: %v", err)
@@ -150,12 +144,12 @@ func testSimpleAnvilAPIFlow(t *testing.T, ctx context.Context, scenario simpleAn
 	if got, want := len(statePkg.StorageProofs), 1; got != want {
 		t.Fatalf("unexpected storage proof count: got %d want %d", got, want)
 	}
-	if statePkg.StorageProofs[0].Value != common.BigToHash(scenario.newValue) {
-		t.Fatalf("unexpected storage value: got %s want %s", statePkg.StorageProofs[0].Value, common.BigToHash(scenario.newValue))
+	if statePkg.StorageProofs[0].Value != common.BigToHash(scenario.mainlineValue) {
+		t.Fatalf("unexpected storage value: got %s want %s", statePkg.StorageProofs[0].Value, common.BigToHash(scenario.mainlineValue))
 	}
 }
 
-func testAnvilCLIFlow(t *testing.T, ctx context.Context, client *ethclient.Client, scenario simpleAnvilScenario) {
+func testAnvilCLIFlow(t *testing.T, ctx context.Context, client *ethclient.Client, scenario complexAnvilScenario) {
 	t.Helper()
 
 	root := repoRoot(t)
@@ -167,10 +161,10 @@ func testAnvilCLIFlow(t *testing.T, ctx context.Context, client *ethclient.Clien
 
 	runEventproof(t, ctx, root,
 		"resolve", "slot",
-		"--compiler-output", mustProofDemoArtifactPath(t, root),
-		"--contract", proofDemoContractName,
+		"--compiler-output", mustProofComplexArtifactPath(t, root),
+		"--contract", proofComplexContractName,
 		"--format", "artifact",
-		"--var", "value",
+		"--var", scenario.mainlineQuery,
 		"--out", slotPath,
 	)
 
@@ -181,8 +175,8 @@ func testAnvilCLIFlow(t *testing.T, ctx context.Context, client *ethclient.Clien
 	if got, want := len(resolution.Slots), 1; got != want {
 		t.Fatalf("unexpected resolved slot count: got %d want %d", got, want)
 	}
-	if resolution.Slots[0].Slot != scenario.slot {
-		t.Fatalf("unexpected resolved slot: got %s want %s", resolution.Slots[0].Slot, scenario.slot)
+	if resolution.Slots[0].Slot != scenario.mainlineSlot {
+		t.Fatalf("unexpected resolved slot: got %s want %s", resolution.Slots[0].Slot, scenario.mainlineSlot)
 	}
 
 	configPath := writeAnvilCLIConfig(
@@ -209,14 +203,13 @@ func testAnvilCLIFlow(t *testing.T, ctx context.Context, client *ethclient.Clien
 	runEventproof(t, ctx, root, "generate", "state", "--config", configPath)
 	runEventproof(t, ctx, root, "verify", "state", "--config", configPath)
 
-	complexScenario := deployProofComplexResolveScenario(t, ctx, client, scenario.rpcURL)
-	testComplexResolveCLIRegression(t, ctx, client, complexScenario)
+	testComplexResolveCLIRegression(t, ctx, client, scenario)
 
 	erc7201Scenario := deployERC7201CustomLayoutScenario(t, ctx, client)
 	testERC7201CustomLayoutResolveCLIRegression(t, ctx, client, erc7201Scenario)
 }
 
-func deployProofDemoScenario(t *testing.T, ctx context.Context, client *ethclient.Client, rpcURL string) simpleAnvilScenario {
+func deployProofComplexScenario(t *testing.T, ctx context.Context, client *ethclient.Client, rpcURL string) complexAnvilScenario {
 	t.Helper()
 
 	key, err := crypto.HexToECDSA(anvilDefaultPrivateKey)
@@ -224,81 +217,7 @@ func deployProofDemoScenario(t *testing.T, ctx context.Context, client *ethclien
 		t.Fatalf("HexToECDSA: %v", err)
 	}
 	auth := mustTransactor(t, ctx, key)
-	address, deployTx, contract, err := bindings.DeployProofDemo(auth, client)
-	if err != nil {
-		t.Fatalf("DeployProofDemo: %v", err)
-	}
-	deployReceipt, err := bind.WaitMined(ctx, client, deployTx)
-	if err != nil {
-		t.Fatalf("WaitMined(deploy): %v", err)
-	}
-	if deployReceipt.Status != types.ReceiptStatusSuccessful {
-		t.Fatalf("deployment failed with status %d", deployReceipt.Status)
-	}
-
-	marker := common.HexToHash("0x0102030405060708090a0b0c0d0e0f100102030405060708090a0b0c0d0e0f10")
-	newValue := big.NewInt(424242)
-	setTx, err := contract.SetValue(mustTransactor(t, ctx, key), newValue, hashToBytes32(marker))
-	if err != nil {
-		t.Fatalf("SetValue: %v", err)
-	}
-	receipt, err := bind.WaitMined(ctx, client, setTx)
-	if err != nil {
-		t.Fatalf("WaitMined(setValue): %v", err)
-	}
-	if receipt.Status != types.ReceiptStatusSuccessful {
-		t.Fatalf("setValue failed with status %d", receipt.Status)
-	}
-	if len(receipt.Logs) == 0 {
-		t.Fatal("setValue receipt did not contain logs")
-	}
-
-	event, err := contract.ParseValueUpdated(*receipt.Logs[0])
-	if err != nil {
-		t.Fatalf("ParseValueUpdated: %v", err)
-	}
-	storedValue, err := contract.Value(&bind.CallOpts{Context: ctx})
-	if err != nil {
-		t.Fatalf("Value: %v", err)
-	}
-	if storedValue.Cmp(newValue) != 0 {
-		t.Fatalf("unexpected stored value: got %s want %s", storedValue, newValue)
-	}
-
-	callerTopic := common.BytesToHash(auth.From.Bytes())
-	eventSigTopic := crypto.Keccak256Hash([]byte(proofDemoEventSignature))
-	expectedData := encodeUint256Data(newValue)
-	if event.Caller != auth.From {
-		t.Fatalf("unexpected event caller: got %s want %s", event.Caller, auth.From)
-	}
-	if event.Marker != hashToBytes32(marker) {
-		t.Fatalf("unexpected event marker: got %x want %x", event.Marker, hashToBytes32(marker))
-	}
-	if event.Value.Cmp(newValue) != 0 {
-		t.Fatalf("unexpected event value: got %s want %s", event.Value, newValue)
-	}
-
-	return simpleAnvilScenario{
-		rpcURL:          rpcURL,
-		blockNumber:     receipt.BlockNumber.Uint64(),
-		contractAddress: address,
-		txHash:          setTx.Hash(),
-		logIndex:        0,
-		slot:            common.Hash{},
-		newValue:        newValue,
-		eventData:       expectedData,
-		eventTopics:     []common.Hash{eventSigTopic, callerTopic, marker},
-	}
-}
-
-func deployProofComplexResolveScenario(t *testing.T, ctx context.Context, client *ethclient.Client, rpcURL string) complexResolveScenario {
-	t.Helper()
-
-	key, err := crypto.HexToECDSA(anvilDefaultPrivateKey)
-	if err != nil {
-		t.Fatalf("HexToECDSA: %v", err)
-	}
-	auth := mustTransactor(t, ctx, key)
+	caller := auth.From
 	address, deployTx, contract, err := bindings.DeployProofComplexDemo(auth, client)
 	if err != nil {
 		t.Fatalf("DeployProofComplexDemo: %v", err)
@@ -315,7 +234,7 @@ func deployProofComplexResolveScenario(t *testing.T, ctx context.Context, client
 		big.NewInt(111),
 		big.NewInt(222),
 	}
-	seedTx, err := contract.SeedHistory(mustTransactor(t, ctx, key), auth.From, historySeed)
+	seedTx, err := contract.SeedHistory(mustTransactor(t, ctx, key), caller, historySeed)
 	if err != nil {
 		t.Fatalf("SeedHistory: %v", err)
 	}
@@ -361,6 +280,42 @@ func deployProofComplexResolveScenario(t *testing.T, ctx context.Context, client
 	}
 	if updateReceipt.Status != types.ReceiptStatusSuccessful {
 		t.Fatalf("applyUpdate failed with status %d", updateReceipt.Status)
+	}
+	if len(updateReceipt.Logs) == 0 {
+		t.Fatal("applyUpdate receipt did not contain logs")
+	}
+
+	event, err := contract.ParseComplexStateUpdated(*updateReceipt.Logs[0])
+	if err != nil {
+		t.Fatalf("ParseComplexStateUpdated: %v", err)
+	}
+	storedBalance, err := contract.Balances(&bind.CallOpts{Context: ctx}, caller)
+	if err != nil {
+		t.Fatalf("Balances: %v", err)
+	}
+	if storedBalance.Cmp(balanceValue) != 0 {
+		t.Fatalf("unexpected stored balance: got %s want %s", storedBalance, balanceValue)
+	}
+	if event.Caller != caller {
+		t.Fatalf("unexpected event caller: got %s want %s", event.Caller, caller)
+	}
+	if event.PositionId.Cmp(positionID) != 0 {
+		t.Fatalf("unexpected event position ID: got %s want %s", event.PositionId, positionID)
+	}
+	if event.Marker != hashToBytes32(marker) {
+		t.Fatalf("unexpected event marker: got %x want %x", event.Marker, hashToBytes32(marker))
+	}
+	if event.Balance.Cmp(balanceValue) != 0 {
+		t.Fatalf("unexpected event balance: got %s want %s", event.Balance, balanceValue)
+	}
+	if event.HistoryValue.Cmp(historyValue) != 0 {
+		t.Fatalf("unexpected event history value: got %s want %s", event.HistoryValue, historyValue)
+	}
+	if event.Quantity.Cmp(quantity) != 0 {
+		t.Fatalf("unexpected event quantity: got %s want %s", event.Quantity, quantity)
+	}
+	if event.LastPrice.Cmp(lastPrice) != 0 {
+		t.Fatalf("unexpected event last price: got %s want %s", event.LastPrice, lastPrice)
 	}
 
 	basicUint256 := big.NewInt(888888)
@@ -447,16 +402,28 @@ func deployProofComplexResolveScenario(t *testing.T, ctx context.Context, client
 		storageWordPart{value: fixed1, offset: 16},
 	)
 
-	caller := auth.From
-	return complexResolveScenario{
+	callerTopic := common.BytesToHash(caller.Bytes())
+	positionTopic := common.BigToHash(positionID)
+	eventSigTopic := crypto.Keccak256Hash([]byte(proofComplexEventSignature))
+	expectedData := encodeUint256Data(balanceValue, historyValue, quantity, lastPrice)
+	mainlineQuery := "balances[" + caller.Hex() + "]"
+
+	return complexAnvilScenario{
 		rpcURL:          rpcURL,
 		blockNumber:     fixedReceipt.BlockNumber.Uint64(),
 		contractAddress: address,
+		txHash:          updateTx.Hash(),
+		logIndex:        0,
+		mainlineQuery:   mainlineQuery,
+		mainlineSlot:    mappingSlotForAddressKey(common.Hash{}, caller),
+		mainlineValue:   balanceValue,
+		eventData:       expectedData,
+		eventTopics:     []common.Hash{eventSigTopic, callerTopic, positionTopic, marker},
 		caller:          caller,
 		positionID:      new(big.Int).Set(positionID),
 		targets: []complexResolveTarget{
 			{
-				query:          "balances[" + caller.Hex() + "]",
+				query:          mainlineQuery,
 				expectedType:   "uint256",
 				expectedOffset: 0,
 				expectedBytes:  32,
@@ -779,7 +746,7 @@ func writeAnvilCLIConfig(
 	return path
 }
 
-func testComplexResolveCLIRegression(t *testing.T, ctx context.Context, client *ethclient.Client, scenario complexResolveScenario) {
+func testComplexResolveCLIRegression(t *testing.T, ctx context.Context, client *ethclient.Client, scenario complexAnvilScenario) {
 	t.Helper()
 
 	root := repoRoot(t)
@@ -843,7 +810,7 @@ func assertResolvedSlotMatchesStorageAt(
 	t *testing.T,
 	ctx context.Context,
 	client *ethclient.Client,
-	scenario complexResolveScenario,
+	scenario complexAnvilScenario,
 	resolution StorageSlotResolution,
 	target complexResolveTarget,
 ) ResolvedStorageSlot {
@@ -969,6 +936,10 @@ func storageSlotPlus(t *testing.T, slot common.Hash, delta uint64) common.Hash {
 	return common.BigToHash(value)
 }
 
+func mappingSlotForAddressKey(slot common.Hash, key common.Address) common.Hash {
+	return crypto.Keccak256Hash(common.BytesToHash(key.Bytes()).Bytes(), slot.Bytes())
+}
+
 func mustHexBig(t *testing.T, raw string) *big.Int {
 	t.Helper()
 
@@ -986,16 +957,6 @@ func encodeUint256Data(values ...*big.Int) []byte {
 		out = append(out, common.LeftPadBytes(value.Bytes(), 32)...)
 	}
 	return out
-}
-
-func mustProofDemoArtifactPath(t *testing.T, root string) string {
-	t.Helper()
-
-	path := filepath.Join(root, "out", "ProofDemo.sol", "ProofDemo.json")
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("missing Foundry artifact %s: run make bindings or forge build first", path)
-	}
-	return path
 }
 
 func mustProofComplexArtifactPath(t *testing.T, root string) string {

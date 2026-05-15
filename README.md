@@ -136,9 +136,9 @@ Foundry artifact example:
 
 ```bash
 ethproof resolve slot \
-  --compiler-output ./out/ProofDemo.sol/ProofDemo.json \
-  --contract ProofDemo \
-  --var value \
+  --compiler-output ./out/ProofComplexDemo.sol/ProofComplexDemo.json \
+  --contract ProofComplexDemo \
+  --var 'balances[0x1111111111111111111111111111111111111111]' \
   --format artifact
 ```
 
@@ -259,12 +259,10 @@ Testing is split between an offline-stable path and a local e2e path:
 
 ### Local Anvil E2E
 
-The local e2e flow uses the checked-in [docker-compose.yml](./docker-compose.yml) plus the two demo contracts:
+The local e2e flow uses the checked-in [docker-compose.yml](./docker-compose.yml) plus [contracts/ProofComplexDemo.sol](./contracts/ProofComplexDemo.sol):
 
-- [contracts/ProofDemo.sol](./contracts/ProofDemo.sol) drives the proof-generation mainline.
-- [contracts/ProofComplexDemo.sol](./contracts/ProofComplexDemo.sol) provides a narrow resolver compatibility regression against real Foundry artifacts and real chain storage.
-- `api_mainline` deploys the simple contract, then generates and verifies `transaction`, `receipt`, and `state` proofs.
-- `cli_mainline` first resolves the `value` slot from the simple contract artifact and runs the CLI `generate` / `verify` flow, then runs a focused `ProofComplexDemo` `resolve slot` regression for:
+- `api_mainline` deploys `ProofComplexDemo`, then generates and verifies `transaction`, `receipt`, and `state` proofs from its `applyUpdate` transaction.
+- `cli_mainline` resolves the `balances[caller]` slot from the `ProofComplexDemo` artifact, runs the CLI `generate` / `verify` flow, then runs a focused `resolve slot` regression for:
   - `balances[caller]`
   - `history[caller][2]`
   - `positions[caller][positionId].lastPrice`
@@ -274,7 +272,7 @@ The local e2e flow uses the checked-in [docker-compose.yml](./docker-compose.yml
   - packed struct fields, mixed struct fields, and packed fixed-array elements
 - the complex resolver stage compares each resolved slot, offset, byte length, and type against the contract's actual storage word at the mined block, rather than generating a proof.
 
-The e2e test expects Anvil on `http://127.0.0.1:8545` with chain ID `1337`. You can override the RPC URL with `ETH_PROOF_E2E_RPC`.
+The e2e test expects Anvil on `http://127.0.0.1:8545` with chain ID `31337`. You can override the RPC URL with `ETH_PROOF_E2E_RPC`.
 
 ## Contract bindings
 
@@ -299,11 +297,11 @@ Regenerate them with:
 make bindings
 ```
 
-The target runs `forge build`, then emits bindings for both demo contracts into [internal/e2e/bindings](./internal/e2e/bindings):
+The target runs `forge build`, then emits bindings for the local e2e contracts into [internal/e2e/bindings](./internal/e2e/bindings):
 
 ```bash
-internal/e2e/bindings/proofdemo.go
 internal/e2e/bindings/proofcomplexdemo.go
+internal/e2e/bindings/erc7201customlayoutdemo.go
 ```
 
 ## Notes
