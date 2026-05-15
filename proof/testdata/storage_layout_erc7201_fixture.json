@@ -1,0 +1,27 @@
+{
+  "storage": [
+    {
+      "astId": 7,
+      "contract": "contracts/ERC7201CustomLayoutDemo.sol:ERC7201CustomLayoutDemo",
+      "label": "x",
+      "offset": 0,
+      "slot": "72184434393825591107544792283898139213342127093986160208997838626962972681984",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 9,
+      "contract": "contracts/ERC7201CustomLayoutDemo.sol:ERC7201CustomLayoutDemo",
+      "label": "y",
+      "offset": 0,
+      "slot": "72184434393825591107544792283898139213342127093986160208997838626962972681985",
+      "type": "t_uint256"
+    }
+  ],
+  "types": {
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    }
+  }
+}

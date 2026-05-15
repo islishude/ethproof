@@ -272,6 +272,56 @@ func TestResolveStorageSlots(t *testing.T) {
 	}
 }
 
+func TestResolveStorageSlotsERC7201CustomLayout(t *testing.T) {
+	layout := mustLoadStorageLayoutFixture(t, "storage_layout_erc7201_fixture.json", "ERC7201CustomLayoutDemo", StorageLayoutFormatLayout)
+
+	tests := []struct {
+		name     string
+		query    string
+		wantSlot common.Hash
+	}{
+		{
+			name:     "first variable starts at erc7201 namespace base",
+			query:    "x",
+			wantSlot: common.HexToHash("0x9f96f1285fecaf7ff903f9bcb9e24bb62cf61a391840765cfc133c40cd812700"),
+		},
+		{
+			name:     "second variable follows the namespace base",
+			query:    "y",
+			wantSlot: common.HexToHash("0x9f96f1285fecaf7ff903f9bcb9e24bb62cf61a391840765cfc133c40cd812701"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ResolveStorageSlots(layout, tt.query)
+			if err != nil {
+				t.Fatalf("ResolveStorageSlots(%q): %v", tt.query, err)
+			}
+			if got.TypeLabel != "uint256" {
+				t.Fatalf("unexpected type label: got %s want uint256", got.TypeLabel)
+			}
+			if got.HeadSlot != tt.wantSlot {
+				t.Fatalf("unexpected head slot: got %s want %s", got.HeadSlot, tt.wantSlot)
+			}
+			if len(got.Slots) != 1 {
+				t.Fatalf("unexpected slot count: got %d want 1", len(got.Slots))
+			}
+
+			want := ResolvedStorageSlot{
+				Slot:   tt.wantSlot,
+				Offset: 0,
+				Bytes:  32,
+				Label:  tt.query,
+				Type:   "uint256",
+			}
+			if got.Slots[0] != want {
+				t.Fatalf("unexpected slot: got %+v want %+v", got.Slots[0], want)
+			}
+		})
+	}
+}
+
 func TestResolveStorageSlotsRejectsInvalidQueries(t *testing.T) {
 	layout := mustLoadStorageLayoutFixture(t, "storage_layout_fixture.json", "Fixture", StorageLayoutFormatLayout)
 

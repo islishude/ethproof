@@ -31,6 +31,7 @@ const (
 	proofDemoEventSignature  = "ValueUpdated(address,bytes32,uint256)"
 	proofDemoContractName    = "ProofDemo"
 	proofComplexContractName = "ProofComplexDemo"
+	erc7201LayoutDemoName    = "ERC7201CustomLayoutDemo"
 	proofComplexNoteWord0    = "abcdefghijklmnopqrstuvwxyz123456"
 )
 
@@ -60,6 +61,12 @@ type complexResolveScenario struct {
 	contractAddress common.Address
 	caller          common.Address
 	positionID      *big.Int
+	targets         []complexResolveTarget
+}
+
+type erc7201CustomLayoutScenario struct {
+	blockNumber     uint64
+	contractAddress common.Address
 	targets         []complexResolveTarget
 }
 
@@ -204,6 +211,9 @@ func testAnvilCLIFlow(t *testing.T, ctx context.Context, client *ethclient.Clien
 
 	complexScenario := deployProofComplexResolveScenario(t, ctx, client, scenario.rpcURL)
 	testComplexResolveCLIRegression(t, ctx, client, complexScenario)
+
+	erc7201Scenario := deployERC7201CustomLayoutScenario(t, ctx, client)
+	testERC7201CustomLayoutResolveCLIRegression(t, ctx, client, erc7201Scenario)
 }
 
 func deployProofDemoScenario(t *testing.T, ctx context.Context, client *ethclient.Client, rpcURL string) simpleAnvilScenario {
@@ -575,6 +585,50 @@ func deployProofComplexResolveScenario(t *testing.T, ctx context.Context, client
 	}
 }
 
+func deployERC7201CustomLayoutScenario(t *testing.T, ctx context.Context, client *ethclient.Client) erc7201CustomLayoutScenario {
+	t.Helper()
+
+	key, err := crypto.HexToECDSA(anvilDefaultPrivateKey)
+	if err != nil {
+		t.Fatalf("HexToECDSA: %v", err)
+	}
+
+	initialX := mustHexBig(t, "0x111122223333444455556666777788889999aaaabbbbccccddddeeeeffff0000")
+	initialY := mustHexBig(t, "0xffffeeeeddddccccbbbbaaaa9999888877776666555544443333222211110000")
+	address, deployTx, _, err := bindings.DeployERC7201CustomLayoutDemo(mustTransactor(t, ctx, key), client, initialX, initialY)
+	if err != nil {
+		t.Fatalf("DeployERC7201CustomLayoutDemo: %v", err)
+	}
+	deployReceipt, err := bind.WaitMined(ctx, client, deployTx)
+	if err != nil {
+		t.Fatalf("WaitMined(deploy ERC7201CustomLayoutDemo): %v", err)
+	}
+	if deployReceipt.Status != types.ReceiptStatusSuccessful {
+		t.Fatalf("ERC7201CustomLayoutDemo deployment failed with status %d", deployReceipt.Status)
+	}
+
+	return erc7201CustomLayoutScenario{
+		blockNumber:     deployReceipt.BlockNumber.Uint64(),
+		contractAddress: address,
+		targets: []complexResolveTarget{
+			{
+				query:          "x",
+				expectedType:   "uint256",
+				expectedOffset: 0,
+				expectedBytes:  32,
+				expectedWord:   common.BigToHash(initialX),
+			},
+			{
+				query:          "y",
+				expectedType:   "uint256",
+				expectedOffset: 0,
+				expectedBytes:  32,
+				expectedWord:   common.BigToHash(initialY),
+			},
+		},
+	}
+}
+
 func requireAnvilClient(t *testing.T, ctx context.Context) (*ethclient.Client, string) {
 	t.Helper()
 
@@ -743,6 +797,27 @@ func testComplexResolveCLIRegression(t *testing.T, ctx context.Context, client *
 	assertNextResolvedSlot(t, resolvedSlots, "fixedSmallArray[0]", "fixedSmallArray[2]", 1)
 }
 
+func testERC7201CustomLayoutResolveCLIRegression(t *testing.T, ctx context.Context, client *ethclient.Client, scenario erc7201CustomLayoutScenario) {
+	t.Helper()
+
+	root := repoRoot(t)
+	artifactPath := mustERC7201CustomLayoutArtifactPath(t, root)
+	resolvedSlots := make(map[string]ResolvedStorageSlot, len(scenario.targets))
+	for _, target := range scenario.targets {
+		resolution := runResolveSlotCLI(t, ctx, root, artifactPath, erc7201LayoutDemoName, target.query)
+		resolvedSlots[target.query] = assertResolvedSlotMatchesStorageWord(
+			t,
+			ctx,
+			client,
+			scenario.contractAddress,
+			scenario.blockNumber,
+			resolution,
+			target,
+		)
+	}
+	assertNextResolvedSlot(t, resolvedSlots, "x", "y", 1)
+}
+
 func runResolveSlotCLI(t *testing.T, ctx context.Context, root string, compilerOutput string, contract string, query string) StorageSlotResolution {
 	t.Helper()
 
@@ -774,6 +849,28 @@ func assertResolvedSlotMatchesStorageAt(
 ) ResolvedStorageSlot {
 	t.Helper()
 
+	return assertResolvedSlotMatchesStorageWord(
+		t,
+		ctx,
+		client,
+		scenario.contractAddress,
+		scenario.blockNumber,
+		resolution,
+		target,
+	)
+}
+
+func assertResolvedSlotMatchesStorageWord(
+	t *testing.T,
+	ctx context.Context,
+	client *ethclient.Client,
+	contractAddress common.Address,
+	blockNumber uint64,
+	resolution StorageSlotResolution,
+	target complexResolveTarget,
+) ResolvedStorageSlot {
+	t.Helper()
+
 	if got, want := len(resolution.Slots), 1; got != want {
 		t.Fatalf("%s: unexpected resolved slot count: got %d want %d", target.query, got, want)
 	}
@@ -791,8 +888,8 @@ func assertResolvedSlotMatchesStorageAt(
 		t.Fatalf("%s: unexpected resolved byte count: got %d want %d", target.query, resolvedSlot.Bytes, target.expectedBytes)
 	}
 
-	blockNumber := new(big.Int).SetUint64(scenario.blockNumber)
-	storageWord, err := client.StorageAt(ctx, scenario.contractAddress, resolvedSlot.Slot, blockNumber)
+	block := new(big.Int).SetUint64(blockNumber)
+	storageWord, err := client.StorageAt(ctx, contractAddress, resolvedSlot.Slot, block)
 	if err != nil {
 		t.Fatalf("%s: StorageAt(%s): %v", target.query, resolvedSlot.Slot, err)
 	}
@@ -905,6 +1002,16 @@ func mustProofComplexArtifactPath(t *testing.T, root string) string {
 	t.Helper()
 
 	path := filepath.Join(root, "out", "ProofComplexDemo.sol", "ProofComplexDemo.json")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("missing Foundry artifact %s: run make bindings or forge build first", path)
+	}
+	return path
+}
+
+func mustERC7201CustomLayoutArtifactPath(t *testing.T, root string) string {
+	t.Helper()
+
+	path := filepath.Join(root, "out", "ERC7201CustomLayoutDemo.sol", "ERC7201CustomLayoutDemo.json")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("missing Foundry artifact %s: run make bindings or forge build first", path)
 	}

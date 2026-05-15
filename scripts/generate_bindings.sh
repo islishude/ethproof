@@ -28,3 +28,4 @@ forge build
 mkdir -p "$ROOT/internal/e2e/bindings"
 generate_binding contracts/ProofDemo.sol:ProofDemo ProofDemo proofdemo.go
 generate_binding contracts/ProofComplexDemo.sol:ProofComplexDemo ProofComplexDemo proofcomplexdemo.go
+generate_binding contracts/ERC7201CustomLayoutDemo.sol:ERC7201CustomLayoutDemo ERC7201CustomLayoutDemo erc7201customlayoutdemo.go
