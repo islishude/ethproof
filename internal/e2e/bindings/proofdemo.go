@@ -32,7 +32,7 @@ var (
 // ProofDemoMetaData contains all meta data concerning the ProofDemo contract.
 var ProofDemoMetaData = &bind.MetaData{
 	ABI: "[{\"type\":\"function\",\"name\":\"setValue\",\"inputs\":[{\"name\":\"newValue\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"marker\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"value\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"event\",\"name\":\"ValueUpdated\",\"inputs\":[{\"name\":\"caller\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"marker\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"},{\"name\":\"value\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false}]",
-	Bin: "0x6080604052348015600e575f5ffd5b5060bc80601a5f395ff3fe6080604052348015600e575f5ffd5b50600436106030575f3560e01c80633fa4f24514603457806390686ce114604d575b5f5ffd5b603b5f5481565b60405190815260200160405180910390f35b605c6058366004609d565b605e565b005b5f829055604051828152819033907f30b70f4f4e3f9a7e61df8ccb304723c5ec51f959a9fab821eff10d6b00eba5b49060200160405180910390a35050565b5f5f6040838503121560ad575f5ffd5b5050803592602090910135915056",
+	Bin: "0x608080604052346013576091908160188239f35b5f80fdfe60808060405260043610156011575f80fd5b5f3560e01c9081633fa4f24514607a57506390686ce114602f575f80fd5b346076576040366003190112607657600435805f55604051908152602435907f30b70f4f4e3f9a7e61df8ccb304723c5ec51f959a9fab821eff10d6b00eba5b460203392a3005b5f80fd5b346076575f3660031901126076576020905f548152f3",
 }
 
 // ProofDemoABI is the input ABI used to generate the binding from.

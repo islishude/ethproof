@@ -7,11 +7,30 @@ contract ProofComplexDemo {
         uint256 lastPrice;
     }
 
+    struct PackedTriplet {
+        uint128 a;
+        uint64 b;
+        uint64 c;
+    }
+
+    struct MixedTriplet {
+        uint128 a;
+        uint64 b;
+        bytes32 c;
+    }
+
     mapping(address => uint256) public balances;
     mapping(address => uint256[]) private history;
     mapping(address => mapping(uint256 => Position)) private positions;
     string private note;
     bytes private payload;
+    uint256 public basicUint256;
+    address public basicAddress;
+    bytes32 public basicBytes32;
+    bool public basicBool;
+    PackedTriplet private packedTriplet;
+    MixedTriplet private mixedTriplet;
+    uint128[3] private fixedSmallArray;
 
     event ComplexStateUpdated(
         address indexed caller,
@@ -47,6 +66,32 @@ contract ProofComplexDemo {
         payload = nextPayload;
 
         emit ComplexStateUpdated(msg.sender, positionId, marker, balanceValue, historyValue, quantity, lastPrice);
+    }
+
+    function setBasicSamples(
+        uint256 nextBasicUint256,
+        address nextBasicAddress,
+        bytes32 nextBasicBytes32,
+        bool nextBasicBool
+    ) external {
+        basicUint256 = nextBasicUint256;
+        basicAddress = nextBasicAddress;
+        basicBytes32 = nextBasicBytes32;
+        basicBool = nextBasicBool;
+    }
+
+    function setPackedTriplet(uint128 nextPackedA, uint64 nextPackedB, uint64 nextPackedC) external {
+        packedTriplet = PackedTriplet({a: nextPackedA, b: nextPackedB, c: nextPackedC});
+    }
+
+    function setMixedTriplet(uint128 nextMixedA, uint64 nextMixedB, bytes32 nextMixedC) external {
+        mixedTriplet = MixedTriplet({a: nextMixedA, b: nextMixedB, c: nextMixedC});
+    }
+
+    function setFixedSmallArray(uint128 nextFixed0, uint128 nextFixed1, uint128 nextFixed2) external {
+        fixedSmallArray[0] = nextFixed0;
+        fixedSmallArray[1] = nextFixed1;
+        fixedSmallArray[2] = nextFixed2;
     }
 
     function historyLength(address user) external view returns (uint256) {

@@ -47,8 +47,11 @@ type simpleAnvilScenario struct {
 }
 
 type complexResolveTarget struct {
-	query        string
-	expectedWord common.Hash
+	query          string
+	expectedType   string
+	expectedOffset uint64
+	expectedBytes  uint64
+	expectedWord   common.Hash
 }
 
 type complexResolveScenario struct {
@@ -350,33 +353,223 @@ func deployProofComplexResolveScenario(t *testing.T, ctx context.Context, client
 		t.Fatalf("applyUpdate failed with status %d", updateReceipt.Status)
 	}
 
+	basicUint256 := big.NewInt(888888)
+	basicAddress := common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678")
+	basicBytes32 := common.HexToHash("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	basicBool := true
+	basicTx, err := contract.SetBasicSamples(
+		mustTransactor(t, ctx, key),
+		basicUint256,
+		basicAddress,
+		hashToBytes32(basicBytes32),
+		basicBool,
+	)
+	if err != nil {
+		t.Fatalf("SetBasicSamples: %v", err)
+	}
+	basicReceipt, err := bind.WaitMined(ctx, client, basicTx)
+	if err != nil {
+		t.Fatalf("WaitMined(setBasicSamples): %v", err)
+	}
+	if basicReceipt.Status != types.ReceiptStatusSuccessful {
+		t.Fatalf("setBasicSamples failed with status %d", basicReceipt.Status)
+	}
+
+	packedA := mustHexBig(t, "0x11112222333344445555666677778888")
+	packedB := mustHexBig(t, "0x99aabbccddeeff00")
+	packedC := mustHexBig(t, "0x0102030405060708")
+	packedTx, err := contract.SetPackedTriplet(mustTransactor(t, ctx, key), packedA, packedB.Uint64(), packedC.Uint64())
+	if err != nil {
+		t.Fatalf("SetPackedTriplet: %v", err)
+	}
+	packedReceipt, err := bind.WaitMined(ctx, client, packedTx)
+	if err != nil {
+		t.Fatalf("WaitMined(setPackedTriplet): %v", err)
+	}
+	if packedReceipt.Status != types.ReceiptStatusSuccessful {
+		t.Fatalf("setPackedTriplet failed with status %d", packedReceipt.Status)
+	}
+
+	mixedA := mustHexBig(t, "0xaaaabbbbccccddddeeeeffff11112222")
+	mixedB := mustHexBig(t, "0x33445566778899aa")
+	mixedC := common.HexToHash("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	mixedTx, err := contract.SetMixedTriplet(mustTransactor(t, ctx, key), mixedA, mixedB.Uint64(), hashToBytes32(mixedC))
+	if err != nil {
+		t.Fatalf("SetMixedTriplet: %v", err)
+	}
+	mixedReceipt, err := bind.WaitMined(ctx, client, mixedTx)
+	if err != nil {
+		t.Fatalf("WaitMined(setMixedTriplet): %v", err)
+	}
+	if mixedReceipt.Status != types.ReceiptStatusSuccessful {
+		t.Fatalf("setMixedTriplet failed with status %d", mixedReceipt.Status)
+	}
+
+	fixed0 := mustHexBig(t, "0x11111111222222223333333344444444")
+	fixed1 := mustHexBig(t, "0x55555555666666667777777788888888")
+	fixed2 := mustHexBig(t, "0x99999999aaaabbbbccccddddeeeeffff")
+	fixedTx, err := contract.SetFixedSmallArray(mustTransactor(t, ctx, key), fixed0, fixed1, fixed2)
+	if err != nil {
+		t.Fatalf("SetFixedSmallArray: %v", err)
+	}
+	fixedReceipt, err := bind.WaitMined(ctx, client, fixedTx)
+	if err != nil {
+		t.Fatalf("WaitMined(setFixedSmallArray): %v", err)
+	}
+	if fixedReceipt.Status != types.ReceiptStatusSuccessful {
+		t.Fatalf("setFixedSmallArray failed with status %d", fixedReceipt.Status)
+	}
+
+	packedWord := packStorageWord(
+		t,
+		storageWordPart{value: packedA, offset: 0},
+		storageWordPart{value: packedB, offset: 16},
+		storageWordPart{value: packedC, offset: 24},
+	)
+	mixedHeadWord := packStorageWord(
+		t,
+		storageWordPart{value: mixedA, offset: 0},
+		storageWordPart{value: mixedB, offset: 16},
+	)
+	fixedHeadWord := packStorageWord(
+		t,
+		storageWordPart{value: fixed0, offset: 0},
+		storageWordPart{value: fixed1, offset: 16},
+	)
+
 	caller := auth.From
 	return complexResolveScenario{
 		rpcURL:          rpcURL,
-		blockNumber:     updateReceipt.BlockNumber.Uint64(),
+		blockNumber:     fixedReceipt.BlockNumber.Uint64(),
 		contractAddress: address,
 		caller:          caller,
 		positionID:      new(big.Int).Set(positionID),
 		targets: []complexResolveTarget{
 			{
-				query:        "balances[" + caller.Hex() + "]",
-				expectedWord: common.BigToHash(balanceValue),
+				query:          "balances[" + caller.Hex() + "]",
+				expectedType:   "uint256",
+				expectedOffset: 0,
+				expectedBytes:  32,
+				expectedWord:   common.BigToHash(balanceValue),
 			},
 			{
-				query:        "history[" + caller.Hex() + "][2]",
-				expectedWord: common.BigToHash(historyValue),
+				query:          "history[" + caller.Hex() + "][2]",
+				expectedType:   "uint256",
+				expectedOffset: 0,
+				expectedBytes:  32,
+				expectedWord:   common.BigToHash(historyValue),
 			},
 			{
-				query:        "positions[" + caller.Hex() + "][" + positionID.String() + "].lastPrice",
-				expectedWord: common.BigToHash(lastPrice),
+				query:          "positions[" + caller.Hex() + "][" + positionID.String() + "].lastPrice",
+				expectedType:   "uint256",
+				expectedOffset: 0,
+				expectedBytes:  32,
+				expectedWord:   common.BigToHash(lastPrice),
 			},
 			{
-				query:        "note@word(0)",
-				expectedWord: common.BytesToHash(noteBytes),
+				query:          "note@word(0)",
+				expectedType:   "string",
+				expectedOffset: 0,
+				expectedBytes:  32,
+				expectedWord:   common.BytesToHash(noteBytes),
 			},
 			{
-				query:        "payload@word(0)",
-				expectedWord: common.BytesToHash(payload),
+				query:          "payload@word(0)",
+				expectedType:   "bytes",
+				expectedOffset: 0,
+				expectedBytes:  32,
+				expectedWord:   common.BytesToHash(payload),
+			},
+			{
+				query:          "basicUint256",
+				expectedType:   "uint256",
+				expectedOffset: 0,
+				expectedBytes:  32,
+				expectedWord:   common.BigToHash(basicUint256),
+			},
+			{
+				query:          "basicAddress",
+				expectedType:   "address",
+				expectedOffset: 0,
+				expectedBytes:  20,
+				expectedWord:   common.BytesToHash(basicAddress.Bytes()),
+			},
+			{
+				query:          "basicBytes32",
+				expectedType:   "bytes32",
+				expectedOffset: 0,
+				expectedBytes:  32,
+				expectedWord:   basicBytes32,
+			},
+			{
+				query:          "basicBool",
+				expectedType:   "bool",
+				expectedOffset: 0,
+				expectedBytes:  1,
+				expectedWord:   common.BigToHash(big.NewInt(1)),
+			},
+			{
+				query:          "packedTriplet.a",
+				expectedType:   "uint128",
+				expectedOffset: 0,
+				expectedBytes:  16,
+				expectedWord:   packedWord,
+			},
+			{
+				query:          "packedTriplet.b",
+				expectedType:   "uint64",
+				expectedOffset: 16,
+				expectedBytes:  8,
+				expectedWord:   packedWord,
+			},
+			{
+				query:          "packedTriplet.c",
+				expectedType:   "uint64",
+				expectedOffset: 24,
+				expectedBytes:  8,
+				expectedWord:   packedWord,
+			},
+			{
+				query:          "mixedTriplet.a",
+				expectedType:   "uint128",
+				expectedOffset: 0,
+				expectedBytes:  16,
+				expectedWord:   mixedHeadWord,
+			},
+			{
+				query:          "mixedTriplet.b",
+				expectedType:   "uint64",
+				expectedOffset: 16,
+				expectedBytes:  8,
+				expectedWord:   mixedHeadWord,
+			},
+			{
+				query:          "mixedTriplet.c",
+				expectedType:   "bytes32",
+				expectedOffset: 0,
+				expectedBytes:  32,
+				expectedWord:   mixedC,
+			},
+			{
+				query:          "fixedSmallArray[0]",
+				expectedType:   "uint128",
+				expectedOffset: 0,
+				expectedBytes:  16,
+				expectedWord:   fixedHeadWord,
+			},
+			{
+				query:          "fixedSmallArray[1]",
+				expectedType:   "uint128",
+				expectedOffset: 16,
+				expectedBytes:  16,
+				expectedWord:   fixedHeadWord,
+			},
+			{
+				query:          "fixedSmallArray[2]",
+				expectedType:   "uint128",
+				expectedOffset: 0,
+				expectedBytes:  16,
+				expectedWord:   common.BigToHash(fixed2),
 			},
 		},
 	}
@@ -537,10 +730,17 @@ func testComplexResolveCLIRegression(t *testing.T, ctx context.Context, client *
 
 	root := repoRoot(t)
 	artifactPath := mustProofComplexArtifactPath(t, root)
+	resolvedSlots := make(map[string]ResolvedStorageSlot, len(scenario.targets))
 	for _, target := range scenario.targets {
 		resolution := runResolveSlotCLI(t, ctx, root, artifactPath, proofComplexContractName, target.query)
-		assertResolvedSlotMatchesStorageAt(t, ctx, client, scenario, resolution, target)
+		resolvedSlots[target.query] = assertResolvedSlotMatchesStorageAt(t, ctx, client, scenario, resolution, target)
 	}
+
+	assertSameResolvedSlot(t, resolvedSlots, "packedTriplet.a", "packedTriplet.b", "packedTriplet.c")
+	assertSameResolvedSlot(t, resolvedSlots, "mixedTriplet.a", "mixedTriplet.b")
+	assertNextResolvedSlot(t, resolvedSlots, "mixedTriplet.a", "mixedTriplet.c", 1)
+	assertSameResolvedSlot(t, resolvedSlots, "fixedSmallArray[0]", "fixedSmallArray[1]")
+	assertNextResolvedSlot(t, resolvedSlots, "fixedSmallArray[0]", "fixedSmallArray[2]", 1)
 }
 
 func runResolveSlotCLI(t *testing.T, ctx context.Context, root string, compilerOutput string, contract string, query string) StorageSlotResolution {
@@ -571,24 +771,116 @@ func assertResolvedSlotMatchesStorageAt(
 	scenario complexResolveScenario,
 	resolution StorageSlotResolution,
 	target complexResolveTarget,
-) {
+) ResolvedStorageSlot {
 	t.Helper()
 
 	if got, want := len(resolution.Slots), 1; got != want {
 		t.Fatalf("%s: unexpected resolved slot count: got %d want %d", target.query, got, want)
 	}
-	if resolution.Slots[0].Label != target.query {
-		t.Fatalf("%s: unexpected resolved slot label: got %s", target.query, resolution.Slots[0].Label)
+	resolvedSlot := resolution.Slots[0]
+	if resolvedSlot.Label != target.query {
+		t.Fatalf("%s: unexpected resolved slot label: got %s", target.query, resolvedSlot.Label)
+	}
+	if resolvedSlot.Type != target.expectedType {
+		t.Fatalf("%s: unexpected resolved type: got %s want %s", target.query, resolvedSlot.Type, target.expectedType)
+	}
+	if resolvedSlot.Offset != target.expectedOffset {
+		t.Fatalf("%s: unexpected resolved offset: got %d want %d", target.query, resolvedSlot.Offset, target.expectedOffset)
+	}
+	if resolvedSlot.Bytes != target.expectedBytes {
+		t.Fatalf("%s: unexpected resolved byte count: got %d want %d", target.query, resolvedSlot.Bytes, target.expectedBytes)
 	}
 
 	blockNumber := new(big.Int).SetUint64(scenario.blockNumber)
-	storageWord, err := client.StorageAt(ctx, scenario.contractAddress, resolution.Slots[0].Slot, blockNumber)
+	storageWord, err := client.StorageAt(ctx, scenario.contractAddress, resolvedSlot.Slot, blockNumber)
 	if err != nil {
-		t.Fatalf("%s: StorageAt(%s): %v", target.query, resolution.Slots[0].Slot, err)
+		t.Fatalf("%s: StorageAt(%s): %v", target.query, resolvedSlot.Slot, err)
 	}
 	if got := common.BytesToHash(storageWord); got != target.expectedWord {
 		t.Fatalf("%s: unexpected storage word: got %s want %s", target.query, got, target.expectedWord)
 	}
+	return resolvedSlot
+}
+
+func assertSameResolvedSlot(t *testing.T, slots map[string]ResolvedStorageSlot, first string, rest ...string) {
+	t.Helper()
+
+	firstSlot := mustResolvedSlot(t, slots, first).Slot
+	for _, query := range rest {
+		if got := mustResolvedSlot(t, slots, query).Slot; got != firstSlot {
+			t.Fatalf("expected %s to share slot with %s: got %s want %s", query, first, got, firstSlot)
+		}
+	}
+}
+
+func assertNextResolvedSlot(t *testing.T, slots map[string]ResolvedStorageSlot, base string, next string, delta uint64) {
+	t.Helper()
+
+	baseSlot := mustResolvedSlot(t, slots, base).Slot
+	want := storageSlotPlus(t, baseSlot, delta)
+	if got := mustResolvedSlot(t, slots, next).Slot; got != want {
+		t.Fatalf("unexpected slot for %s: got %s want %s", next, got, want)
+	}
+}
+
+func mustResolvedSlot(t *testing.T, slots map[string]ResolvedStorageSlot, query string) ResolvedStorageSlot {
+	t.Helper()
+
+	slot, ok := slots[query]
+	if !ok {
+		t.Fatalf("missing resolved slot for %s", query)
+	}
+	return slot
+}
+
+type storageWordPart struct {
+	value  *big.Int
+	offset uint64
+}
+
+func packStorageWord(t *testing.T, parts ...storageWordPart) common.Hash {
+	t.Helper()
+
+	word := new(big.Int)
+	for _, part := range parts {
+		if part.value == nil {
+			t.Fatal("storage word part value is nil")
+		}
+		if part.value.Sign() < 0 {
+			t.Fatalf("storage word part must be non-negative: %s", part.value)
+		}
+		if part.offset >= 32 {
+			t.Fatalf("storage word offset is out of range: %d", part.offset)
+		}
+		shifted := new(big.Int).Lsh(new(big.Int).Set(part.value), uint(part.offset*8))
+		word.Add(word, shifted)
+	}
+	if word.BitLen() > 256 {
+		t.Fatalf("packed storage word exceeds 256 bits: %s", word)
+	}
+	return common.BigToHash(word)
+}
+
+func storageSlotPlus(t *testing.T, slot common.Hash, delta uint64) common.Hash {
+	t.Helper()
+
+	value := new(big.Int).SetBytes(slot.Bytes())
+	value.Add(value, new(big.Int).SetUint64(delta))
+	if value.BitLen() > 256 {
+		t.Fatalf("storage slot %s plus %d exceeds 256 bits", slot, delta)
+	}
+	return common.BigToHash(value)
+}
+
+func mustHexBig(t *testing.T, raw string) *big.Int {
+	t.Helper()
+
+	trimmed := strings.TrimPrefix(strings.TrimPrefix(raw, "0x"), "0X")
+	value, ok := new(big.Int).SetString(trimmed, 16)
+	if !ok {
+		t.Fatalf("invalid hex integer %q", raw)
+	}
+	return value
 }
 
 func encodeUint256Data(values ...*big.Int) []byte {

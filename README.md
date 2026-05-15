@@ -270,7 +270,9 @@ The local e2e flow uses the checked-in [docker-compose.yml](./docker-compose.yml
   - `positions[caller][positionId].lastPrice`
   - `note@word(0)`
   - `payload@word(0)`
-- the complex resolver stage compares each resolved slot against the contract's actual storage word at the mined block, rather than generating a proof.
+  - `basicUint256`, `basicAddress`, `basicBytes32`, and `basicBool`
+  - packed struct fields, mixed struct fields, and packed fixed-array elements
+- the complex resolver stage compares each resolved slot, offset, byte length, and type against the contract's actual storage word at the mined block, rather than generating a proof.
 
 The e2e test expects Anvil on `http://127.0.0.1:8545` with chain ID `1337`. You can override the RPC URL with `ETH_PROOF_E2E_RPC`.
 
@@ -280,7 +282,7 @@ Go contract bindings are generated with geth `abigen v1`, not `--v2`.
 
 The Foundry profile is pinned for deterministic output across platforms and toolchain updates:
 
-- `solc_version = "0.8.28"`
+- `solc_version = "0.8.35"`
 - `evm_version = "prague"`
 - `bytecode_hash = "none"`
 - `cbor_metadata = false`
