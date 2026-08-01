@@ -7,9 +7,6 @@ on:
 permissions:
   contents: read
 
-env:
-  FOUNDRY_VERSION: 1.7.1
-
 jobs:
   format:
     runs-on: ubuntu-latest
@@ -20,7 +17,7 @@ jobs:
           go-version-file: go.mod
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: ${{ env.FOUNDRY_VERSION }}
+          version: stable
       - run: make fmt-check
 
   lint:
@@ -45,7 +42,7 @@ jobs:
           go-version-file: go.mod
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: ${{ env.FOUNDRY_VERSION }}
+          version: stable
       - run: make build
       - run: make unit-test
 
@@ -58,7 +55,7 @@ jobs:
           go-version-file: go.mod
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: ${{ env.FOUNDRY_VERSION }}
+          version: stable
       - run: make bindings
       - run: git diff --exit-code
       - run: make e2e-test
