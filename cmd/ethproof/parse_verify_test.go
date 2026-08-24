@@ -22,7 +22,10 @@ func TestParseVerifyArgsScenarios(t *testing.T) {
       "minRpcs": 2,
       "proof": "receipt-from-config.json",
       "expectEmitter": "0x2222222222222222222222222222222222222222",
-      "expectTopics": ["0x01", "0x02"],
+      "expectTopics": [
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "0x0000000000000000000000000000000000000000000000000000000000000002"
+      ],
       "expectData": "0xaa"
     }
   }

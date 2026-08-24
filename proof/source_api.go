@@ -54,7 +54,7 @@ type ReceiptProofSourcesRequest struct {
 	Sources       []ReceiptSource
 	MinRPCSources int
 	TxHash        common.Hash
-	LogIndex      uint
+	LogIndex      uint64
 }
 
 // TransactionProofSourcesRequest describes the inputs required to generate a transaction proof from injected sources.
@@ -85,7 +85,7 @@ func normalizeSourceNames[S namedSource](sources []S, minSources int) ([]string,
 		return nil, fmt.Errorf("need at least %d distinct rpc sources, got %d", minSources, len(sources))
 	}
 
-	seen := make(map[string]struct{}, len(sources))
+	seen := make(map[string]int, len(sources))
 	names := make([]string, 0, len(sources))
 	for i, source := range sources {
 		if isNilSource(source) {
@@ -95,11 +95,11 @@ func normalizeSourceNames[S namedSource](sources []S, minSources int) ([]string,
 		if name == "" {
 			return nil, fmt.Errorf("source %d has empty name", i)
 		}
-		if _, ok := seen[name]; ok {
-			return nil, fmt.Errorf("duplicate source name %q", name)
+		if previous, ok := seen[name]; ok {
+			return nil, fmt.Errorf("source %d duplicates source %d", i, previous)
 		}
-		seen[name] = struct{}{}
-		names = append(names, name)
+		seen[name] = i
+		names = append(names, sourceID(i))
 	}
 	return names, nil
 }
@@ -124,7 +124,7 @@ func collectFromSources[S namedSource, T any](ctx context.Context, sources []S, 
 		go func(index int, source S) {
 			value, err := fetch(fetchCtx, source)
 			if err != nil {
-				err = fmt.Errorf("%s: %w", strings.TrimSpace(source.SourceName()), err)
+				err = fmt.Errorf("%s: %w", sourceID(index), err)
 			}
 			results <- sourceResult{
 				index: index,
@@ -149,6 +149,10 @@ func collectFromSources[S namedSource, T any](ctx context.Context, sources []S, 
 	}
 
 	return out, nil
+}
+
+func sourceID(index int) string {
+	return fmt.Sprintf("source[%d]", index)
 }
 
 func isNilSource(v any) bool {

@@ -59,10 +59,10 @@ func parseVerifyReceiptArgs(args []string) (verifyReceiptConfig, error) {
 	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
 	minRPCs := fs.Int("min-rpcs", proof.DefaultMinRPCSources, "minimum distinct RPC sources required")
 	proofPath := fs.String("proof", "receipt.json", "proof json file")
-	expectEmitterHex := fs.String("expect-emitter", "", "optional expected emitter address")
-	expectDataHex := fs.String("expect-data", "", "optional expected event data hex")
+	expectEmitterHex := fs.String("expect-emitter", "", "optional expected 20-byte 0x-prefixed emitter address")
+	expectDataHex := fs.String("expect-data", "", "optional expected even-length 0x-prefixed event data")
 	var topics multiStringFlag
-	fs.Var(&topics, "expect-topic", "optional expected topic (repeatable)")
+	fs.Var(&topics, "expect-topic", "optional expected 32-byte 0x-prefixed topic (repeatable)")
 
 	parseCtx, err := prepareParse(fs, args, configPath, "parse verify receipt args")
 	if err != nil {
@@ -93,7 +93,7 @@ func parseVerifyReceiptArgs(args []string) (verifyReceiptConfig, error) {
 	}
 	expect, err := buildReceiptExpectations(rawEmitter, rawData, rawTopics)
 	if err != nil {
-		return verifyReceiptConfig{}, err
+		return verifyReceiptConfig{}, newUsageError("%v", err)
 	}
 	cfg.Expectations = expect
 	return cfg, nil

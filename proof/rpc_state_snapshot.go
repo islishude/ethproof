@@ -24,18 +24,27 @@ func fetchStateSnapshot(ctx context.Context, source StateSource, blockNumber uin
 	if err != nil {
 		return nil, fmt.Errorf("fetch header: %w", err)
 	}
+	headerSnapshot, err := blockSnapshotHeaderFromHeader(chainID, header)
+	if err != nil {
+		return nil, err
+	}
 	proof, err := source.GetProof(ctx, account, stateSlotKeys(slots), blockArg)
 	if err != nil {
 		return nil, fmt.Errorf("eth_getProof: %w", err)
+	}
+	if proof == nil {
+		return nil, fmt.Errorf("eth_getProof returned nil account proof")
+	}
+	if proof.Balance == nil {
+		return nil, fmt.Errorf("eth_getProof returned nil account balance")
+	}
+	if proof.Balance.Sign() < 0 || proof.Balance.BitLen() > 256 {
+		return nil, fmt.Errorf("eth_getProof returned invalid account balance")
 	}
 
 	// Normalize proof node ordering before consensus comparison. Different RPCs can return
 	// equivalent node sets in different orders.
 	accountProof, err := proofutil.NormalizeHexNodeList(proof.AccountProof)
-	if err != nil {
-		return nil, err
-	}
-	headerSnapshot, err := blockSnapshotHeaderFromHeader(chainID, header)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +111,10 @@ func normalizeStorageProofResults(expectedSlots []common.Hash, storageRoot commo
 		if err != nil {
 			return nil, fmt.Errorf("normalize storage proof %s: %w", slot.Hex(), err)
 		}
-		value := storageResultValueHash(result)
+		value, err := storageResultValueHash(result)
+		if err != nil {
+			return nil, fmt.Errorf("storage proof %s: %w", slot.Hex(), err)
+		}
 		if _, err := verifyStorageProof(storageRoot, slot, proofNodes, value); err != nil {
 			return nil, fmt.Errorf("verify storage proof %s: %w", slot.Hex(), err)
 		}
@@ -139,9 +151,12 @@ func parseStorageProofKey(raw string) (common.Hash, error) {
 	return common.BytesToHash(decoded), nil
 }
 
-func storageResultValueHash(result gethclient.StorageResult) common.Hash {
+func storageResultValueHash(result gethclient.StorageResult) (common.Hash, error) {
 	if result.Value == nil {
-		return common.Hash{}
+		return common.Hash{}, nil
 	}
-	return common.BigToHash(result.Value)
+	if result.Value.Sign() < 0 || result.Value.BitLen() > 256 {
+		return common.Hash{}, fmt.Errorf("storage value is outside uint256 range")
+	}
+	return common.BigToHash(result.Value), nil
 }

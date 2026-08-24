@@ -3,8 +3,6 @@ package proof
 import (
 	"context"
 	"fmt"
-
-	"github.com/islishude/ethproof/internal/proofutil"
 )
 
 // VerifyStateProofPackageAgainstRPCs verifies the state proof locally and then checks that the
@@ -33,7 +31,7 @@ func VerifyStateProofPackageAgainstSources(ctx context.Context, pkg *StateProofP
 }
 
 func VerifyStateProofPackageAgainstSourcesWithFetcher(ctx context.Context, pkg *StateProofPackage, req VerifySourcesRequest, fetcher blockHeaderFetcher) error {
-	if err := VerifyStateProofPackage(pkg); err != nil {
+	if err := VerifyStateProofPackageAgainstEmbeddedRoots(pkg); err != nil {
 		return err
 	}
 	return verifyBlockContextAgainstSources(ctx, pkg.Block, req, fetcher)
@@ -99,7 +97,7 @@ func VerifyTransactionProofPackageAgainstSources(ctx context.Context, pkg *Trans
 }
 
 func verifyTransactionProofPackageAgainstSourcesWithFetcher(ctx context.Context, pkg *TransactionProofPackage, req VerifySourcesRequest, fetcher blockHeaderFetcher) error {
-	if err := verifyTransactionProofPackage(pkg); err != nil {
+	if err := VerifyTransactionProofPackageAgainstEmbeddedRoots(pkg); err != nil {
 		return err
 	}
 	return verifyBlockContextAgainstSources(ctx, pkg.Block, req, fetcher)
@@ -130,16 +128,5 @@ func verifyBlockContextAgainstSources(ctx context.Context, block BlockContext, r
 	}
 
 	// Then compare the proof package's embedded block context against that agreed independent view.
-	if err := combineMismatch("proof package", base.source, compareHeader(blockSnapshotHeader{
-		ChainID:          proofutil.CloneChainID(block.ChainID),
-		BlockNumber:      block.BlockNumber,
-		BlockHash:        block.BlockHash,
-		ParentHash:       block.ParentHash,
-		StateRoot:        block.StateRoot,
-		TransactionsRoot: block.TransactionsRoot,
-		ReceiptsRoot:     block.ReceiptsRoot,
-	}, base.header)); err != nil {
-		return err
-	}
-	return nil
+	return verifyBlockContextAgainstAnchor(block, blockAnchorFromSnapshot(base.header))
 }

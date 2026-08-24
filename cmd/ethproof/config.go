@@ -39,7 +39,7 @@ type generateReceiptConfigFile struct {
 	RPCs     []string `json:"rpcs"`
 	MinRPCs  *int     `json:"minRpcs"`
 	Tx       string   `json:"tx"`
-	LogIndex *uint    `json:"logIndex"`
+	LogIndex *uint64  `json:"logIndex"`
 	Out      string   `json:"out"`
 }
 

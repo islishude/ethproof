@@ -47,11 +47,17 @@ func verifyAccountProof(stateRoot common.Hash, account common.Address, nodes []h
 	if err != nil {
 		return nil, err
 	}
-	if decoded.Balance == nil || decoded.Balance.ToBig().Cmp(balance) != 0 {
+	if decoded.Balance == nil {
+		return nil, fmt.Errorf("decoded account balance is nil")
+	}
+	if decoded.Balance.ToBig().Cmp(balance) != 0 {
 		return nil, fmt.Errorf("balance mismatch: got %s want %s", proofutil.BalanceHex(decoded.Balance.ToBig()), claim.Balance)
 	}
 	if decoded.Root != claim.StorageRoot {
 		return nil, fmt.Errorf("storageRoot mismatch: got %s want %s", decoded.Root, claim.StorageRoot)
+	}
+	if len(decoded.CodeHash) != common.HashLength {
+		return nil, fmt.Errorf("decoded codeHash has %d bytes, want %d", len(decoded.CodeHash), common.HashLength)
 	}
 	if common.BytesToHash(decoded.CodeHash) != claim.CodeHash {
 		return nil, fmt.Errorf("codeHash mismatch: got %s want %s", common.BytesToHash(decoded.CodeHash), claim.CodeHash)

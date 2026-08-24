@@ -57,7 +57,7 @@ func TestRunGenerateCommandsSuccess(t *testing.T) {
 			args: []string{
 				"--rpc", "http://127.0.0.1:8545",
 				"--min-rpcs", "1",
-				"--tx", "0x02",
+				"--tx", testHash02,
 				"--log-index", "3",
 				"--out", "receipt.json",
 			},
@@ -90,7 +90,7 @@ func TestRunGenerateCommandsSuccess(t *testing.T) {
 			args: []string{
 				"--rpc", "http://127.0.0.1:8545",
 				"--min-rpcs", "1",
-				"--tx", "0x03",
+				"--tx", testHash03,
 				"--out", "tx.json",
 			},
 			run: runGenerateTransaction,
@@ -154,7 +154,7 @@ func TestRunGenerateCommandsWrapErrors(t *testing.T) {
 		{
 			name: "receipt save error",
 			run:  runGenerateReceipt,
-			args: []string{"--rpc", "http://127.0.0.1:8545", "--min-rpcs", "1", "--tx", "0x02", "--log-index", "3"},
+			args: []string{"--rpc", "http://127.0.0.1:8545", "--min-rpcs", "1", "--tx", testHash02, "--log-index", "3"},
 			install: func(deps *commandDeps, err error) {
 				deps.generateReceipt = func(context.Context, proof.ReceiptProofRequest) (*proof.ReceiptProofPackage, error) {
 					return stubReceiptProofPackage(), nil
@@ -166,7 +166,7 @@ func TestRunGenerateCommandsWrapErrors(t *testing.T) {
 		{
 			name: "transaction generate error",
 			run:  runGenerateTransaction,
-			args: []string{"--rpc", "http://127.0.0.1:8545", "--min-rpcs", "1", "--tx", "0x03"},
+			args: []string{"--rpc", "http://127.0.0.1:8545", "--min-rpcs", "1", "--tx", testHash03},
 			install: func(deps *commandDeps, err error) {
 				deps.generateTransaction = func(context.Context, proof.TransactionProofRequest) (*proof.TransactionProofPackage, error) {
 					return nil, err
@@ -206,7 +206,7 @@ func TestRunMainGenerateRuntimeErrorWritesErrorLog(t *testing.T) {
 			"generate", "tx",
 			"--rpc", "http://127.0.0.1:8545",
 			"--min-rpcs", "1",
-			"--tx", "0x03",
+			"--tx", testHash03,
 		})
 	})
 
@@ -232,7 +232,7 @@ func TestRunMainGenerateSuccessWritesReadableStatus(t *testing.T) {
 			"generate", "tx",
 			"--rpc", "http://127.0.0.1:8545",
 			"--min-rpcs", "1",
-			"--tx", "0x03",
+			"--tx", testHash03,
 			"--out", "tx.json",
 		})
 	})

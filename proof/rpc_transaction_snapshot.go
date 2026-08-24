@@ -19,6 +19,9 @@ func fetchTransactionSnapshot(ctx context.Context, source TransactionSource, txH
 	if err != nil {
 		return nil, fmt.Errorf("fetch tx: %w", err)
 	}
+	if tx == nil {
+		return nil, fmt.Errorf("fetch tx returned nil transaction")
+	}
 	if isPending {
 		return nil, fmt.Errorf("transaction is still pending")
 	}
@@ -29,12 +32,22 @@ func fetchTransactionSnapshot(ctx context.Context, source TransactionSource, txH
 	if err != nil {
 		return nil, fmt.Errorf("fetch receipt: %w", err)
 	}
+	if receipt == nil {
+		return nil, fmt.Errorf("fetch receipt returned nil receipt")
+	}
+	if receipt.TxHash != txHash {
+		return nil, fmt.Errorf("receipt tx hash mismatch: got %s want %s", receipt.TxHash, txHash)
+	}
 	block, err := source.BlockByHash(ctx, receipt.BlockHash)
 	if err != nil {
 		return nil, fmt.Errorf("fetch block: %w", err)
 	}
-	if int(receipt.TransactionIndex) >= len(block.Transactions()) {
-		return nil, fmt.Errorf("transaction index %d out of range for block size %d", receipt.TransactionIndex, len(block.Transactions()))
+	if block == nil {
+		return nil, fmt.Errorf("fetch block returned nil block")
+	}
+	blockTxs := block.Transactions()
+	if receipt.TransactionIndex >= uint(len(blockTxs)) {
+		return nil, fmt.Errorf("transaction index %d out of range for block size %d", receipt.TransactionIndex, len(blockTxs))
 	}
 	header, headerSnapshot, err := fetchBlockHeader(ctx, source, receipt.BlockHash, chainID)
 	if err != nil {
@@ -46,7 +59,6 @@ func fetchTransactionSnapshot(ctx context.Context, source TransactionSource, txH
 
 	// Canonicalize the entire block transaction list so proof generation can rebuild the trie
 	// locally and compare normalized bytes across sources.
-	blockTxs := block.Transactions()
 	transactionRLP, err := proofutil.EncodeTransaction(tx)
 	if err != nil {
 		return nil, fmt.Errorf("encode target tx: %w", err)

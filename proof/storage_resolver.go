@@ -2,7 +2,6 @@ package proof
 
 import (
 	"fmt"
-	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -10,7 +9,13 @@ import (
 	"unicode/utf8"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
+)
+
+const (
+	maxExpandedStorageFields = 4096
+	maxStorageResolverDepth  = 64
 )
 
 // ResolvedStorageSlot describes one concrete storage slot and byte range.
@@ -24,10 +29,11 @@ type ResolvedStorageSlot struct {
 
 // StorageSlotResolution is the result of resolving a Solidity storage query.
 type StorageSlotResolution struct {
-	HeadSlot  common.Hash           `json:"headSlot"`
-	Encoding  string                `json:"encoding"`
-	TypeLabel string                `json:"typeLabel"`
-	Slots     []ResolvedStorageSlot `json:"slots"`
+	HeadSlot   common.Hash           `json:"headSlot"`
+	Encoding   string                `json:"encoding"`
+	TypeLabel  string                `json:"typeLabel"`
+	ProofSlots []common.Hash         `json:"proofSlots"`
+	Slots      []ResolvedStorageSlot `json:"slots"`
 }
 
 // ResolveStorageSlots resolves a Solidity storage-layout query into concrete slot metadata.
@@ -38,6 +44,9 @@ func ResolveStorageSlots(layout *StorageLayout, query string) (*StorageSlotResol
 	parsed, err := parseStorageQuery(query)
 	if err != nil {
 		return nil, err
+	}
+	if len(parsed.steps) > maxStorageResolverDepth {
+		return nil, fmt.Errorf("storage query exceeds maximum depth %d", maxStorageResolverDepth)
 	}
 
 	entry, ok := findStorageLayoutEntry(layout.Storage, parsed.root)
@@ -91,7 +100,11 @@ func ResolveStorageSlots(layout *StorageLayout, query string) (*StorageSlotResol
 		if currentType.Encoding != "bytes" {
 			return nil, fmt.Errorf("@word is only valid for bytes/string queries")
 		}
-		wordSlot := new(big.Int).Add(hashStorageSlot(cursor.slot), parsed.wordIndex)
+		hashedSlot, err := hashStorageSlot(cursor.slot)
+		if err != nil {
+			return nil, err
+		}
+		wordSlot := new(big.Int).Add(hashedSlot, parsed.wordIndex)
 		slotHash, err := slotBigIntToHash(wordSlot)
 		if err != nil {
 			return nil, fmt.Errorf("encode data word slot for %s: %w", cursor.path, err)
@@ -103,14 +116,17 @@ func ResolveStorageSlots(layout *StorageLayout, query string) (*StorageSlotResol
 			Label:  fmt.Sprintf("%s@word(%s)", cursor.path, parsed.wordIndex.String()),
 			Type:   currentType.Label,
 		}}
+		result.ProofSlots = []common.Hash{slotHash}
 		return result, nil
 	}
 
-	slots, err := resolver.expand(cursor)
+	state := storageExpansionState{activeTypes: make(map[string]struct{})}
+	slots, err := resolver.expand(cursor, &state, 0)
 	if err != nil {
 		return nil, err
 	}
 	result.Slots = slots
+	result.ProofSlots = uniqueProofSlots(slots)
 	return result, nil
 }
 
@@ -124,6 +140,11 @@ type storageCursor struct {
 	offset uint64
 	typeID string
 	path   string
+}
+
+type storageExpansionState struct {
+	emitted     int
+	activeTypes map[string]struct{}
 }
 
 func (r *storageResolver) resolveMember(cursor storageCursor, memberName string) (storageCursor, error) {
@@ -205,7 +226,10 @@ func (r *storageResolver) resolveArrayIndex(cursor storageCursor, raw string, ty
 
 	baseSlot := new(big.Int).Set(cursor.slot)
 	if typeInfo.Encoding == "dynamic_array" {
-		baseSlot = hashStorageSlot(cursor.slot)
+		baseSlot, err = hashStorageSlot(cursor.slot)
+		if err != nil {
+			return storageCursor{}, err
+		}
 	} else {
 		length, ok := staticArrayLength(cursor.typeID)
 		if !ok {
@@ -246,17 +270,29 @@ func (r *storageResolver) resolveArrayIndex(cursor storageCursor, raw string, ty
 	}, nil
 }
 
-func (r *storageResolver) expand(cursor storageCursor) ([]ResolvedStorageSlot, error) {
+func (r *storageResolver) expand(cursor storageCursor, state *storageExpansionState, depth int) ([]ResolvedStorageSlot, error) {
+	if depth >= maxStorageResolverDepth {
+		return nil, fmt.Errorf("storage layout expansion exceeds maximum depth %d at %s", maxStorageResolverDepth, cursor.path)
+	}
 	typeInfo, err := r.typeInfo(cursor.typeID)
 	if err != nil {
 		return nil, err
 	}
+	if _, ok := state.activeTypes[cursor.typeID]; ok {
+		return nil, fmt.Errorf("cyclic storage type %q while expanding %s", cursor.typeID, cursor.path)
+	}
+	state.activeTypes[cursor.typeID] = struct{}{}
+	defer delete(state.activeTypes, cursor.typeID)
+
 	switch {
 	case typeInfo.Encoding == "mapping":
 		return nil, fmt.Errorf("mapping %s requires explicit key selector", cursor.path)
 	case typeInfo.Encoding == "dynamic_array":
 		return nil, fmt.Errorf("dynamic array %s requires explicit index selector", cursor.path)
 	case typeInfo.Encoding == "bytes":
+		if err := state.reserveField(); err != nil {
+			return nil, err
+		}
 		slotHash, err := slotBigIntToHash(cursor.slot)
 		if err != nil {
 			return nil, err
@@ -281,7 +317,7 @@ func (r *storageResolver) expand(cursor storageCursor) ([]ResolvedStorageSlot, e
 				typeID: member.Type,
 				path:   cursor.path + "." + member.Label,
 			}
-			childSlots, err := r.expand(child)
+			childSlots, err := r.expand(child, state, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -293,7 +329,7 @@ func (r *storageResolver) expand(cursor storageCursor) ([]ResolvedStorageSlot, e
 		if !ok {
 			return nil, fmt.Errorf("could not determine static array length for %s", cursor.path)
 		}
-		if !length.IsInt64() || length.Int64() < 0 || length.Int64() > math.MaxInt/2 {
+		if !length.IsInt64() || length.Int64() < 0 {
 			return nil, fmt.Errorf("static array %s is too large to expand", cursor.path)
 		}
 		var out []ResolvedStorageSlot
@@ -302,7 +338,7 @@ func (r *storageResolver) expand(cursor storageCursor) ([]ResolvedStorageSlot, e
 			if err != nil {
 				return nil, err
 			}
-			childSlots, err := r.expand(child)
+			childSlots, err := r.expand(child, state, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -310,6 +346,9 @@ func (r *storageResolver) expand(cursor storageCursor) ([]ResolvedStorageSlot, e
 		}
 		return out, nil
 	default:
+		if err := state.reserveField(); err != nil {
+			return nil, err
+		}
 		byteLen, err := decimalStringUint64(typeInfo.NumberOfBytes)
 		if err != nil {
 			return nil, fmt.Errorf("parse byte size for %s: %w", cursor.path, err)
@@ -328,10 +367,43 @@ func (r *storageResolver) expand(cursor storageCursor) ([]ResolvedStorageSlot, e
 	}
 }
 
+func (s *storageExpansionState) reserveField() error {
+	if s.emitted >= maxExpandedStorageFields {
+		return fmt.Errorf("storage expansion exceeds %d logical fields; use an explicit array index", maxExpandedStorageFields)
+	}
+	s.emitted++
+	return nil
+}
+
+func uniqueProofSlots(slots []ResolvedStorageSlot) []common.Hash {
+	seen := make(map[common.Hash]struct{}, len(slots))
+	out := make([]common.Hash, 0, len(slots))
+	for _, slot := range slots {
+		if _, ok := seen[slot.Slot]; ok {
+			continue
+		}
+		seen[slot.Slot] = struct{}{}
+		out = append(out, slot.Slot)
+	}
+	return out
+}
+
 func (r *storageResolver) slotsOccupied(typeID string) (*big.Int, error) {
+	return r.slotsOccupiedWithState(typeID, make(map[string]struct{}), 0)
+}
+
+func (r *storageResolver) slotsOccupiedWithState(typeID string, active map[string]struct{}, depth int) (*big.Int, error) {
 	if cached, ok := r.cache[typeID]; ok {
 		return new(big.Int).Set(cached), nil
 	}
+	if depth >= maxStorageResolverDepth {
+		return nil, fmt.Errorf("storage type traversal exceeds maximum depth %d at %q", maxStorageResolverDepth, typeID)
+	}
+	if _, ok := active[typeID]; ok {
+		return nil, fmt.Errorf("cyclic storage type %q", typeID)
+	}
+	active[typeID] = struct{}{}
+	defer delete(active, typeID)
 
 	typeInfo, err := r.typeInfo(typeID)
 	if err != nil {
@@ -349,7 +421,7 @@ func (r *storageResolver) slotsOccupied(typeID string) (*big.Int, error) {
 			if err != nil {
 				return nil, fmt.Errorf("parse member slot for %s.%s: %w", typeInfo.Label, member.Label, err)
 			}
-			memberSlots, err := r.slotsOccupied(member.Type)
+			memberSlots, err := r.slotsOccupiedWithState(member.Type, active, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -379,7 +451,7 @@ func (r *storageResolver) slotsOccupied(typeID string) (*big.Int, error) {
 			perSlot := big.NewInt(int64(32 / elementBytes))
 			slots = new(big.Int).Div(new(big.Int).Add(new(big.Int).Set(length), new(big.Int).Sub(perSlot, big.NewInt(1))), perSlot)
 		} else {
-			baseSlots, err := r.slotsOccupied(typeInfo.Base)
+			baseSlots, err := r.slotsOccupiedWithState(typeInfo.Base, active, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -518,9 +590,12 @@ func parseStorageSlot(raw string) (*big.Int, error) {
 	return slot, nil
 }
 
-func hashStorageSlot(slot *big.Int) *big.Int {
-	b, _ := slotBigIntToBytes32(slot)
-	return new(big.Int).SetBytes(crypto.Keccak256(b))
+func hashStorageSlot(slot *big.Int) (*big.Int, error) {
+	b, err := slotBigIntToBytes32(slot)
+	if err != nil {
+		return nil, err
+	}
+	return new(big.Int).SetBytes(crypto.Keccak256(b)), nil
 }
 
 func slotBigIntToHash(slot *big.Int) (common.Hash, error) {
@@ -654,16 +729,20 @@ func encodeMappingKey(typeID string, typeInfo StorageLayoutType, raw string) ([]
 		}
 		return []byte(value), nil
 	case typeInfo.Label == "bytes":
-		if !strings.HasPrefix(raw, "0x") && !strings.HasPrefix(raw, "0X") {
-			return nil, fmt.Errorf("expected hex bytes literal")
+		value, err := hexutil.Decode(raw)
+		if err != nil {
+			return nil, fmt.Errorf("expected valid even-length 0x-prefixed hex bytes literal: %w", err)
 		}
-		return common.FromHex(raw), nil
+		return value, nil
 	case strings.HasPrefix(typeInfo.Label, "bytes"):
 		size, err := fixedBytesSize(typeInfo.Label)
 		if err != nil {
 			return nil, err
 		}
-		value := common.FromHex(raw)
+		value, err := hexutil.Decode(raw)
+		if err != nil {
+			return nil, fmt.Errorf("expected valid even-length 0x-prefixed hex literal: %w", err)
+		}
 		if len(value) != size {
 			return nil, fmt.Errorf("expected %d-byte hex literal", size)
 		}

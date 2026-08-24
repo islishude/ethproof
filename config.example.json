@@ -8,7 +8,7 @@
       ],
       "minRpcs": 3,
       "block": 22000000,
-      "account": "0xYourAccount",
+      "account": "0x1111111111111111111111111111111111111111",
       "slots": [
         "0x0000000000000000000000000000000000000000000000000000000000000000"
       ],
@@ -21,7 +21,7 @@
         "https://rpc-3.example"
       ],
       "minRpcs": 3,
-      "tx": "0xYourTxHash",
+      "tx": "0x2222222222222222222222222222222222222222222222222222222222222222",
       "logIndex": 0,
       "out": "receipt.json"
     },
@@ -32,7 +32,7 @@
         "https://rpc-3.example"
       ],
       "minRpcs": 3,
-      "tx": "0xYourTxHash",
+      "tx": "0x3333333333333333333333333333333333333333333333333333333333333333",
       "out": "tx.json"
     }
   },
@@ -54,11 +54,11 @@
       ],
       "minRpcs": 3,
       "proof": "receipt.json",
-      "expectEmitter": "0xYourContract",
+      "expectEmitter": "0x4444444444444444444444444444444444444444",
       "expectTopics": [
-        "0xYourTopic0"
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       ],
-      "expectData": "0xYourEventData"
+      "expectData": "0xdeadbeef"
     },
     "tx": {
       "rpcs": [

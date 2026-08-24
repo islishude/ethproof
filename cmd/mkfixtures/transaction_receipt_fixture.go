@@ -150,6 +150,10 @@ func buildOfflineReceiptFixture(header blockSnapshotHeader, txs types.Transactio
 	if err != nil {
 		return nil, err
 	}
+	transactionRLP, transactionProofNodes, err := proofutil.BuildIndexTrieProof(blockTransactions, txIndex, header.TransactionsRoot, "transaction")
+	if err != nil {
+		return nil, err
+	}
 	log := receipts[txIndex].Logs[0]
 	digests, err := canonicalOfflineReceiptDigests(header, blockTransactions, blockReceipts, blockTransactions[txIndex], receiptRLP, log)
 	if err != nil {
@@ -176,13 +180,14 @@ func buildOfflineReceiptFixture(header blockSnapshotHeader, txs types.Transactio
 		},
 	)
 	return &ReceiptProofPackage{
-		Block:          buildBlockContext(header, receiptConsensus),
-		TxHash:         txs[txIndex].Hash(),
-		TxIndex:        txIndex,
-		LogIndex:       0,
-		TransactionRLP: blockTransactions[txIndex],
-		ReceiptRLP:     receiptRLP,
-		ProofNodes:     proofNodes,
+		Block:                 buildBlockContext(header, receiptConsensus),
+		TxHash:                txs[txIndex].Hash(),
+		TxIndex:               txIndex,
+		LogIndex:              0,
+		TransactionRLP:        transactionRLP,
+		TransactionProofNodes: transactionProofNodes,
+		ReceiptRLP:            receiptRLP,
+		ProofNodes:            proofNodes,
 		Event: EventClaim{
 			Address: log.Address,
 			Topics:  append([]common.Hash(nil), log.Topics...),

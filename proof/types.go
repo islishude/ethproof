@@ -7,7 +7,8 @@ import (
 	"github.com/holiman/uint256"
 )
 
-// BlockContext captures the block header fields that anchor a proof package.
+// BlockContext captures the block header fields embedded in a proof package. Callers must compare
+// it with a trusted BlockAnchor or independent RPC sources to authenticate the embedded roots.
 type BlockContext struct {
 	ChainID          *uint256.Int    `json:"chainId"`
 	BlockNumber      uint64          `json:"blockNumber"`
@@ -19,7 +20,20 @@ type BlockContext struct {
 	SourceConsensus  SourceConsensus `json:"sourceConsensus"`
 }
 
-// SourceConsensus records the normalized multi-RPC inputs used to build a proof.
+// BlockAnchor is a caller-trusted block header projection used to authenticate embedded proof roots.
+// It intentionally excludes SourceConsensus because generation metadata is not an attestation.
+type BlockAnchor struct {
+	ChainID          *uint256.Int
+	BlockNumber      uint64
+	BlockHash        common.Hash
+	ParentHash       common.Hash
+	StateRoot        common.Hash
+	TransactionsRoot common.Hash
+	ReceiptsRoot     common.Hash
+}
+
+// SourceConsensus is unauthenticated generation metadata describing normalized source inputs.
+// RPCs contains opaque source identifiers and must not be treated as proof that sources agreed.
 type SourceConsensus struct {
 	Mode    string            `json:"mode,omitempty"`
 	RPCs    []string          `json:"rpcs"`
@@ -54,7 +68,7 @@ type ReceiptProofRequest struct {
 	RPCURLs       []string
 	MinRPCSources int
 	TxHash        common.Hash
-	LogIndex      uint
+	LogIndex      uint64
 }
 
 // TransactionProofRequest describes the inputs required to generate a transaction proof.
@@ -102,16 +116,17 @@ type EventClaim struct {
 	Data    hexutil.Bytes  `json:"data"`
 }
 
-// ReceiptProofPackage contains a receipt inclusion proof plus the claimed log fields.
+// ReceiptProofPackage proves both transaction and receipt inclusion at TxIndex plus the claimed log fields.
 type ReceiptProofPackage struct {
-	Block          BlockContext    `json:"block"`
-	TxHash         common.Hash     `json:"txHash"`
-	TxIndex        uint64          `json:"txIndex"`
-	LogIndex       uint            `json:"logIndex"`
-	TransactionRLP hexutil.Bytes   `json:"transactionRlp"`
-	ReceiptRLP     hexutil.Bytes   `json:"receiptRlp"`
-	ProofNodes     []hexutil.Bytes `json:"proofNodes"`
-	Event          EventClaim      `json:"event"`
+	Block                 BlockContext    `json:"block"`
+	TxHash                common.Hash     `json:"txHash"`
+	TxIndex               uint64          `json:"txIndex"`
+	LogIndex              uint64          `json:"logIndex"`
+	TransactionRLP        hexutil.Bytes   `json:"transactionRlp"`
+	TransactionProofNodes []hexutil.Bytes `json:"transactionProofNodes"`
+	ReceiptRLP            hexutil.Bytes   `json:"receiptRlp"`
+	ProofNodes            []hexutil.Bytes `json:"proofNodes"`
+	Event                 EventClaim      `json:"event"`
 }
 
 // TransactionProofPackage contains a transaction inclusion proof against transactionsRoot.
@@ -143,7 +158,7 @@ type receiptSnapshot struct {
 	Header            blockSnapshotHeader `json:"header"`
 	TxHash            common.Hash         `json:"txHash"`
 	TxIndex           uint64              `json:"txIndex"`
-	LogIndex          uint                `json:"logIndex"`
+	LogIndex          uint64              `json:"logIndex"`
 	TransactionRLP    hexutil.Bytes       `json:"transactionRlp"`
 	ReceiptRLP        hexutil.Bytes       `json:"receiptRlp"`
 	BlockTransactions []hexutil.Bytes     `json:"blockTransactions"`

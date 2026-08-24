@@ -30,7 +30,7 @@ func repoRoot(t *testing.T) string {
 	return filepath.Dir(filepath.Dir(file))
 }
 
-func mustLoadStateFixture(t *testing.T) StateProofPackage {
+func mustLoadStateFixture(t testing.TB) StateProofPackage {
 	t.Helper()
 
 	var pkg StateProofPackage
@@ -40,7 +40,7 @@ func mustLoadStateFixture(t *testing.T) StateProofPackage {
 	return pkg
 }
 
-func mustLoadReceiptFixture(t *testing.T) ReceiptProofPackage {
+func mustLoadReceiptFixture(t testing.TB) ReceiptProofPackage {
 	t.Helper()
 
 	var pkg ReceiptProofPackage
@@ -50,7 +50,7 @@ func mustLoadReceiptFixture(t *testing.T) ReceiptProofPackage {
 	return pkg
 }
 
-func mustLoadTransactionFixture(t *testing.T) TransactionProofPackage {
+func mustLoadTransactionFixture(t testing.TB) TransactionProofPackage {
 	t.Helper()
 
 	var pkg TransactionProofPackage
@@ -70,6 +70,7 @@ func cloneTransactionPackage(in TransactionProofPackage) TransactionProofPackage
 func cloneReceiptPackage(in ReceiptProofPackage) ReceiptProofPackage {
 	out := in
 	out.TransactionRLP = proofutil.CanonicalBytes(in.TransactionRLP)
+	out.TransactionProofNodes = cloneHexBytesList(in.TransactionProofNodes)
 	out.ReceiptRLP = proofutil.CanonicalBytes(in.ReceiptRLP)
 	out.ProofNodes = cloneHexBytesList(in.ProofNodes)
 	out.Event.Topics = append([]common.Hash(nil), in.Event.Topics...)
@@ -289,7 +290,7 @@ func testStateProofSourcesRequest(t *testing.T) (StateProofSourcesRequest, Verif
 			Sources:       headerSources,
 			MinRPCSources: len(headerSources),
 		},
-		names
+		testSourceIDs(len(names))
 }
 
 func testReceiptProofSourcesRequest(t *testing.T) (ReceiptProofSourcesRequest, VerifySourcesRequest, []string) {
@@ -337,7 +338,7 @@ func testTransactionProofSourcesRequest(t *testing.T) (TransactionProofSourcesRe
 		names
 }
 
-func testReceiptSourceSet(t *testing.T) ([]ReceiptSource, common.Hash, uint, []string) {
+func testReceiptSourceSet(t *testing.T) ([]ReceiptSource, common.Hash, uint64, []string) {
 	t.Helper()
 
 	to0 := common.HexToAddress("0x1000000000000000000000000000000000000001")
@@ -430,7 +431,15 @@ func testReceiptSourceSet(t *testing.T) ([]ReceiptSource, common.Hash, uint, []s
 		}
 	}
 
-	return sources, tx1.Hash(), 0, names
+	return sources, tx1.Hash(), 0, testSourceIDs(len(names))
+}
+
+func testSourceIDs(count int) []string {
+	ids := make([]string, count)
+	for i := range count {
+		ids[i] = sourceID(i)
+	}
+	return ids
 }
 
 func storageResultsFromFixture(fixture StateProofPackage) []gethclient.StorageResult {

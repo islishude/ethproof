@@ -28,9 +28,11 @@ Generation uses `eth_getProof` for account/storage proofs, but verification is f
 
 ```text
 log ⊂ receipt ⊂ receipts trie -> receiptsRoot
+transaction ⊂ transactions trie -> transactionsRoot
+receipt index == transaction index
 ```
 
-Generation fetches all receipts for the containing block, rebuilds the receipts trie locally, proves receipt inclusion, and stores the target event fields (`address/topics/data`) plus `txHash/logIndex`.
+Generation fetches the containing block and all receipts, rebuilds both tries locally, and proves that the claimed transaction and event-bearing receipt occupy the same index. Receipt proofs generated before `transactionProofNodes` was added are intentionally rejected and must be regenerated.
 
 ### Transaction proof
 
@@ -65,11 +67,13 @@ For `receipt` and `transaction` proofs the normalized data includes:
 - block receipt list for receipt proofs
 - target receipt bytes and target event fields for receipt proofs
 
-The default minimum is `3` distinct RPC sources. This can be overridden per request with `--min-rpcs`; the local Anvil e2e uses `--min-rpcs 1` explicitly.
+The default minimum is `3` distinct configured RPC sources. This can be overridden per request with `--min-rpcs`; the local Anvil e2e uses `--min-rpcs 1` explicitly. The code can enforce unique configured URLs or source names, but deployment across independent operators remains the caller’s responsibility.
 
 ## Commands
 
 The CLI is now primarily config-driven. Start from [config.example.json](./config.example.json) and pass `--config`; explicit flags still override the matching config fields.
+
+Addresses, transaction hashes, topics, event data, and mapping byte keys are parsed strictly. Storage slots may use 1–64 hexadecimal digits and are left-padded to 32 bytes; malformed or oversized values are rejected instead of truncated.
 
 The CLI keeps runtime output minimal. Successful `generate`, `verify`, and `mkfixtures` runs print a short status line to `stderr`; `resolve slot` writes JSON to `stdout` unless `--out` is set. Help text still prints to `stdout`, and usage/runtime errors still print to `stderr`. The `proof` package itself is silent by default and does not emit runtime logs.
 
@@ -112,13 +116,15 @@ ethproof generate tx --config ./config.example.json
 
 ### Resolve Solidity storage slots
 
-`resolve slot` resolves a Solidity variable path into concrete storage slot metadata from compiler output. This is independent from `generate state`; use it to compute slot keys first, then pass the resolved slot(s) into `generate state --slot`.
+`resolve slot` resolves a Solidity variable path into concrete storage slot metadata from compiler output. Its `slots` array describes logical fields and may repeat a packed physical slot; `proofSlots` is deduplicated in first-seen order and can be passed directly into `generate state --slot`.
 
 The command supports three input shapes:
 
 - raw Solidity `storageLayout` JSON
 - Foundry artifacts that include `storageLayout`
 - Hardhat build-info JSON via `output.contracts`
+
+`--contract` is required and validated for Foundry artifact and build-info inputs. Raw `storageLayout` input already represents one selected layout, so it must not be combined with `--contract`.
 
 Dynamic containers must be indexed explicitly. Examples:
 
@@ -175,7 +181,7 @@ ethproof verify tx \
   --min-rpcs 3
 ```
 
-`verify receipt` always validates all fields embedded in the proof package. `--expect-*` flags add extra assertions on top of the package’s own claims, and CLI verify also re-fetches the block header from the independent verify RPC set to anchor the included roots.
+`verify receipt` proves both receipt and transaction inclusion at the same index and validates the embedded event. `--expect-*` flags add assertions on top of the package’s claims, and CLI verify re-fetches the block header from the independent verify RPC set to authenticate the included roots.
 
 ## Library Integration
 
@@ -231,7 +237,18 @@ pkg, err := proof.GenerateStateProofFromSources(ctx, proof.StateProofSourcesRequ
 })
 ```
 
-`SourceName()` values are persisted into `block.sourceConsensus.rpcs`, so they must be non-empty and unique within each request.
+`SourceName()` values must be non-empty and unique, but are never persisted or added by the framework to errors. Generated `block.sourceConsensus.rpcs` contains only opaque values such as `source[0]`. `SourceConsensus` is unauthenticated generation metadata, not evidence that independent operators agreed.
+
+For trusted offline verification, construct a `BlockAnchor` from a header obtained through your own trust/finality mechanism and use the `...AgainstBlockAnchor` APIs:
+
+```go
+anchor, err := proof.BlockAnchorFromHeader(chainID, trustedHeader)
+if err == nil {
+    err = proof.VerifyTransactionProofPackageAgainstBlockAnchor(pkg, anchor)
+}
+```
+
+The `...AgainstEmbeddedRoots` APIs verify cryptographic consistency against roots carried inside the package, but do not authenticate those roots. The older offline `Verify*ProofPackage` names remain deprecated wrappers for source compatibility.
 
 ## Offline fixtures
 
@@ -256,6 +273,7 @@ Testing is split between an offline-stable path and a local e2e path:
 - `make unit-test` runs `go test -v -race ./...`. `TestAnvilE2E` is skipped unless `ETH_PROOF_REQUIRE_E2E=1`, so this path remains offline-stable.
 - `make e2e-test` starts Anvil with `docker compose` and runs only `./proof -run TestAnvilE2E`.
 - `make test` runs the full suite: `make unit-test` followed by `make e2e-test`.
+- `make ci` runs formatting, lint, build, race tests, binding regeneration with a scoped drift check, and Anvil E2E.
 
 ### Local Anvil E2E
 
@@ -307,7 +325,7 @@ internal/e2e/bindings/erc7201customlayoutdemo.go
 ## Notes
 
 - `state` proofs use `eth_getProof`; `receipt` and `transaction` proofs are rebuilt locally from canonical block data.
-- The library `Verify*ProofPackage` APIs remain fully offline. The CLI `verify` path now adds an independent RPC block-header check on top of the offline proof verification.
-- CLI `verify` never reuses `block.sourceConsensus.rpcs`; that field remains generation metadata only.
+- The library `...AgainstEmbeddedRoots` APIs remain fully offline but do not establish block authenticity. Use a caller-trusted `BlockAnchor` or the source/RPC-aware APIs for that boundary.
+- CLI `verify` never reuses `block.sourceConsensus.rpcs`; the opaque identifiers and digests in that unauthenticated field are generation metadata only.
 - Even with independent RPC anchoring, if you need bridge-grade security, you must separately verify that the block header itself is finalized and trusted.
 - The code targets `github.com/ethereum/go-ethereum` `v1.17.x`.

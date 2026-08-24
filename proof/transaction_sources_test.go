@@ -50,6 +50,24 @@ func TestFetchTransactionSnapshotFailures(t *testing.T) {
 		want string
 	}{
 		{
+			name: "nil transaction",
+			run: func(source *fakeReceiptSource, txHash common.Hash) error {
+				source.txsByHash[txHash] = nil
+				_, err := fetchTransactionSnapshot(context.Background(), source, txHash)
+				return err
+			},
+			want: "nil transaction",
+		},
+		{
+			name: "nil receipt",
+			run: func(source *fakeReceiptSource, txHash common.Hash) error {
+				source.receiptsByTxHash[txHash] = nil
+				_, err := fetchTransactionSnapshot(context.Background(), source, txHash)
+				return err
+			},
+			want: "nil receipt",
+		},
+		{
 			name: "pending transaction",
 			run: func(source *fakeReceiptSource, txHash common.Hash) error {
 				source.pending = true
@@ -62,6 +80,15 @@ func TestFetchTransactionSnapshotFailures(t *testing.T) {
 			name: "transaction index out of range",
 			run: func(source *fakeReceiptSource, txHash common.Hash) error {
 				source.receiptsByTxHash[txHash].TransactionIndex = uint(len(source.block.Transactions()))
+				_, err := fetchTransactionSnapshot(context.Background(), source, txHash)
+				return err
+			},
+			want: "out of range",
+		},
+		{
+			name: "maximum transaction index",
+			run: func(source *fakeReceiptSource, txHash common.Hash) error {
+				source.receiptsByTxHash[txHash].TransactionIndex = ^uint(0)
 				_, err := fetchTransactionSnapshot(context.Background(), source, txHash)
 				return err
 			},

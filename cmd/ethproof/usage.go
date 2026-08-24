@@ -18,6 +18,8 @@ const usageText = `Usage:
 
 Options:
   -h, --help                  Show this help message.
+
+  --contract is required for artifact/build-info storage inputs and unsupported for raw layouts.
 `
 
 type usageError struct {

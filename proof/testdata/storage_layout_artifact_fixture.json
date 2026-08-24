@@ -1,4 +1,11 @@
 {
+  "metadata": {
+    "settings": {
+      "compilationTarget": {
+        "contracts/Fixture.sol": "Fixture"
+      }
+    }
+  },
   "storageLayout": {
     "storage": [
       {

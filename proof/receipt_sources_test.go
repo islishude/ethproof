@@ -95,6 +95,13 @@ func TestFetchReceiptSnapshotFailures(t *testing.T) {
 			want: "receipt bytes mismatch between block receipts and target receipt lookup",
 		},
 		{
+			name: "target receipt nil log",
+			mutate: func(receipt *types.Receipt) {
+				receipt.Logs[0] = nil
+			},
+			want: "target receipt log 0 is nil",
+		},
+		{
 			name: "target receipt log removed",
 			mutate: func(receipt *types.Receipt) {
 				receipt.Logs[0].Removed = true
@@ -198,7 +205,7 @@ func TestGenerateReceiptProofFromSources(t *testing.T) {
 	}
 }
 
-func mustReceiptSource(t *testing.T) (*fakeReceiptSource, common.Hash, uint) {
+func mustReceiptSource(t *testing.T) (*fakeReceiptSource, common.Hash, uint64) {
 	t.Helper()
 
 	sources, txHash, logIndex, _ := testReceiptSourceSet(t)

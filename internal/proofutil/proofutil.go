@@ -45,6 +45,9 @@ func ChainIDFromBig(v *big.Int) (*uint256.Int, error) {
 	if v == nil {
 		return nil, errors.New("nil *big.Int")
 	}
+	if v.Sign() < 0 {
+		return nil, fmt.Errorf("chain id must be non-negative")
+	}
 	out, overflow := uint256.FromBig(v)
 	if overflow {
 		return nil, fmt.Errorf("chain id %s overflows uint256", v)
@@ -131,6 +134,9 @@ func DumpProofNodes(db *memorydb.Database) ([]hexutil.Bytes, error) {
 // BuildIndexTrieProof rebuilds an Ethereum index trie locally, checks the derived root, and
 // extracts the proof nodes for targetIndex.
 func BuildIndexTrieProof(entries []hexutil.Bytes, targetIndex uint64, expectedRoot common.Hash, entryName string) (hexutil.Bytes, []hexutil.Bytes, error) {
+	if targetIndex >= uint64(len(entries)) {
+		return nil, nil, fmt.Errorf("%s index %d out of range for %d entries", entryName, targetIndex, len(entries))
+	}
 	tr := MakeProofTrie()
 	for i, entry := range entries {
 		if err := tr.Update(TrieIndexKey(uint64(i)), entry); err != nil {
@@ -154,6 +160,9 @@ func BuildIndexTrieProof(entries []hexutil.Bytes, targetIndex uint64, expectedRo
 
 // EncodeTransaction returns the canonical binary form of tx.
 func EncodeTransaction(tx *types.Transaction) (hexutil.Bytes, error) {
+	if tx == nil {
+		return nil, fmt.Errorf("transaction is nil")
+	}
 	b, err := tx.MarshalBinary()
 	if err != nil {
 		return nil, err
@@ -163,6 +172,9 @@ func EncodeTransaction(tx *types.Transaction) (hexutil.Bytes, error) {
 
 // EncodeReceipt returns the canonical binary form of receipt.
 func EncodeReceipt(receipt *types.Receipt) (hexutil.Bytes, error) {
+	if receipt == nil {
+		return nil, fmt.Errorf("receipt is nil")
+	}
 	b, err := receipt.MarshalBinary()
 	if err != nil {
 		return nil, err
@@ -230,6 +242,9 @@ func DecodeStorageProofValue(raw []byte) (common.Hash, error) {
 	var content []byte
 	if err := rlp.DecodeBytes(raw, &content); err != nil {
 		return common.Hash{}, fmt.Errorf("decode storage proof value: %w", err)
+	}
+	if len(content) > common.HashLength {
+		return common.Hash{}, fmt.Errorf("storage proof value has %d bytes, want at most %d", len(content), common.HashLength)
 	}
 	return common.BytesToHash(content), nil
 }

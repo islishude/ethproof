@@ -23,7 +23,7 @@ Start with [README.md](README.md) for proof semantics and CLI examples. Use [Mak
 The codebase supports exactly three proof flows, defined in [proof/types.go](proof/types.go):
 
 - `StateProofPackage`: account proof plus one or more storage slot proofs against `stateRoot`.
-- `ReceiptProofPackage`: receipt inclusion proof plus event claim against `receiptsRoot`.
+- `ReceiptProofPackage`: transaction and receipt inclusion proofs at the same index plus an event claim against `transactionsRoot` / `receiptsRoot`.
 - `TransactionProofPackage`: transaction inclusion proof against `transactionsRoot`.
 
 The storage-slot resolver in [proof/storage_layout.go](proof/storage_layout.go) and [proof/storage_resolver.go](proof/storage_resolver.go) is an auxiliary path for `ethproof resolve slot`; it is not a fourth proof type.

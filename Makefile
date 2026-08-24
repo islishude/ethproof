@@ -1,6 +1,6 @@
-.PHONY: build unit-test test fixtures bindings e2e-up e2e-down e2e-test e2e fmt-check lint ci
+.PHONY: all install build unit-test test fixtures bindings e2e-up e2e-down e2e-test e2e fmt-check fmt lint ci
 
-all: fmt-check lint build test e2e-test
+all: ci
 
 install:
 	go install -trimpath -ldflags="-s -w" ./cmd/ethproof
@@ -47,3 +47,8 @@ e2e-test:
 e2e: bindings e2e-test
 
 test: unit-test e2e-test
+
+ci: fmt-check lint build unit-test
+	$(MAKE) bindings
+	git diff --exit-code -- internal/e2e/bindings
+	$(MAKE) e2e-test

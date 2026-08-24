@@ -47,7 +47,7 @@ type complexAnvilScenario struct {
 	blockNumber     uint64
 	contractAddress common.Address
 	txHash          common.Hash
-	logIndex        uint
+	logIndex        uint64
 	mainlineQuery   string
 	mainlineSlot    common.Hash
 	mainlineValue   *big.Int
@@ -117,6 +117,9 @@ func testAnvilAPIFlow(t *testing.T, ctx context.Context, scenario complexAnvilSc
 	})
 	if err != nil {
 		t.Fatalf("GenerateReceiptProof: %v", err)
+	}
+	if len(receiptPkg.TransactionProofNodes) == 0 {
+		t.Fatal("generated receipt proof is missing transaction proof nodes")
 	}
 	if err := VerifyReceiptProofPackageWithExpectations(receiptPkg, receiptExpect); err != nil {
 		t.Fatalf("VerifyReceiptProofPackageWithExpectations: %v", err)
@@ -670,7 +673,7 @@ func writeAnvilCLIConfig(
 	blockNumber uint64,
 	account common.Address,
 	txHash common.Hash,
-	logIndex uint,
+	logIndex uint64,
 	slots []common.Hash,
 	expectEmitter common.Address,
 	eventTopics []common.Hash,

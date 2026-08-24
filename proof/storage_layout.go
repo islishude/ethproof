@@ -1,6 +1,7 @@
 package proof
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -87,9 +88,12 @@ func ParseStorageLayoutJSON(b []byte, contract string, format StorageLayoutForma
 		}
 		return ParseStorageLayoutJSON(b, contract, detected)
 	case StorageLayoutFormatLayout:
+		if strings.TrimSpace(contract) != "" {
+			return nil, fmt.Errorf("contract selector is not supported for raw storage layout input")
+		}
 		return parseRawStorageLayoutJSON(b)
 	case StorageLayoutFormatArtifact:
-		return parseArtifactStorageLayoutJSON(b)
+		return parseArtifactStorageLayoutJSON(b, contract)
 	case StorageLayoutFormatBuildInfo:
 		return parseBuildInfoStorageLayoutJSON(b, contract)
 	default:
@@ -124,9 +128,10 @@ func parseRawStorageLayoutJSON(b []byte) (*StorageLayout, error) {
 	return validateStorageLayout(&layout, "raw storage layout")
 }
 
-func parseArtifactStorageLayoutJSON(b []byte) (*StorageLayout, error) {
+func parseArtifactStorageLayoutJSON(b []byte, contract string) (*StorageLayout, error) {
 	var artifact struct {
-		StorageLayout *StorageLayout `json:"storageLayout"`
+		StorageLayout *StorageLayout  `json:"storageLayout"`
+		Metadata      json.RawMessage `json:"metadata"`
 	}
 	if err := json.Unmarshal(b, &artifact); err != nil {
 		return nil, fmt.Errorf("decode artifact: %w", err)
@@ -134,7 +139,68 @@ func parseArtifactStorageLayoutJSON(b []byte) (*StorageLayout, error) {
 	if artifact.StorageLayout == nil {
 		return nil, fmt.Errorf("storageLayout not found in artifact")
 	}
+	if strings.TrimSpace(contract) == "" {
+		return nil, fmt.Errorf("contract is required for artifact storage layout lookup")
+	}
+	targets, err := artifactCompilationTargets(artifact.Metadata)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateCompilationTargetSelector(targets, contract, "artifact"); err != nil {
+		return nil, err
+	}
 	return validateStorageLayout(artifact.StorageLayout, "artifact storage layout")
+}
+
+func artifactCompilationTargets(raw json.RawMessage) (map[string]string, error) {
+	metadataJSON := bytes.TrimSpace(raw)
+	if len(metadataJSON) == 0 || bytes.Equal(metadataJSON, []byte("null")) {
+		return nil, fmt.Errorf("artifact metadata.settings.compilationTarget is required to validate contract selector")
+	}
+	if len(metadataJSON) > 0 && metadataJSON[0] == '"' {
+		var encoded string
+		if err := json.Unmarshal(metadataJSON, &encoded); err != nil {
+			return nil, fmt.Errorf("decode artifact metadata string: %w", err)
+		}
+		metadataJSON = []byte(encoded)
+	}
+	var metadata struct {
+		Settings struct {
+			CompilationTarget map[string]string `json:"compilationTarget"`
+		} `json:"settings"`
+	}
+	if err := json.Unmarshal(metadataJSON, &metadata); err != nil {
+		return nil, fmt.Errorf("decode artifact metadata: %w", err)
+	}
+	if len(metadata.Settings.CompilationTarget) == 0 {
+		return nil, fmt.Errorf("artifact metadata.settings.compilationTarget is required to validate contract selector")
+	}
+	return metadata.Settings.CompilationTarget, nil
+}
+
+func validateCompilationTargetSelector(targets map[string]string, selector string, source string) error {
+	selector = strings.TrimSpace(selector)
+	if sourceName, contractName, ok := splitBuildInfoSelector(selector); ok {
+		if targetContract, found := targets[sourceName]; !found || targetContract != contractName {
+			return fmt.Errorf("contract %q does not match %s compilation target", selector, source)
+		}
+		return nil
+	}
+
+	matches := 0
+	for _, contractName := range targets {
+		if contractName == selector {
+			matches++
+		}
+	}
+	switch matches {
+	case 0:
+		return fmt.Errorf("contract %q does not match %s compilation target", selector, source)
+	case 1:
+		return nil
+	default:
+		return fmt.Errorf("contract %q is ambiguous in %s compilation targets; use source:contract", selector, source)
+	}
 }
 
 func parseBuildInfoStorageLayoutJSON(b []byte, contract string) (*StorageLayout, error) {

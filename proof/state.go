@@ -65,14 +65,32 @@ func buildVerifiedStateProofPackage(base *accountSnapshot, consensus SourceConse
 		StorageProofs:     cloneStateStorageProofs(base.StorageProofs),
 		AccountProofNodes: cloneHexBytesNodes(base.AccountProof),
 	}
-	if err := VerifyStateProofPackage(pkg); err != nil {
+	if err := VerifyStateProofPackageAgainstEmbeddedRoots(pkg); err != nil {
 		return nil, fmt.Errorf("verify generated state proof package: %w", err)
 	}
 	return pkg, nil
 }
 
-// VerifyStateProofPackage verifies the embedded account proof and storage proof locally.
+// VerifyStateProofPackage verifies internal consistency against the roots embedded in pkg.
+//
+// Deprecated: use VerifyStateProofPackageAgainstBlockAnchor when a caller-trusted block anchor is
+// available, or VerifyStateProofPackageAgainstEmbeddedRoots when only structural verification is intended.
 func VerifyStateProofPackage(pkg *StateProofPackage) error {
+	return VerifyStateProofPackageAgainstEmbeddedRoots(pkg)
+}
+
+// VerifyStateProofPackageAgainstEmbeddedRoots verifies account and storage inclusion against the
+// state root carried by pkg. It does not authenticate that root as belonging to a trusted block.
+func VerifyStateProofPackageAgainstEmbeddedRoots(pkg *StateProofPackage) error {
+	if pkg == nil {
+		return fmt.Errorf("state proof package is nil")
+	}
+	if _, err := blockSnapshotHeaderFromContext(pkg.Block); err != nil {
+		return err
+	}
+	if err := validateSourceConsensusMetadata(pkg.Block.SourceConsensus); err != nil {
+		return err
+	}
 	if err := validateStateStorageProofs(pkg.StorageProofs); err != nil {
 		return err
 	}
@@ -97,6 +115,15 @@ func VerifyStateProofPackage(pkg *StateProofPackage) error {
 		}
 	}
 	return nil
+}
+
+// VerifyStateProofPackageAgainstBlockAnchor verifies the state proof and requires every embedded
+// block field to match a caller-trusted block anchor.
+func VerifyStateProofPackageAgainstBlockAnchor(pkg *StateProofPackage, anchor BlockAnchor) error {
+	if err := VerifyStateProofPackageAgainstEmbeddedRoots(pkg); err != nil {
+		return err
+	}
+	return verifyBlockContextAgainstAnchor(pkg.Block, anchor)
 }
 
 func collectStateSnapshots(ctx context.Context, req StateProofSourcesRequest) ([]*accountSnapshot, error) {

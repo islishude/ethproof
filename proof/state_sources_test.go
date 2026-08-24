@@ -2,6 +2,8 @@ package proof
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -28,6 +30,16 @@ func TestFetchStateSnapshot(t *testing.T) {
 		if snapshot.StorageProofs[i].Slot != slot {
 			t.Fatalf("unexpected slot[%d]: got %s want %s", i, snapshot.StorageProofs[i].Slot, slot)
 		}
+	}
+}
+
+func TestFetchStateSnapshotRejectsNilProof(t *testing.T) {
+	req, _, _ := testStateProofSourcesRequest(t)
+	source := req.Sources[0].(*fakeStateSource)
+	source.proof = nil
+	_, err := fetchStateSnapshot(t.Context(), source, req.BlockNumber, req.Account, req.Slots)
+	if err == nil || !strings.Contains(err.Error(), "nil account proof") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -110,6 +122,29 @@ func TestGenerateStateProofFromSources(t *testing.T) {
 	}
 	if err := VerifyStateProofPackageAgainstSources(context.Background(), pkg, verifyReq); err != nil {
 		t.Fatalf("VerifyStateProofPackageAgainstSources: %v", err)
+	}
+}
+
+func TestGeneratedProofDoesNotPersistSourceNames(t *testing.T) {
+	req, _, _ := testStateProofSourcesRequest(t)
+	for i, source := range req.Sources {
+		source.(*fakeStateSource).name = fmt.Sprintf("https://user:password@example.com/v3/path-key-%d?api_key=query-secret-%d", i, i)
+	}
+	pkg, err := GenerateStateProofFromSources(t.Context(), req)
+	if err != nil {
+		t.Fatalf("GenerateStateProofFromSources: %v", err)
+	}
+	raw, err := json.Marshal(pkg)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	for _, forbidden := range []string{"user", "password", "path-key", "query-secret"} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatalf("proof json leaked %q: %s", forbidden, raw)
+		}
+	}
+	if !slices.Equal(pkg.Block.SourceConsensus.RPCs, []string{"source[0]", "source[1]", "source[2]"}) {
+		t.Fatalf("unexpected opaque source ids: %v", pkg.Block.SourceConsensus.RPCs)
 	}
 }
 

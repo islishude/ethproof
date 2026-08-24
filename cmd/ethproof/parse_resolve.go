@@ -13,7 +13,7 @@ type resolveSlotConfig struct {
 func parseResolveSlotArgs(args []string) (resolveSlotConfig, error) {
 	fs := newFlagSet("resolve slot")
 	compilerOutput := fs.String("compiler-output", "", "compiler output json path")
-	contract := fs.String("contract", "", "contract name or source:contract selector")
+	contract := fs.String("contract", "", "contract name or source:contract selector (artifact/build-info only)")
 	variable := fs.String("var", "", "storage variable query")
 	format := fs.String("format", string(proof.StorageLayoutFormatAuto), "compiler output format (auto|layout|artifact|build-info)")
 	out := fs.String("out", "", "write resolved slot json to file")
@@ -31,9 +31,6 @@ func parseResolveSlotArgs(args []string) (resolveSlotConfig, error) {
 	if *compilerOutput == "" {
 		return resolveSlotConfig{}, newUsageError("resolve slot requires --compiler-output")
 	}
-	if *contract == "" {
-		return resolveSlotConfig{}, newUsageError("resolve slot requires --contract")
-	}
 	if *variable == "" {
 		return resolveSlotConfig{}, newUsageError("resolve slot requires --var")
 	}
@@ -41,6 +38,16 @@ func parseResolveSlotArgs(args []string) (resolveSlotConfig, error) {
 	resolvedFormat, err := proof.ParseStorageLayoutFormat(*format)
 	if err != nil {
 		return resolveSlotConfig{}, newUsageError("%v", err)
+	}
+	switch resolvedFormat {
+	case proof.StorageLayoutFormatArtifact, proof.StorageLayoutFormatBuildInfo:
+		if *contract == "" {
+			return resolveSlotConfig{}, newUsageError("resolve slot requires --contract for %s input", resolvedFormat)
+		}
+	case proof.StorageLayoutFormatLayout:
+		if *contract != "" {
+			return resolveSlotConfig{}, newUsageError("resolve slot does not accept --contract for raw layout input")
+		}
 	}
 	return resolveSlotConfig{
 		CompilerOutput: *compilerOutput,

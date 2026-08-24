@@ -23,10 +23,23 @@ type blockHeaderSnapshotCollector struct {
 
 func fetchBlockHeadersFromSources(ctx context.Context, sources []HeaderSource, blockHash common.Hash) ([]blockHeaderSource, error) {
 	collector := blockHeaderSnapshotCollector{blockHash: blockHash}
-	return collectFromSources(ctx, sources, collector.fetch)
+	headers, err := collectFromSources(ctx, sources, collector.fetch)
+	if err != nil {
+		return nil, err
+	}
+	for i := range headers {
+		headers[i].source = sourceID(i)
+	}
+	return headers, nil
 }
 
 func blockSnapshotHeaderFromHeader(chainID *big.Int, header *types.Header) (blockSnapshotHeader, error) {
+	if header == nil {
+		return blockSnapshotHeader{}, fmt.Errorf("block header is nil")
+	}
+	if header.Number == nil {
+		return blockSnapshotHeader{}, fmt.Errorf("block header number is nil")
+	}
 	chainIDValue, err := proofutil.ChainIDFromBig(chainID)
 	if err != nil {
 		return blockSnapshotHeader{}, err
@@ -72,7 +85,6 @@ func (c blockHeaderSnapshotCollector) fetch(ctx context.Context, source HeaderSo
 		return blockHeaderSource{}, err
 	}
 	return blockHeaderSource{
-		source: source.SourceName(),
 		header: header,
 	}, nil
 }

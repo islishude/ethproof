@@ -1,7 +1,9 @@
 package proof
 
 import (
+	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 	"testing"
 
@@ -19,7 +21,7 @@ func TestLoadStorageLayoutFormats(t *testing.T) {
 		{
 			name:     "raw layout auto",
 			path:     fixturePath("storage_layout_fixture.json"),
-			contract: "Fixture",
+			contract: "",
 			format:   StorageLayoutFormatAuto,
 		},
 		{
@@ -69,7 +71,7 @@ func TestParseStorageLayoutJSONRejectsUnsupportedShape(t *testing.T) {
 }
 
 func TestResolveStorageSlots(t *testing.T) {
-	layout := mustLoadStorageLayoutFixture(t, "storage_layout_fixture.json", "Fixture", StorageLayoutFormatLayout)
+	layout := mustLoadStorageLayoutFixture(t, "storage_layout_fixture.json", "", StorageLayoutFormatLayout)
 
 	tests := []struct {
 		name      string
@@ -268,12 +270,16 @@ func TestResolveStorageSlots(t *testing.T) {
 					t.Fatalf("unexpected slot[%d]: got %+v want %+v", i, got.Slots[i], tt.wantSlots[i])
 				}
 			}
+			wantProofSlots := uniqueProofSlots(tt.wantSlots)
+			if !slices.Equal(got.ProofSlots, wantProofSlots) {
+				t.Fatalf("unexpected proof slots: got %v want %v", got.ProofSlots, wantProofSlots)
+			}
 		})
 	}
 }
 
 func TestResolveStorageSlotsERC7201CustomLayout(t *testing.T) {
-	layout := mustLoadStorageLayoutFixture(t, "storage_layout_erc7201_fixture.json", "ERC7201CustomLayoutDemo", StorageLayoutFormatLayout)
+	layout := mustLoadStorageLayoutFixture(t, "storage_layout_erc7201_fixture.json", "", StorageLayoutFormatLayout)
 
 	tests := []struct {
 		name     string
@@ -318,12 +324,110 @@ func TestResolveStorageSlotsERC7201CustomLayout(t *testing.T) {
 			if got.Slots[0] != want {
 				t.Fatalf("unexpected slot: got %+v want %+v", got.Slots[0], want)
 			}
+			if !slices.Equal(got.ProofSlots, []common.Hash{tt.wantSlot}) {
+				t.Fatalf("unexpected proof slots: %v", got.ProofSlots)
+			}
 		})
 	}
 }
 
+func TestLoadStorageLayoutValidatesArtifactContractSelector(t *testing.T) {
+	path := fixturePath("storage_layout_artifact_fixture.json")
+	for _, selector := range []string{"Fixture", "contracts/Fixture.sol:Fixture"} {
+		if _, err := LoadStorageLayout(path, selector, StorageLayoutFormatArtifact); err != nil {
+			t.Fatalf("valid selector %q rejected: %v", selector, err)
+		}
+	}
+	for _, selector := range []string{"", "Wrong", "contracts/Wrong.sol:Fixture"} {
+		if _, err := LoadStorageLayout(path, selector, StorageLayoutFormatArtifact); err == nil {
+			t.Fatalf("invalid selector %q accepted", selector)
+		}
+	}
+	if _, err := LoadStorageLayout(fixturePath("storage_layout_fixture.json"), "Fixture", StorageLayoutFormatLayout); err == nil {
+		t.Fatal("expected raw layout contract selector to fail")
+	}
+	withoutMetadata := []byte(`{"storageLayout":{"storage":[],"types":{}}}`)
+	if _, err := ParseStorageLayoutJSON(withoutMetadata, "Fixture", StorageLayoutFormatArtifact); err == nil || !strings.Contains(err.Error(), "compilationTarget") {
+		t.Fatalf("unexpected missing metadata error: %v", err)
+	}
+}
+
+func TestResolveStorageSlotsRejectsMalformedBytesMappingKeys(t *testing.T) {
+	layout := &StorageLayout{
+		Storage: []StorageLayoutEntry{
+			{Label: "dynamic", Slot: "0", Type: "dynamic-map"},
+			{Label: "fixed", Slot: "1", Type: "fixed-map"},
+		},
+		Types: map[string]StorageLayoutType{
+			"dynamic-map": {Encoding: "mapping", Label: "mapping(bytes => uint256)", Key: "bytes", Value: "uint"},
+			"fixed-map":   {Encoding: "mapping", Label: "mapping(bytes1 => uint256)", Key: "bytes1", Value: "uint"},
+			"bytes":       {Encoding: "bytes", Label: "bytes", NumberOfBytes: "32"},
+			"bytes1":      {Encoding: "inplace", Label: "bytes1", NumberOfBytes: "1"},
+			"uint":        {Encoding: "inplace", Label: "uint256", NumberOfBytes: "32"},
+		},
+	}
+	for _, query := range []string{"dynamic[0xzz]", "fixed[0xaazz]"} {
+		if _, err := ResolveStorageSlots(layout, query); err == nil {
+			t.Fatalf("malformed mapping key accepted for %q", query)
+		}
+	}
+}
+
+func TestResolveStorageSlotsLimitsExpansionAndRejectsCycles(t *testing.T) {
+	largeArray := &StorageLayout{
+		Storage: []StorageLayoutEntry{{Label: "values", Slot: "0", Type: "array"}},
+		Types: map[string]StorageLayoutType{
+			"array":   {Encoding: "inplace", Label: "uint8[4097]", NumberOfBytes: "4097", Base: "t_uint8"},
+			"t_uint8": {Encoding: "inplace", Label: "uint8", NumberOfBytes: "1"},
+		},
+	}
+	// Static array length is encoded in the compiler type ID, so use the canonical ID here.
+	largeArray.Storage[0].Type = "t_array(t_uint8)4097_storage"
+	largeArray.Types["t_array(t_uint8)4097_storage"] = largeArray.Types["array"]
+	if _, err := ResolveStorageSlots(largeArray, "values"); err == nil || !strings.Contains(err.Error(), "4096") {
+		t.Fatalf("unexpected large expansion error: %v", err)
+	}
+
+	cyclic := &StorageLayout{
+		Storage: []StorageLayoutEntry{{Label: "value", Slot: "0", Type: "self"}},
+		Types: map[string]StorageLayoutType{
+			"self": {
+				Encoding:      "inplace",
+				Label:         "struct Self",
+				NumberOfBytes: "32",
+				Members:       []StorageLayoutEntry{{Label: "next", Slot: "0", Type: "self"}},
+			},
+		},
+	}
+	if _, err := ResolveStorageSlots(cyclic, "value"); err == nil || !strings.Contains(err.Error(), "cyclic") {
+		t.Fatalf("unexpected cyclic layout error: %v", err)
+	}
+
+	deepTypes := make(map[string]StorageLayoutType, maxStorageResolverDepth+1)
+	for i := range maxStorageResolverDepth + 1 {
+		typeID := fmt.Sprintf("depth-%d", i)
+		if i == maxStorageResolverDepth {
+			deepTypes[typeID] = StorageLayoutType{Encoding: "inplace", Label: "uint256", NumberOfBytes: "32"}
+			continue
+		}
+		deepTypes[typeID] = StorageLayoutType{
+			Encoding:      "inplace",
+			Label:         typeID,
+			NumberOfBytes: "32",
+			Members:       []StorageLayoutEntry{{Label: "next", Slot: "0", Type: fmt.Sprintf("depth-%d", i+1)}},
+		}
+	}
+	deep := &StorageLayout{
+		Storage: []StorageLayoutEntry{{Label: "value", Slot: "0", Type: "depth-0"}},
+		Types:   deepTypes,
+	}
+	if _, err := ResolveStorageSlots(deep, "value"); err == nil || !strings.Contains(err.Error(), "maximum depth") {
+		t.Fatalf("unexpected deep layout error: %v", err)
+	}
+}
+
 func TestResolveStorageSlotsRejectsInvalidQueries(t *testing.T) {
-	layout := mustLoadStorageLayoutFixture(t, "storage_layout_fixture.json", "Fixture", StorageLayoutFormatLayout)
+	layout := mustLoadStorageLayoutFixture(t, "storage_layout_fixture.json", "", StorageLayoutFormatLayout)
 
 	tests := []struct {
 		name  string

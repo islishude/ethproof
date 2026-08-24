@@ -13,7 +13,7 @@ import (
 	"github.com/islishude/ethproof/internal/proofutil"
 )
 
-func fetchReceiptSnapshot(ctx context.Context, source ReceiptSource, txHash common.Hash, logIndex uint) (*receiptSnapshot, error) {
+func fetchReceiptSnapshot(ctx context.Context, source ReceiptSource, txHash common.Hash, logIndex uint64) (*receiptSnapshot, error) {
 	// Reuse the normalized transaction snapshot so receipt proof generation inherits the exact
 	// transaction bytes and block context that transaction proof generation would see.
 	txSnapshot, err := fetchTransactionSnapshot(ctx, source, txHash)
@@ -24,8 +24,18 @@ func fetchReceiptSnapshot(ctx context.Context, source ReceiptSource, txHash comm
 	if err != nil {
 		return nil, fmt.Errorf("fetch target receipt: %w", err)
 	}
-	if logIndex >= uint(len(receipt.Logs)) {
+	if receipt == nil {
+		return nil, fmt.Errorf("fetch target receipt returned nil receipt")
+	}
+	if logIndex >= uint64(len(receipt.Logs)) {
 		return nil, fmt.Errorf("log-index %d out of range (receipt has %d logs)", logIndex, len(receipt.Logs))
+	}
+	log := receipt.Logs[logIndex]
+	if log == nil {
+		return nil, fmt.Errorf("target receipt log %d is nil", logIndex)
+	}
+	if log.Removed {
+		return nil, fmt.Errorf("target receipt log %d is marked removed", logIndex)
 	}
 	if receipt.BlockHash != txSnapshot.Header.BlockHash {
 		return nil, fmt.Errorf("target receipt block hash mismatch: got %s want %s", receipt.BlockHash, txSnapshot.Header.BlockHash)
@@ -53,13 +63,6 @@ func fetchReceiptSnapshot(ctx context.Context, source ReceiptSource, txHash comm
 
 	// Persist the claimed event as simple address/topics/data fields so package verification does
 	// not depend on any geth-specific receipt representation.
-	log := receipt.Logs[logIndex]
-	if log == nil {
-		return nil, fmt.Errorf("target receipt log %d is nil", logIndex)
-	}
-	if log.Removed {
-		return nil, fmt.Errorf("target receipt log %d is marked removed", logIndex)
-	}
 	return &receiptSnapshot{
 		Header:            txSnapshot.Header,
 		TxHash:            txHash,
@@ -95,6 +98,9 @@ func fetchBlockReceiptsByTransactionScan(ctx context.Context, source ReceiptSour
 	if err != nil {
 		return nil, fmt.Errorf("fetch block for receipts: %w", err)
 	}
+	if block == nil {
+		return nil, fmt.Errorf("fetch block for receipts returned nil block")
+	}
 	if len(block.Transactions()) != expectedCount {
 		return nil, fmt.Errorf("block transaction count %d does not match expected count %d", len(block.Transactions()), expectedCount)
 	}
@@ -103,9 +109,15 @@ func fetchBlockReceiptsByTransactionScan(ctx context.Context, source ReceiptSour
 	// and validate that each receipt still points back to the expected block position.
 	blockReceipts := make([]hexutil.Bytes, len(block.Transactions()))
 	for i, blockTx := range block.Transactions() {
+		if blockTx == nil {
+			return nil, fmt.Errorf("block transaction %d is nil", i)
+		}
 		receipt, receiptErr := source.TransactionReceipt(ctx, blockTx.Hash())
 		if receiptErr != nil {
 			return nil, fmt.Errorf("fetch receipt %d/%d (%s): %w", i+1, len(block.Transactions()), blockTx.Hash(), receiptErr)
+		}
+		if receipt == nil {
+			return nil, fmt.Errorf("receipt %d is nil", i)
 		}
 		if receipt.BlockHash != blockHash {
 			return nil, fmt.Errorf("receipt %d block hash mismatch: got %s want %s", i, receipt.BlockHash, blockHash)
@@ -115,6 +127,9 @@ func fetchBlockReceiptsByTransactionScan(ctx context.Context, source ReceiptSour
 		}
 		if receipt.TxHash != blockTx.Hash() {
 			return nil, fmt.Errorf("receipt %d tx hash mismatch: got %s want %s", i, receipt.TxHash, blockTx.Hash())
+		}
+		if err := validateReceiptLogs(receipt, i); err != nil {
+			return nil, err
 		}
 		encoded, encErr := proofutil.EncodeReceipt(receipt)
 		if encErr != nil {
@@ -143,6 +158,9 @@ func encodeAndValidateBlockReceipts(receipts []*types.Receipt, blockHash common.
 		if receipt.TransactionIndex != uint(i) {
 			return nil, fmt.Errorf("block receipt %d transaction index mismatch: got %d want %d", i, receipt.TransactionIndex, i)
 		}
+		if err := validateReceiptLogs(receipt, i); err != nil {
+			return nil, err
+		}
 		encoded, err := proofutil.EncodeReceipt(receipt)
 		if err != nil {
 			return nil, fmt.Errorf("encode receipt %d: %w", i, err)
@@ -150,6 +168,15 @@ func encodeAndValidateBlockReceipts(receipts []*types.Receipt, blockHash common.
 		out[i] = encoded
 	}
 	return out, nil
+}
+
+func validateReceiptLogs(receipt *types.Receipt, receiptIndex int) error {
+	for logIndex, log := range receipt.Logs {
+		if log == nil {
+			return fmt.Errorf("block receipt %d log %d is nil", receiptIndex, logIndex)
+		}
+	}
+	return nil
 }
 
 func isRPCMethodNotFound(err error) bool {

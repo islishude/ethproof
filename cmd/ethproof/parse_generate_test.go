@@ -49,7 +49,7 @@ func TestParseGenerateRequests(t *testing.T) {
 					"--rpc", "http://127.0.0.1:8545",
 					"--rpc", "http://127.0.0.1:8546",
 					"--rpc", "http://127.0.0.1:8547",
-					"--tx", "0x02",
+					"--tx", testHash02,
 					"--log-index", "3",
 				})
 				if err != nil {
@@ -69,7 +69,7 @@ func TestParseGenerateRequests(t *testing.T) {
 				cfg, err := parseGenerateTransactionArgs([]string{
 					"--rpc", "http://127.0.0.1:8545",
 					"--min-rpcs", "1",
-					"--tx", "0x03",
+					"--tx", testHash03,
 					"--out", "tx.json",
 				})
 				if err != nil {

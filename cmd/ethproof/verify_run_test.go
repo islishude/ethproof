@@ -47,7 +47,7 @@ func TestRunVerifyCommandsSuccess(t *testing.T) {
 				"--min-rpcs", "1",
 				"--proof", "receipt.json",
 				"--expect-emitter", "0x2222222222222222222222222222222222222222",
-				"--expect-topic", "0x01",
+				"--expect-topic", testHash01,
 				"--expect-data", "0xaa",
 			},
 			run: runVerifyReceipt,

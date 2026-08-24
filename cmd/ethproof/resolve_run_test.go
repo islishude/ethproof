@@ -23,7 +23,6 @@ func TestRunResolveSlotSuccessPaths(t *testing.T) {
 					exit = runMain([]string{
 						"resolve", "slot",
 						"--compiler-output", resolveFixturePath("storage_layout_fixture.json"),
-						"--contract", "Fixture",
 						"--var", "data[4][9].b",
 					})
 				})
@@ -34,7 +33,7 @@ func TestRunResolveSlotSuccessPaths(t *testing.T) {
 				if err := json.Unmarshal([]byte(stdout), &got); err != nil {
 					t.Fatalf("unmarshal stdout json: %v\nstdout=%s", err, stdout)
 				}
-				if got.TypeLabel != "uint256" || len(got.Slots) != 1 || got.Slots[0].Label != "data[4][9].b" {
+				if got.TypeLabel != "uint256" || len(got.Slots) != 1 || len(got.ProofSlots) != 1 || got.Slots[0].Label != "data[4][9].b" {
 					t.Fatalf("unexpected resolution: %+v", got)
 				}
 			},
@@ -65,7 +64,7 @@ func TestRunResolveSlotSuccessPaths(t *testing.T) {
 				if err := json.Unmarshal(b, &got); err != nil {
 					t.Fatalf("unmarshal output file: %v", err)
 				}
-				if got.TypeLabel != "string" || len(got.Slots) != 1 || got.Slots[0].Label != "blob@word(1)" {
+				if got.TypeLabel != "string" || len(got.Slots) != 1 || len(got.ProofSlots) != 1 || got.Slots[0].Label != "blob@word(1)" {
 					t.Fatalf("unexpected resolution: %+v", got)
 				}
 			},
@@ -106,7 +105,6 @@ func TestRunResolveSlotRuntimeErrors(t *testing.T) {
 			exit = runMain([]string{
 				"resolve", "slot",
 				"--compiler-output", resolveFixturePath("storage_layout_fixture.json"),
-				"--contract", "Fixture",
 				"--var", "data[4][9].missing",
 			})
 		})

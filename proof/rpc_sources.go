@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -16,6 +17,7 @@ import (
 
 type rpcSource struct {
 	url  string
+	name string
 	raw  *rpc.Client
 	eth  *ethclient.Client
 	geth *gethclient.Client
@@ -48,51 +50,61 @@ func normalizeRPCURLs(urls []string, minSources int) ([]string, error) {
 }
 
 func (s *rpcSource) SourceName() string {
-	return s.url
+	return s.name
 }
 
 func (s *rpcSource) ChainID(ctx context.Context) (*big.Int, error) {
-	return s.eth.ChainID(ctx)
+	value, err := s.eth.ChainID(ctx)
+	return value, s.redactError(err)
 }
 
 func (s *rpcSource) HeaderByHash(ctx context.Context, blockHash common.Hash) (*types.Header, error) {
-	return s.eth.HeaderByHash(ctx, blockHash)
+	value, err := s.eth.HeaderByHash(ctx, blockHash)
+	return value, s.redactError(err)
 }
 
 func (s *rpcSource) HeaderByNumber(ctx context.Context, blockNumber *big.Int) (*types.Header, error) {
-	return s.eth.HeaderByNumber(ctx, blockNumber)
+	value, err := s.eth.HeaderByNumber(ctx, blockNumber)
+	return value, s.redactError(err)
 }
 
 func (s *rpcSource) GetProof(ctx context.Context, account common.Address, keys []string, blockNumber *big.Int) (*gethclient.AccountResult, error) {
-	return s.geth.GetProof(ctx, account, keys, blockNumber)
+	value, err := s.geth.GetProof(ctx, account, keys, blockNumber)
+	return value, s.redactError(err)
 }
 
 func (s *rpcSource) TransactionByHash(ctx context.Context, txHash common.Hash) (*types.Transaction, bool, error) {
-	return s.eth.TransactionByHash(ctx, txHash)
+	tx, pending, err := s.eth.TransactionByHash(ctx, txHash)
+	return tx, pending, s.redactError(err)
 }
 
 func (s *rpcSource) TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error) {
-	return s.eth.TransactionReceipt(ctx, txHash)
+	value, err := s.eth.TransactionReceipt(ctx, txHash)
+	return value, s.redactError(err)
 }
 
 func (s *rpcSource) BlockByHash(ctx context.Context, blockHash common.Hash) (*types.Block, error) {
-	return s.eth.BlockByHash(ctx, blockHash)
+	value, err := s.eth.BlockByHash(ctx, blockHash)
+	return value, s.redactError(err)
 }
 
 func (s *rpcSource) BlockReceiptsByHash(ctx context.Context, blockHash common.Hash) ([]*types.Receipt, error) {
-	return s.eth.BlockReceipts(ctx, rpc.BlockNumberOrHashWithHash(blockHash, true))
+	value, err := s.eth.BlockReceipts(ctx, rpc.BlockNumberOrHashWithHash(blockHash, true))
+	return value, s.redactError(err)
 }
 
 func openRPCSources(ctx context.Context, urls []string) ([]*rpcSource, error) {
 	sources := make([]*rpcSource, 0, len(urls))
-	for _, url := range urls {
-		raw, err := rpc.DialContext(ctx, url)
+	for i, rawURL := range urls {
+		name := sourceID(i)
+		raw, err := rpc.DialContext(ctx, rawURL)
 		if err != nil {
 			closeRPCSources(sources)
-			return nil, fmt.Errorf("dial rpc %s: %w", url, err)
+			return nil, fmt.Errorf("dial %s: %w", name, redactRPCError(err, rawURL, name))
 		}
 		sources = append(sources, &rpcSource{
-			url:  url,
+			url:  rawURL,
+			name: name,
 			raw:  raw,
 			eth:  ethclient.NewClient(raw),
 			geth: gethclient.New(raw),
@@ -134,11 +146,58 @@ func openNormalizedRPCSourcesUsing(
 	if err != nil {
 		return nil, err
 	}
+	for i, source := range sources {
+		if source != nil {
+			source.name = sourceID(i)
+		}
+	}
 
 	return &rpcSourceSet{
 		sources: sources,
 		closer:  closer,
 	}, nil
+}
+
+type redactedRPCError struct {
+	message string
+	cause   error
+}
+
+func (e redactedRPCError) Error() string { return e.message }
+
+func (e redactedRPCError) Unwrap() error { return e.cause }
+
+func (s *rpcSource) redactError(err error) error {
+	if s == nil {
+		return err
+	}
+	return redactRPCError(err, s.url, s.name)
+}
+
+func redactRPCError(err error, rawURL string, sourceName string) error {
+	if err == nil {
+		return nil
+	}
+	message := strings.ReplaceAll(err.Error(), rawURL, sourceName)
+	parsed, parseErr := url.Parse(rawURL)
+	if parseErr == nil {
+		redactions := []string{parsed.RawQuery, parsed.Fragment}
+		if parsed.Path != "" && parsed.Path != "/" {
+			redactions = append(redactions, parsed.Path)
+		}
+		if parsed.User != nil {
+			redactions = append(redactions, parsed.User.String(), parsed.User.Username())
+			if password, ok := parsed.User.Password(); ok {
+				redactions = append(redactions, password)
+			}
+		}
+		for _, secret := range redactions {
+			if secret != "" {
+				message = strings.ReplaceAll(message, secret, "<redacted>")
+			}
+		}
+	}
+	return redactedRPCError{message: message, cause: err}
 }
 
 func (s *rpcSourceSet) Close() {

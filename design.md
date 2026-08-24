@@ -80,6 +80,7 @@ flowchart TD
 | `proof/receipt.go` | Public generation/verification entrypoints for `receipt` proof |
 | `proof/transaction.go` | Public generation/verification entrypoints for `transaction` proof |
 | `proof/source_api.go` | Source-injected interfaces plus shared source collection helpers for embedders and tests |
+| `proof/block_anchor.go` | Caller-trusted block-anchor construction and full block-context comparison |
 | `proof/verify_rpc.go` | Independent block-header revalidation against injected sources or RPC URLs |
 | `proof/rpc_sources.go` | RPC URL normalization, connection lifecycle, and URL-backed source adapters |
 | `proof/rpc_headers.go` | Block header fetching and header snapshots |
@@ -108,24 +109,24 @@ flowchart TD
 ### 5.1 Core Models
 
 - `BlockContext`
-  - The block header fields that anchor a proof.
-  - Includes `SourceConsensus`, which records how the proof was agreed across multiple RPCs.
+  - The block header fields embedded in a proof.
+  - Must be compared with a caller-trusted `BlockAnchor` or independent sources before its roots are authenticated.
 - `SourceConsensus`
-  - Records:
-    - the participating RPC list
+  - Unauthenticated generation metadata recording:
+    - opaque ordered source identifiers
     - digests of normalized inputs
     - field lists for human auditability
 - `StateProofPackage`
   - account proof + one or more storage slot proofs
 - `ReceiptProofPackage`
-  - receipt inclusion proof + event claim
+  - transaction inclusion proof + receipt inclusion proof at the same index + event claim
 - `TransactionProofPackage`
   - transaction inclusion proof
 
 ### 5.2 Design Notes
 
-- A proof package itself is fully verifiable offline.
-- `verify ... AgainstSources` and `verify ... AgainstRPCs` only perform an additional independent check of the block context after offline verification succeeds.
+- `...AgainstEmbeddedRoots` verifies cryptographic consistency offline but does not authenticate roots supplied by the package itself.
+- `...AgainstBlockAnchor`, `...AgainstSources`, and `...AgainstRPCs` add a trusted block-context comparison after embedded-root verification succeeds.
 - RPC metadata from generation is never reused by verify logic.
 
 ## 6. Shared Processing Pipeline for the Three Proof Types
@@ -162,9 +163,11 @@ sequenceDiagram
 
 1. `openNormalizedRPCSources`
    - trims whitespace, deduplicates RPC URLs, validates the minimum source count, and wraps each URL as a `StateSource` / `ReceiptSource` / `TransactionSource` / `HeaderSource`.
+   - enforces distinct configured identifiers, while operational independence of the backing providers remains a deployment responsibility.
 2. `Generate*FromSources` + `collectFromSources`
    - provide the shared source-driven path used by embedders, tests, and the URL-backed helpers.
-   - preserve source order and uniformly prefix per-source errors with `SourceName()`.
+   - preserve source order and uniformly prefix framework errors with opaque `source[n]` identifiers.
+   - use `SourceName()` only to reject empty/duplicate configured sources; never persist or add it to framework errors.
 3. `fetch*Snapshot`
    - converts raw responses from a single source into a comparable normalized structure.
 4. `requireMatchingSnapshots`
@@ -219,6 +222,8 @@ slot ⊂ storage trie(account.storageRoot) -> storageRoot ⊂ account
 
 ```text
 log ⊂ receipt ⊂ receipts trie -> receiptsRoot
+transaction ⊂ transactions trie -> transactionsRoot
+receipt index == transaction index
 ```
 
 ### 8.2 Key Files
@@ -240,12 +245,13 @@ log ⊂ receipt ⊂ receipts trie -> receiptsRoot
    - fall back to per-transaction `TransactionReceipt` scanning if unsupported
 4. Validate:
    - the target receipt bytes must equal the bytes at the corresponding position in the block receipt list
-5. Rebuild the receipts trie locally and export the inclusion proof.
+5. Rebuild both the transactions and receipts tries and export proofs for the same index.
 6. Reduce the target log into `EventClaim{address, topics, data}`.
 
 ### 8.4 Why It Is Designed This Way
 
 - A receipt proof does not only prove that the receipt is in the trie; it must also prove that the event claimed in the package is exactly the specified log inside that receipt.
+- The transaction proof binds `txHash` to that receipt index; hashing an otherwise unrelated `transactionRlp` is insufficient.
 - The “point lookup vs full block list” cross-check helps detect inconsistencies inside the RPC itself.
 
 ## 9. Transaction Proof Design
@@ -313,20 +319,23 @@ transaction ⊂ transactions trie -> transactionsRoot
 
 ## 11. Offline Verification and Independent Revalidation
 
-### 11.1 Offline Verification
+### 11.1 Embedded-root and trusted-anchor verification
 
-Public entrypoints:
+Explicit embedded-root entrypoints:
 
-- `VerifyStateProofPackage`
-- `VerifyReceiptProofPackage`
-- `VerifyReceiptProofPackageWithExpectations`
-- `VerifyTransactionProofPackage`
+- `VerifyStateProofPackageAgainstEmbeddedRoots`
+- `VerifyReceiptProofPackageAgainstEmbeddedRoots`
+- `VerifyReceiptProofPackageWithExpectationsAgainstEmbeddedRoots`
+- `VerifyTransactionProofPackageAgainstEmbeddedRoots`
 
 Characteristics:
 
 - Depends only on the proof package itself.
 - Does not access the network.
+- Does not establish that the embedded roots belong to the advertised block hash.
 - Core logic lives in `proof/proof_helpers.go` and the verify flow inside `proof/*.go`.
+
+The matching `...AgainstBlockAnchor` entrypoints compare every embedded block field with a caller-trusted `BlockAnchor`. The caller remains responsible for header authenticity and finality. The older `Verify*ProofPackage` names are deprecated embedded-root wrappers.
 
 ### 11.2 Source-aware and RPC-aware Verification
 
@@ -380,13 +389,16 @@ The `...AgainstRPCs` helpers only normalize/open URL-backed sources and then del
 
 `resolve slot` is intentionally kept outside the proof-generation flow, but its core logic still lives in `proof/`:
 
-1. Parse `--compiler-output`, `--contract`, `--var`, and `--format`.
+1. Parse `--compiler-output`, optional format-dependent `--contract`, `--var`, and `--format` using strict hexadecimal validation.
 2. Detect or enforce one of three compiler-output shapes:
    - raw `storageLayout` JSON
    - Foundry artifact JSON containing `storageLayout`
    - Hardhat build-info JSON via `output.contracts`
 3. Walk the query path across structs, mappings, arrays, and optional `@word(n)` suffixes.
-4. Return `StorageSlotResolution` with the head slot plus the concrete slot/offset/size entries to read or prove.
+4. Validate artifact selectors through Foundry compilation-target metadata; build-info performs its own contract selection, while raw layouts reject selectors.
+5. Return logical slot/offset/size entries plus first-seen, deduplicated `proofSlots` for state-proof generation.
+
+Expansion is fail-closed at 4096 logical fields and 64 recursive type levels, and cyclic compiler type graphs are rejected. Larger arrays must be indexed explicitly.
 
 ## 13. Fixture and Test Design
 
@@ -441,9 +453,9 @@ The `...AgainstRPCs` helpers only normalize/open URL-backed sources and then del
 The following invariants must be preserved when changing the code:
 
 1. Do not weaken the strict multi-RPC consistency model.
-2. Do not change the public JSON structure in `proof/types.go` unless a schema change is explicitly required.
+2. Do not change the public JSON structure in `proof/types.go` unless a correctness fix explicitly requires it; receipt transaction proofs are mandatory and legacy receipt JSON fails closed.
 3. CLI `verify` must use an independent verify RPC set and must not reuse generation metadata.
-4. Public `Verify*ProofPackage` APIs must remain usable offline.
+4. Offline verification must distinguish embedded-root consistency from caller-trusted `BlockAnchor` verification.
 5. `internal/e2e/bindings/*.go` is generated output and must not be edited by hand.
 6. Logic related to proof correctness should stay in `proof/`; do not duplicate it in the CLI.
 

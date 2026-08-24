@@ -28,7 +28,7 @@ func TestNormalizeSourceNames(t *testing.T) {
 			name:    "duplicate names",
 			sources: []stubNamedSource{"one", "one"},
 			min:     1,
-			want:    "duplicate source name",
+			want:    "duplicates source",
 		},
 		{
 			name:    "empty name",
@@ -48,6 +48,78 @@ func TestNormalizeSourceNames(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestNormalizeSourceNamesRejectsTypedNilSource(t *testing.T) {
+	var source *fakeHeaderSource
+	_, err := normalizeSourceNames([]HeaderSource{source}, 1)
+	if err == nil || !strings.Contains(err.Error(), "source 0 is nil") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNormalizeSourceNamesDoesNotExposeNames(t *testing.T) {
+	secret := "https://user:password@example.com/v3/path-key?api_key=query-secret"
+	ids, err := normalizeSourceNames([]stubNamedSource{stubNamedSource(secret), "safe-second-source"}, 2)
+	if err != nil {
+		t.Fatalf("normalizeSourceNames: %v", err)
+	}
+	if !slices.Equal(ids, []string{"source[0]", "source[1]"}) {
+		t.Fatalf("unexpected source ids: %v", ids)
+	}
+	_, err = normalizeSourceNames([]stubNamedSource{stubNamedSource(secret), stubNamedSource(secret)}, 1)
+	if err == nil {
+		t.Fatal("expected duplicate source names to fail")
+	}
+	for _, forbidden := range []string{secret, "password", "path-key", "query-secret"} {
+		if strings.Contains(err.Error(), forbidden) {
+			t.Fatalf("error leaked %q: %v", forbidden, err)
+		}
+	}
+}
+
+func TestValidateSourceConsensusMetadata(t *testing.T) {
+	valid := SourceConsensus{
+		Mode:    "live-rpc",
+		RPCs:    []string{"source[0]", "source[1]"},
+		Digests: []ConsensusDigest{{Name: "header"}},
+		Fields:  []ConsensusField{{Name: "blockHash", Consistent: true}},
+	}
+	if err := validateSourceConsensusMetadata(SourceConsensus{}); err != nil {
+		t.Fatalf("zero-value metadata should remain compatible: %v", err)
+	}
+	if err := validateSourceConsensusMetadata(valid); err != nil {
+		t.Fatalf("valid metadata rejected: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		edit func(*SourceConsensus)
+	}{
+		{name: "missing mode", edit: func(value *SourceConsensus) { value.Mode = "" }},
+		{name: "live mode without sources", edit: func(value *SourceConsensus) { value.RPCs = nil }},
+		{name: "blank source id", edit: func(value *SourceConsensus) { value.RPCs[0] = " " }},
+		{name: "duplicate source id", edit: func(value *SourceConsensus) { value.RPCs[1] = value.RPCs[0] }},
+		{name: "blank digest name", edit: func(value *SourceConsensus) { value.Digests[0].Name = "" }},
+		{name: "inconsistent field", edit: func(value *SourceConsensus) { value.Fields[0].Consistent = false }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			value := sourceConsensus(valid.Mode, valid.RPCs, valid.Digests, valid.Fields)
+			tt.edit(&value)
+			if err := validateSourceConsensusMetadata(value); err == nil {
+				t.Fatal("expected invalid metadata to fail")
+			}
+		})
+	}
+}
+
+func TestVerifierRejectsMalformedSourceConsensusMetadata(t *testing.T) {
+	pkg := mustLoadTransactionFixture(t)
+	pkg.Block.SourceConsensus.Fields[0].Consistent = false
+	if err := VerifyTransactionProofPackageAgainstEmbeddedRoots(&pkg); err == nil {
+		t.Fatal("expected malformed source consensus metadata to fail")
 	}
 }
 
@@ -72,7 +144,7 @@ func TestCollectFromSourcesWrapsSourceErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected source error")
 	}
-	if !strings.Contains(err.Error(), "source-a: boom") {
+	if !strings.Contains(err.Error(), "source[0]: boom") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -135,7 +207,7 @@ func TestCollectFromSourcesCancelsOnFirstError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected source error")
 	}
-	if !strings.Contains(err.Error(), "source-a: boom") {
+	if !strings.Contains(err.Error(), "source[0]: boom") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -157,7 +229,7 @@ func TestCollectFromSourcesReturnsParentContextError(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context cancellation, got %v", err)
 	}
-	if strings.Contains(err.Error(), "source-a:") {
+	if strings.Contains(err.Error(), "source[0]:") {
 		t.Fatalf("expected parent context error without source prefix, got %v", err)
 	}
 }

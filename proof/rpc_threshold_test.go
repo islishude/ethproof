@@ -75,7 +75,7 @@ func TestOpenNormalizedRPCSourcesUsingNormalizesURLsAndClosesSources(t *testing.
 	for i, source := range headerSources {
 		got[i] = source.SourceName()
 	}
-	if !slices.Equal(got, []string{"http://one", "http://two"}) {
+	if !slices.Equal(got, []string{"source[0]", "source[1]"}) {
 		t.Fatalf("unexpected source names: %v", got)
 	}
 

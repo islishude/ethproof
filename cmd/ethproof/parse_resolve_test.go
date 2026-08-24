@@ -38,7 +38,6 @@ func TestParseResolveSlotArgsScenarios(t *testing.T) {
 			run: func(t *testing.T) {
 				cfg, err := parseResolveSlotArgs([]string{
 					"--compiler-output", "out/Fixture.json",
-					"--contract", "Fixture",
 					"--var", "value",
 				})
 				if err != nil {
@@ -57,8 +56,9 @@ func TestParseResolveSlotArgsScenarios(t *testing.T) {
 					want string
 				}{
 					{args: []string{"--contract", "Fixture", "--var", "value"}, want: "requires --compiler-output"},
-					{args: []string{"--compiler-output", "out/Fixture.json", "--var", "value"}, want: "requires --contract"},
+					{args: []string{"--compiler-output", "out/Fixture.json", "--var", "value", "--format", "artifact"}, want: "requires --contract"},
 					{args: []string{"--compiler-output", "out/Fixture.json", "--contract", "Fixture"}, want: "requires --var"},
+					{args: []string{"--compiler-output", "out/Fixture.json", "--contract", "Fixture", "--var", "value", "--format", "layout"}, want: "does not accept --contract"},
 				}
 				for _, tt := range tests {
 					_, err := parseResolveSlotArgs(tt.args)

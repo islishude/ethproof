@@ -14,7 +14,7 @@ import (
 
 type receiptSnapshotCollector struct {
 	txHash   common.Hash
-	logIndex uint
+	logIndex uint64
 }
 
 // GenerateReceiptProof fetches the target receipt data from every RPC source, requires normalized
@@ -60,36 +60,97 @@ func GenerateReceiptProofFromSources(ctx context.Context, req ReceiptProofSource
 	if derivedRoot != base.Header.ReceiptsRoot {
 		return nil, fmt.Errorf("derived receiptsRoot mismatch: local=%s expected=%s", derivedRoot, base.Header.ReceiptsRoot)
 	}
+	transactionRLP, transactionProofNodes, err := buildTransactionTrieAndProof(base.BlockTransactions, base.TxIndex, base.Header.TransactionsRoot)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(transactionRLP, base.TransactionRLP) {
+		return nil, fmt.Errorf("transaction proof bytes do not match target transaction bytes")
+	}
 	receiptRLP, proofNodes, err := buildReceiptTrieAndProof(base.BlockReceipts, base.TxIndex, base.Header.ReceiptsRoot)
 	if err != nil {
 		return nil, err
 	}
 	pkg := &ReceiptProofPackage{
-		Block:          buildBlockContext(base.Header, consensus),
-		TxHash:         base.TxHash,
-		TxIndex:        base.TxIndex,
-		LogIndex:       base.LogIndex,
-		TransactionRLP: base.TransactionRLP,
-		ReceiptRLP:     receiptRLP,
-		ProofNodes:     proofNodes,
-		Event:          base.Event,
+		Block:                 buildBlockContext(base.Header, consensus),
+		TxHash:                base.TxHash,
+		TxIndex:               base.TxIndex,
+		LogIndex:              base.LogIndex,
+		TransactionRLP:        transactionRLP,
+		TransactionProofNodes: transactionProofNodes,
+		ReceiptRLP:            receiptRLP,
+		ProofNodes:            proofNodes,
+		Event:                 base.Event,
+	}
+	if err := VerifyReceiptProofPackageAgainstEmbeddedRoots(pkg); err != nil {
+		return nil, fmt.Errorf("verify generated receipt proof package: %w", err)
 	}
 	return pkg, nil
 }
 
-// VerifyReceiptProofPackage verifies the embedded receipt proof without extra caller expectations.
+// VerifyReceiptProofPackage verifies internal consistency against the roots embedded in pkg.
+//
+// Deprecated: use VerifyReceiptProofPackageAgainstBlockAnchor when a caller-trusted block anchor is
+// available, or VerifyReceiptProofPackageAgainstEmbeddedRoots when only structural verification is intended.
 func VerifyReceiptProofPackage(pkg *ReceiptProofPackage) error {
-	return verifyReceiptProofPackageLocal(pkg, nil)
+	return VerifyReceiptProofPackageAgainstEmbeddedRoots(pkg)
 }
 
-// VerifyReceiptProofPackageWithExpectations verifies the receipt proof locally and optionally checks
-// additional caller-provided expectations against the claimed log.
+// VerifyReceiptProofPackageWithExpectations verifies internal consistency and optional expectations
+// against roots embedded in pkg.
+//
+// Deprecated: use VerifyReceiptProofPackageWithExpectationsAgainstBlockAnchor when a caller-trusted
+// block anchor is available, or VerifyReceiptProofPackageWithExpectationsAgainstEmbeddedRoots when
+// only structural verification is intended.
 func VerifyReceiptProofPackageWithExpectations(pkg *ReceiptProofPackage, expect *ReceiptExpectations) error {
+	return VerifyReceiptProofPackageWithExpectationsAgainstEmbeddedRoots(pkg, expect)
+}
+
+// VerifyReceiptProofPackageAgainstEmbeddedRoots verifies receipt and transaction inclusion against
+// roots carried by pkg without authenticating those roots as belonging to a trusted block.
+func VerifyReceiptProofPackageAgainstEmbeddedRoots(pkg *ReceiptProofPackage) error {
+	return VerifyReceiptProofPackageWithExpectationsAgainstEmbeddedRoots(pkg, nil)
+}
+
+// VerifyReceiptProofPackageWithExpectationsAgainstEmbeddedRoots verifies receipt and transaction
+// inclusion plus optional event expectations against roots carried by pkg.
+func VerifyReceiptProofPackageWithExpectationsAgainstEmbeddedRoots(pkg *ReceiptProofPackage, expect *ReceiptExpectations) error {
 	return verifyReceiptProofPackageLocal(pkg, expect)
 }
 
+// VerifyReceiptProofPackageAgainstBlockAnchor verifies the receipt package and requires every
+// embedded block field to match a caller-trusted block anchor.
+func VerifyReceiptProofPackageAgainstBlockAnchor(pkg *ReceiptProofPackage, anchor BlockAnchor) error {
+	return VerifyReceiptProofPackageWithExpectationsAgainstBlockAnchor(pkg, nil, anchor)
+}
+
+// VerifyReceiptProofPackageWithExpectationsAgainstBlockAnchor verifies the receipt package,
+// optional event expectations, and every block field against a caller-trusted block anchor.
+func VerifyReceiptProofPackageWithExpectationsAgainstBlockAnchor(pkg *ReceiptProofPackage, expect *ReceiptExpectations, anchor BlockAnchor) error {
+	if err := VerifyReceiptProofPackageWithExpectationsAgainstEmbeddedRoots(pkg, expect); err != nil {
+		return err
+	}
+	return verifyBlockContextAgainstAnchor(pkg.Block, anchor)
+}
+
 func verifyReceiptProofPackageLocal(pkg *ReceiptProofPackage, expect *ReceiptExpectations) error {
-	// Verify inclusion first using the provided proof nodes and the package's receiptsRoot.
+	if pkg == nil {
+		return fmt.Errorf("receipt proof package is nil")
+	}
+	if _, err := blockSnapshotHeaderFromContext(pkg.Block); err != nil {
+		return err
+	}
+	if err := validateSourceConsensusMetadata(pkg.Block.SourceConsensus); err != nil {
+		return err
+	}
+	if len(pkg.ProofNodes) == 0 {
+		return fmt.Errorf("receipt proof package must contain receipt proof nodes")
+	}
+	if len(pkg.TransactionProofNodes) == 0 {
+		return fmt.Errorf("receipt proof package must contain transaction proof nodes")
+	}
+
+	// Verify receipt inclusion using receiptsRoot and TxIndex.
 	proofDB, err := proofutil.ProofDBFromHexNodes(pkg.ProofNodes)
 	if err != nil {
 		return err
@@ -102,28 +163,26 @@ func verifyReceiptProofPackageLocal(pkg *ReceiptProofPackage, expect *ReceiptExp
 	if err != nil {
 		return fmt.Errorf("decode claimed receipt: %w", err)
 	}
-
-	// The proof must reproduce the exact claimed receipt bytes, not merely a receipt that
-	// decodes to the same high-level fields.
 	if !bytes.Equal(verifiedReceipt, claimedReceipt) {
 		return fmt.Errorf("verified receipt bytes do not match claimed receipt bytes")
 	}
 
-	// Cross-check the claimed transaction bytes because the proof package stores both the
-	// receipt inclusion witness and the transaction identity it is supposed to belong to.
-	tx, _, err := proofutil.DecodeTransaction(pkg.TransactionRLP)
+	// Prove that the claimed transaction is stored at the same index under transactionsRoot.
+	tx, err := verifyTransactionInclusion(pkg.Block.TransactionsRoot, pkg.TxIndex, pkg.TransactionRLP, pkg.TransactionProofNodes, pkg.TxHash)
 	if err != nil {
-		return fmt.Errorf("decode claimed transaction: %w", err)
+		return err
 	}
-	if tx.Hash() != pkg.TxHash {
-		return fmt.Errorf("transaction hash mismatch: got %s want %s", tx.Hash(), pkg.TxHash)
+	if receipt.Type != tx.Type() {
+		return fmt.Errorf("receipt type mismatch: got %d want transaction type %d", receipt.Type, tx.Type())
 	}
-	if int(pkg.LogIndex) >= len(receipt.Logs) {
+	if pkg.LogIndex >= uint64(len(receipt.Logs)) {
 		return fmt.Errorf("log index %d out of range for receipt with %d logs", pkg.LogIndex, len(receipt.Logs))
 	}
 
-	// After inclusion is established, validate the claimed event payload at the target log index.
 	log := receipt.Logs[pkg.LogIndex]
+	if log == nil {
+		return fmt.Errorf("receipt log %d is nil", pkg.LogIndex)
+	}
 	if log.Address != pkg.Event.Address {
 		return fmt.Errorf("event address mismatch: got %s want %s", log.Address, pkg.Event.Address)
 	}
@@ -134,7 +193,6 @@ func verifyReceiptProofPackageLocal(pkg *ReceiptProofPackage, expect *ReceiptExp
 		return fmt.Errorf("%s", diffs[0])
 	}
 	if expect != nil {
-		// Caller expectations are additive checks on top of the package's own claims.
 		if expect.Emitter != nil && log.Address != *expect.Emitter {
 			return fmt.Errorf("expected emitter mismatch: got %s want %s", log.Address, *expect.Emitter)
 		}
