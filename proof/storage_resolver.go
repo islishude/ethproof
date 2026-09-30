@@ -246,7 +246,7 @@ func (r *storageResolver) resolveArrayIndex(cursor storageCursor, raw string, ty
 		if err != nil {
 			return storageCursor{}, fmt.Errorf("parse array element size for %s: %w", baseType.Label, err)
 		}
-		perSlot := uint64(32 / elementBytes)
+		perSlot := 32 / elementBytes
 		slotOffset := new(big.Int).Div(new(big.Int).Set(index), new(big.Int).SetUint64(perSlot))
 		intraSlot := new(big.Int).Mod(new(big.Int).Set(index), new(big.Int).SetUint64(perSlot))
 		return storageCursor{
@@ -305,46 +305,9 @@ func (r *storageResolver) expand(cursor storageCursor, state *storageExpansionSt
 			Type:   typeInfo.Label,
 		}}, nil
 	case isStructType(typeInfo):
-		var out []ResolvedStorageSlot
-		for _, member := range typeInfo.Members {
-			memberSlot, err := parseStorageSlot(member.Slot)
-			if err != nil {
-				return nil, fmt.Errorf("parse member slot for %s.%s: %w", cursor.path, member.Label, err)
-			}
-			child := storageCursor{
-				slot:   new(big.Int).Add(cursor.slot, memberSlot),
-				offset: member.Offset,
-				typeID: member.Type,
-				path:   cursor.path + "." + member.Label,
-			}
-			childSlots, err := r.expand(child, state, depth+1)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, childSlots...)
-		}
-		return out, nil
+		return r.expandStruct(cursor, typeInfo, state, depth)
 	case isStaticArrayType(cursor.typeID, typeInfo):
-		length, ok := staticArrayLength(cursor.typeID)
-		if !ok {
-			return nil, fmt.Errorf("could not determine static array length for %s", cursor.path)
-		}
-		if !length.IsInt64() || length.Int64() < 0 {
-			return nil, fmt.Errorf("static array %s is too large to expand", cursor.path)
-		}
-		var out []ResolvedStorageSlot
-		for i := int64(0); i < length.Int64(); i++ {
-			child, err := r.resolveArrayIndex(cursor, strconv.FormatInt(i, 10), typeInfo)
-			if err != nil {
-				return nil, err
-			}
-			childSlots, err := r.expand(child, state, depth+1)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, childSlots...)
-		}
-		return out, nil
+		return r.expandStaticArray(cursor, typeInfo, state, depth)
 	default:
 		if err := state.reserveField(); err != nil {
 			return nil, err
@@ -365,6 +328,51 @@ func (r *storageResolver) expand(cursor storageCursor, state *storageExpansionSt
 			Type:   typeInfo.Label,
 		}}, nil
 	}
+}
+
+func (r *storageResolver) expandStruct(cursor storageCursor, typeInfo StorageLayoutType, state *storageExpansionState, depth int) ([]ResolvedStorageSlot, error) {
+	var out []ResolvedStorageSlot
+	for _, member := range typeInfo.Members {
+		memberSlot, err := parseStorageSlot(member.Slot)
+		if err != nil {
+			return nil, fmt.Errorf("parse member slot for %s.%s: %w", cursor.path, member.Label, err)
+		}
+		child := storageCursor{
+			slot:   new(big.Int).Add(cursor.slot, memberSlot),
+			offset: member.Offset,
+			typeID: member.Type,
+			path:   cursor.path + "." + member.Label,
+		}
+		childSlots, err := r.expand(child, state, depth+1)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, childSlots...)
+	}
+	return out, nil
+}
+
+func (r *storageResolver) expandStaticArray(cursor storageCursor, typeInfo StorageLayoutType, state *storageExpansionState, depth int) ([]ResolvedStorageSlot, error) {
+	length, ok := staticArrayLength(cursor.typeID)
+	if !ok {
+		return nil, fmt.Errorf("could not determine static array length for %s", cursor.path)
+	}
+	if !length.IsInt64() || length.Int64() < 0 {
+		return nil, fmt.Errorf("static array %s is too large to expand", cursor.path)
+	}
+	var out []ResolvedStorageSlot
+	for i := int64(0); i < length.Int64(); i++ {
+		child, err := r.resolveArrayIndex(cursor, strconv.FormatInt(i, 10), typeInfo)
+		if err != nil {
+			return nil, err
+		}
+		childSlots, err := r.expand(child, state, depth+1)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, childSlots...)
+	}
+	return out, nil
 }
 
 func (s *storageExpansionState) reserveField() error {

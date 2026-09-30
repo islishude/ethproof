@@ -1,11 +1,58 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 )
+
+func TestVerifyStateAndTransactionConfigIsolation(t *testing.T) {
+	parsers := []struct {
+		kind  string
+		parse func([]string) (verifyProofConfig, error)
+	}{
+		{"state", func(args []string) (verifyProofConfig, error) {
+			cfg, err := parseVerifyStateArgs(args)
+			return verifyProofConfig(cfg), err
+		}},
+		{"tx", func(args []string) (verifyProofConfig, error) {
+			cfg, err := parseVerifyTransactionArgs(args)
+			return verifyProofConfig(cfg), err
+		}},
+	}
+	configPath := writeTestConfig(t, `{
+  "verify": {
+    "state": {"rpcs": ["http://state"], "minRpcs": 1, "proof": "configured-state.json"},
+    "tx": {"rpcs": ["http://tx"], "minRpcs": 1, "proof": "configured-tx.json"}
+  }
+}`)
+	for _, parser := range parsers {
+		t.Run(parser.kind, func(t *testing.T) {
+			cfg, err := parser.parse([]string{"--config", configPath})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.ProofPath != "configured-"+parser.kind+".json" || cfg.VerifyRequest.MinRPCSources != 1 || strings.Join(cfg.VerifyRequest.RPCURLs, ",") != "http://"+parser.kind {
+				t.Fatalf("wrong config section: %+v", cfg)
+			}
+			cfg, err = parser.parse([]string{"--rpc", "http://override", "--min-rpcs", "1"})
+			if err != nil || cfg.ProofPath != parser.kind+".json" {
+				t.Fatalf("wrong default proof path: %+v, %v", cfg, err)
+			}
+			other := "state"
+			if parser.kind == "state" {
+				other = "tx"
+			}
+			otherConfig := writeTestConfig(t, fmt.Sprintf(`{"verify": {%q: {"rpcs": ["http://other"], "minRpcs": 1}}}`, other))
+			_, err = parser.parse([]string{"--config", otherConfig})
+			if err == nil || !strings.Contains(err.Error(), "verify "+parser.kind+" requires independent RPCs") {
+				t.Fatalf("must not reuse the other section's RPCs: %v", err)
+			}
+		})
+	}
+}
 
 func TestParseVerifyArgsScenarios(t *testing.T) {
 	tests := []struct {

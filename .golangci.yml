@@ -1,0 +1,41 @@
+version: "2"
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+  relative-path-mode: gomod
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    - modernize
+    - govet
+    - errorlint
+    - misspell
+    - nilerr
+    - nilnesserr
+    - nolintlint
+    - unparam
+    - unconvert
+    - wastedassign
+    - whitespace
+    - dupl
+    - gocognit
+  settings:
+    dupl:
+      threshold: 150
+    gocognit:
+      min-complexity: 30
+  exclusions:
+    generated: strict
+    rules:
+      - path: _test\.go
+        linters:
+          - unparam
+          - dupl
+          - gocognit
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

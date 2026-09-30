@@ -12,7 +12,8 @@ import (
 )
 
 func TestCanonicalOfflineReceiptDigestsStable(t *testing.T) {
-	header, txs, receipts, txIndex, _, err := buildOfflineTransactionReceiptFixture()
+	const txIndex = 0
+	header, txs, receipts, _, err := buildOfflineTransactionReceiptFixture()
 	if err != nil {
 		t.Fatalf("buildOfflineTransactionReceiptFixture: %v", err)
 	}
@@ -94,7 +95,8 @@ func TestDumpProofNodesSortsByKey(t *testing.T) {
 }
 
 func TestEncodingRoundTrip(t *testing.T) {
-	header, txs, receipts, txIndex, _, err := buildOfflineTransactionReceiptFixture()
+	const txIndex = 0
+	header, txs, receipts, _, err := buildOfflineTransactionReceiptFixture()
 	if err != nil {
 		t.Fatalf("buildOfflineTransactionReceiptFixture: %v", err)
 	}
@@ -135,7 +137,7 @@ func TestEncodingRoundTrip(t *testing.T) {
 }
 
 func TestOfflineTransactionFieldsStable(t *testing.T) {
-	header, txs, _, _, _, err := buildOfflineTransactionReceiptFixture()
+	header, txs, _, _, err := buildOfflineTransactionReceiptFixture()
 	if err != nil {
 		t.Fatalf("buildOfflineTransactionReceiptFixture: %v", err)
 	}

@@ -44,7 +44,7 @@ func parseGenerateStateArgs(args []string) (generateStateConfig, error) {
 
 	cfg := generateStateConfig{
 		Request: proof.StateProofRequest{
-			BlockNumber: mergeUint64(parseCtx.seen, "block", *blockNumber, nil, 0),
+			BlockNumber: mergeUint64(parseCtx.seen, "block", *blockNumber, nil),
 		},
 		Out: mergeString(parseCtx.seen, "out", *out, "", "state.json"),
 	}
@@ -53,7 +53,7 @@ func parseGenerateStateArgs(args []string) (generateStateConfig, error) {
 	rawSlots := mergeStringSlice(parseCtx.seen, "slot", slotHexes, nil)
 	if section != nil {
 		cfg.Request.RPCURLs, cfg.Request.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, section.RPCs, section.MinRPCs)
-		cfg.Request.BlockNumber = mergeUint64(parseCtx.seen, "block", *blockNumber, section.Block, 0)
+		cfg.Request.BlockNumber = mergeUint64(parseCtx.seen, "block", *blockNumber, section.Block)
 		rawAccount = mergeString(parseCtx.seen, "account", *accountHex, section.Account, "")
 		rawSlots = mergeStringSlice(parseCtx.seen, "slot", slotHexes, section.Slots)
 		cfg.Out = mergeString(parseCtx.seen, "out", *out, section.Out, "state.json")
@@ -105,7 +105,7 @@ func parseGenerateReceiptArgs(args []string) (generateReceiptConfig, error) {
 
 	cfg := generateReceiptConfig{
 		Request: proof.ReceiptProofRequest{
-			LogIndex: mergeUint64(parseCtx.seen, "log-index", *logIndex, nil, 0),
+			LogIndex: mergeUint64(parseCtx.seen, "log-index", *logIndex, nil),
 		},
 		Out: mergeString(parseCtx.seen, "out", *out, "", "receipt.json"),
 	}
@@ -113,7 +113,7 @@ func parseGenerateReceiptArgs(args []string) (generateReceiptConfig, error) {
 	rawTxHash := mergeString(parseCtx.seen, "tx", *txHashHex, "", "")
 	if section != nil {
 		cfg.Request.RPCURLs, cfg.Request.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, section.RPCs, section.MinRPCs)
-		cfg.Request.LogIndex = mergeUint64(parseCtx.seen, "log-index", *logIndex, section.LogIndex, 0)
+		cfg.Request.LogIndex = mergeUint64(parseCtx.seen, "log-index", *logIndex, section.LogIndex)
 		rawTxHash = mergeString(parseCtx.seen, "tx", *txHashHex, section.Tx, "")
 		cfg.Out = mergeString(parseCtx.seen, "out", *out, section.Out, "receipt.json")
 	}

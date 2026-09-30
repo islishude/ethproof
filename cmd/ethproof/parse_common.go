@@ -107,14 +107,14 @@ func mergeInt(seen map[string]bool, flagName string, flagValue int, configValue 
 	return defaultValue
 }
 
-func mergeUint64(seen map[string]bool, flagName string, flagValue uint64, configValue *uint64, defaultValue uint64) uint64 {
+func mergeUint64(seen map[string]bool, flagName string, flagValue uint64, configValue *uint64) uint64 {
 	if seen[flagName] {
 		return flagValue
 	}
 	if configValue != nil {
 		return *configValue
 	}
-	return defaultValue
+	return 0
 }
 
 func mergeRPCInputs(seen map[string]bool, rpcValues multiStringFlag, minRPCs int, configRPCs []string, configMinRPCs *int) ([]string, int) {

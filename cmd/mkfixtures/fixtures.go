@@ -35,7 +35,8 @@ type blockSnapshotHeader struct {
 
 // BuildOfflineFixtures constructs the deterministic fixture set used by offline tests.
 func BuildOfflineFixtures() (*OfflineFixtures, error) {
-	txReceiptHeader, txs, receipts, txIndex, receiptConsensus, err := buildOfflineTransactionReceiptFixture()
+	const txIndex = 0
+	txReceiptHeader, txs, receipts, receiptConsensus, err := buildOfflineTransactionReceiptFixture()
 	if err != nil {
 		return nil, err
 	}

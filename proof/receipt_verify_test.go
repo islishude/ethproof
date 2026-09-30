@@ -13,6 +13,46 @@ import (
 	"github.com/islishude/ethproof/internal/proofutil"
 )
 
+func TestReceiptExpectationBoundaries(t *testing.T) {
+	pkg := mustLoadReceiptFixture(t)
+	tests := []struct {
+		name   string
+		expect *ReceiptExpectations
+		want   string
+	}{
+		{name: "no expectations"},
+		{name: "empty expectations", expect: &ReceiptExpectations{}},
+		{name: "topic prefix", expect: &ReceiptExpectations{Topics: pkg.Event.Topics[:1]}},
+		{
+			name:   "too many topics",
+			expect: &ReceiptExpectations{Topics: append(append([]common.Hash(nil), pkg.Event.Topics...), common.Hash{})},
+			want:   "expected topic count mismatch",
+		},
+		{
+			name:   "wrong topic",
+			expect: &ReceiptExpectations{Topics: []common.Hash{{}}},
+			want:   "expected topic[0] mismatch",
+		},
+		{
+			name:   "explicit empty data",
+			expect: &ReceiptExpectations{Data: []byte{}},
+			want:   "expected data mismatch",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := VerifyReceiptProofPackageWithExpectationsAgainstEmbeddedRoots(&pkg, tt.expect)
+			if tt.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("got %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestVerifyReceiptProofPackage(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		pkg := mustLoadReceiptFixture(t)

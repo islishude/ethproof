@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -204,5 +205,32 @@ func TestReceiptCollectionRejectsInvalidMetadata(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestReceiptScanValidatesReusedTarget(t *testing.T) {
+	for _, field := range []string{"block hash", "tx hash", "nil log"} {
+		t.Run(field, func(t *testing.T) {
+			base, hash, _ := mustReceiptSource(t)
+			target := cloneReceipt(base.receiptsByTxHash[hash])
+			want := field + " mismatch"
+			switch field {
+			case "block hash":
+				target.BlockHash = common.Hash{}
+			case "tx hash":
+				target.TxHash = common.Hash{}
+			case "nil log":
+				target.Logs = []*types.Log{nil}
+				want = "log 0 is nil"
+			}
+			source := &countingReceiptSource{fakeReceiptSource: base, receipts: make(map[common.Hash]int)}
+			_, err := fetchBlockReceiptsByTransactionScan(t.Context(), source, base.block.Hash(), base.block.Transactions(), target)
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("got %v, want %q", err, want)
+			}
+			if source.receipts[hash] != 0 {
+				t.Fatal("target receipt was fetched again")
+			}
+		})
 	}
 }

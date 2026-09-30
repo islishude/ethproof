@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/islishude/ethproof/internal/proofutil"
 )
@@ -180,23 +181,28 @@ func verifyReceiptProofPackageLocal(pkg *ReceiptProofPackage, expect *ReceiptExp
 	if diffs := compareHashSlices("event.topics", log.Topics, pkg.Event.Topics); len(diffs) > 0 {
 		return fmt.Errorf("%s", diffs[0])
 	}
-	if expect != nil {
-		if expect.Emitter != nil && log.Address != *expect.Emitter {
-			return fmt.Errorf("expected emitter mismatch: got %s want %s", log.Address, *expect.Emitter)
+	return verifyReceiptExpectations(log, expect)
+}
+
+func verifyReceiptExpectations(log *types.Log, expect *ReceiptExpectations) error {
+	if expect == nil {
+		return nil
+	}
+	if expect.Emitter != nil && log.Address != *expect.Emitter {
+		return fmt.Errorf("expected emitter mismatch: got %s want %s", log.Address, *expect.Emitter)
+	}
+	if len(expect.Topics) > 0 {
+		if len(log.Topics) < len(expect.Topics) {
+			return fmt.Errorf("expected topic count mismatch: got %d want at least %d", len(log.Topics), len(expect.Topics))
 		}
-		if len(expect.Topics) > 0 {
-			if len(log.Topics) < len(expect.Topics) {
-				return fmt.Errorf("expected topic count mismatch: got %d want at least %d", len(log.Topics), len(expect.Topics))
+		for i := range expect.Topics {
+			if log.Topics[i] != expect.Topics[i] {
+				return fmt.Errorf("expected topic[%d] mismatch: got %s want %s", i, log.Topics[i], expect.Topics[i])
 			}
-			for i := range expect.Topics {
-				if log.Topics[i] != expect.Topics[i] {
-					return fmt.Errorf("expected topic[%d] mismatch: got %s want %s", i, log.Topics[i], expect.Topics[i])
-				}
-			}
 		}
-		if expect.Data != nil && !bytes.Equal(log.Data, expect.Data) {
-			return fmt.Errorf("expected data mismatch")
-		}
+	}
+	if expect.Data != nil && !bytes.Equal(log.Data, expect.Data) {
+		return fmt.Errorf("expected data mismatch")
 	}
 	return nil
 }

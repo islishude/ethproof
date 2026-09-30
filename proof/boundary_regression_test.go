@@ -57,7 +57,7 @@ func TestStateProofEmptyStorageTrie(t *testing.T) {
 	if err := VerifyStateProofPackageAgainstEmbeddedRoots(&pkg); err == nil {
 		t.Fatal("accepted nonzero value under empty root")
 	}
-	if _, err := verifyStorageProof(common.HexToHash("0x123"), common.Hash{}, nil, common.Hash{}); err == nil {
+	if err := verifyStorageProof(common.HexToHash("0x123"), common.Hash{}, nil, common.Hash{}); err == nil {
 		t.Fatal("accepted missing proof for nonempty root")
 	}
 }

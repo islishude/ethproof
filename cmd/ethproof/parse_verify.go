@@ -21,33 +21,45 @@ type verifyTransactionConfig struct {
 }
 
 func parseVerifyStateArgs(args []string) (verifyStateConfig, error) {
-	fs := newFlagSet("verify state")
+	cfg, err := parseVerifyProofArgs(args, "state", func(cfg *cliConfig) *verifyProofConfigFile {
+		return cfg.Verify.State
+	})
+	return verifyStateConfig(cfg), err
+}
+
+type verifyProofConfig struct {
+	ProofPath     string
+	VerifyRequest proof.VerifyRPCRequest
+}
+
+func parseVerifyProofArgs(args []string, kind string, selectSection func(*cliConfig) *verifyProofConfigFile) (verifyProofConfig, error) {
+	fs := newFlagSet("verify " + kind)
 	configPath := fs.String("config", "", "config json file")
 	var rpcURLs multiStringFlag
 	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
 	minRPCs := fs.Int("min-rpcs", proof.DefaultMinRPCSources, "minimum distinct RPC sources required")
-	proofPath := fs.String("proof", "state.json", "proof json file")
+	proofPath := fs.String("proof", kind+".json", "proof json file")
 
-	parseCtx, err := prepareParse(fs, args, configPath, "parse verify state args")
+	parseCtx, err := prepareParse(fs, args, configPath, "parse verify "+kind+" args")
 	if err != nil {
-		return verifyStateConfig{}, err
+		return verifyProofConfig{}, err
 	}
 
-	var section *verifyStateConfigFile
+	var section *verifyProofConfigFile
 	if parseCtx.fileCfg != nil {
-		section = parseCtx.fileCfg.Verify.State
+		section = selectSection(parseCtx.fileCfg)
 	}
 
-	cfg := verifyStateConfig{
-		ProofPath: mergeString(parseCtx.seen, "proof", *proofPath, "", "state.json"),
+	cfg := verifyProofConfig{
+		ProofPath: mergeString(parseCtx.seen, "proof", *proofPath, "", kind+".json"),
 	}
 	cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, nil, nil)
 	if section != nil {
-		cfg.ProofPath = mergeString(parseCtx.seen, "proof", *proofPath, section.Proof, "state.json")
+		cfg.ProofPath = mergeString(parseCtx.seen, "proof", *proofPath, section.Proof, kind+".json")
 		cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, section.RPCs, section.MinRPCs)
 	}
-	if err := validateRPCInputs(cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources, "verify state requires independent RPCs via --rpc or verify.state.rpcs in --config"); err != nil {
-		return verifyStateConfig{}, err
+	if err := validateRPCInputs(cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources, "verify "+kind+" requires independent RPCs via --rpc or verify."+kind+".rpcs in --config"); err != nil {
+		return verifyProofConfig{}, err
 	}
 	return cfg, nil
 }
@@ -100,33 +112,8 @@ func parseVerifyReceiptArgs(args []string) (verifyReceiptConfig, error) {
 }
 
 func parseVerifyTransactionArgs(args []string) (verifyTransactionConfig, error) {
-	fs := newFlagSet("verify tx")
-	configPath := fs.String("config", "", "config json file")
-	var rpcURLs multiStringFlag
-	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
-	minRPCs := fs.Int("min-rpcs", proof.DefaultMinRPCSources, "minimum distinct RPC sources required")
-	proofPath := fs.String("proof", "tx.json", "proof json file")
-
-	parseCtx, err := prepareParse(fs, args, configPath, "parse verify tx args")
-	if err != nil {
-		return verifyTransactionConfig{}, err
-	}
-
-	var section *verifyTransactionConfigFile
-	if parseCtx.fileCfg != nil {
-		section = parseCtx.fileCfg.Verify.Tx
-	}
-
-	cfg := verifyTransactionConfig{
-		ProofPath: mergeString(parseCtx.seen, "proof", *proofPath, "", "tx.json"),
-	}
-	cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, nil, nil)
-	if section != nil {
-		cfg.ProofPath = mergeString(parseCtx.seen, "proof", *proofPath, section.Proof, "tx.json")
-		cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, section.RPCs, section.MinRPCs)
-	}
-	if err := validateRPCInputs(cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources, "verify tx requires independent RPCs via --rpc or verify.tx.rpcs in --config"); err != nil {
-		return verifyTransactionConfig{}, err
-	}
-	return cfg, nil
+	cfg, err := parseVerifyProofArgs(args, "tx", func(cfg *cliConfig) *verifyProofConfigFile {
+		return cfg.Verify.Tx
+	})
+	return verifyTransactionConfig(cfg), err
 }

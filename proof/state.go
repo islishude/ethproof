@@ -110,7 +110,7 @@ func VerifyStateProofPackageAgainstEmbeddedRoots(pkg *StateProofPackage) error {
 
 	// Then prove each requested storage slot against the verified account's storage root.
 	for i, storageProof := range pkg.StorageProofs {
-		if _, err := verifyStorageProof(pkg.AccountClaim.StorageRoot, storageProof.Slot, storageProof.ProofNodes, storageProof.Value); err != nil {
+		if err := verifyStorageProof(pkg.AccountClaim.StorageRoot, storageProof.Slot, storageProof.ProofNodes, storageProof.Value); err != nil {
 			return fmt.Errorf("verify storageProofs[%d]: %w", i, err)
 		}
 	}

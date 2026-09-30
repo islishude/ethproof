@@ -118,7 +118,7 @@ func normalizeStorageProofResults(expectedSlots []common.Hash, storageRoot commo
 		if err != nil {
 			return nil, fmt.Errorf("storage proof %s: %w", slot.Hex(), err)
 		}
-		if _, err := verifyStorageProof(storageRoot, slot, proofNodes, value); err != nil {
+		if err := verifyStorageProof(storageRoot, slot, proofNodes, value); err != nil {
 			return nil, fmt.Errorf("verify storage proof %s: %w", slot.Hex(), err)
 		}
 		bySlot[slot] = StateStorageProof{

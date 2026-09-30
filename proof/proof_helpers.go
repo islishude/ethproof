@@ -75,35 +75,35 @@ func verifyAccountProof(stateRoot common.Hash, account common.Address, nodes []h
 	return accountValue, nil
 }
 
-func verifyStorageProof(storageRoot common.Hash, slot common.Hash, nodes []hexutil.Bytes, expectedValue common.Hash) ([]byte, error) {
+func verifyStorageProof(storageRoot common.Hash, slot common.Hash, nodes []hexutil.Bytes, expectedValue common.Hash) error {
 	// An authenticated empty storage root proves that every slot is zero. Geth
 	// returns no proof nodes for this case, which trie.VerifyProof cannot consume.
 	if storageRoot == types.EmptyRootHash {
 		if expectedValue != (common.Hash{}) {
-			return nil, fmt.Errorf("storage value mismatch: empty storage trie requires zero value")
+			return fmt.Errorf("storage value mismatch: empty storage trie requires zero value")
 		}
 		if len(nodes) != 0 {
-			return nil, fmt.Errorf("empty storage trie must not contain proof nodes")
+			return fmt.Errorf("empty storage trie must not contain proof nodes")
 		}
-		return nil, nil
+		return nil
 	}
 	// Storage proofs are verified against keccak(slot), not the raw slot bytes.
 	db, err := proofutil.ProofDBFromHexNodes(nodes)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	storageValue, err := trie.VerifyProof(storageRoot, crypto.Keccak256(slot.Bytes()), db)
 	if err != nil {
-		return nil, fmt.Errorf("verify storage proof: %w", err)
+		return fmt.Errorf("verify storage proof: %w", err)
 	}
 
 	// Decode the raw trie value and compare it to the normalized 32-byte storage value claim.
 	decodedValue, err := proofutil.DecodeStorageProofValue(storageValue)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if decodedValue != expectedValue {
-		return nil, fmt.Errorf("storage value mismatch: got %s want %s", decodedValue, expectedValue)
+		return fmt.Errorf("storage value mismatch: got %s want %s", decodedValue, expectedValue)
 	}
-	return storageValue, nil
+	return nil
 }

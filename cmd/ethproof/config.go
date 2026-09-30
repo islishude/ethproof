@@ -21,9 +21,9 @@ type generateConfigSections struct {
 }
 
 type verifyConfigSections struct {
-	State   *verifyStateConfigFile       `json:"state"`
-	Receipt *verifyReceiptConfigFile     `json:"receipt"`
-	Tx      *verifyTransactionConfigFile `json:"tx"`
+	State   *verifyProofConfigFile   `json:"state"`
+	Receipt *verifyReceiptConfigFile `json:"receipt"`
+	Tx      *verifyProofConfigFile   `json:"tx"`
 }
 
 type generateStateConfigFile struct {
@@ -50,7 +50,7 @@ type generateTransactionConfigFile struct {
 	Out     string   `json:"out"`
 }
 
-type verifyStateConfigFile struct {
+type verifyProofConfigFile struct {
 	RPCs    []string `json:"rpcs"`
 	MinRPCs *int     `json:"minRpcs"`
 	Proof   string   `json:"proof"`
@@ -63,12 +63,6 @@ type verifyReceiptConfigFile struct {
 	ExpectEmitter string   `json:"expectEmitter"`
 	ExpectTopics  []string `json:"expectTopics"`
 	ExpectData    string   `json:"expectData"`
-}
-
-type verifyTransactionConfigFile struct {
-	RPCs    []string `json:"rpcs"`
-	MinRPCs *int     `json:"minRpcs"`
-	Proof   string   `json:"proof"`
 }
 
 func loadCLIConfig(path string) (*cliConfig, error) {

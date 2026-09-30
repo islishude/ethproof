@@ -112,37 +112,8 @@ func fetchBlockReceiptsByTransactionScan(ctx context.Context, source ReceiptSour
 				if index >= uint64(len(transactions)) {
 					return
 				}
-				tx := transactions[index]
-				if tx == nil {
-					cancel(fmt.Errorf("block transaction %d is nil", index))
-					return
-				}
-				receipt := target
-				if target == nil || uint64(target.TransactionIndex) != index {
-					var err error
-					receipt, err = source.TransactionReceipt(scanCtx, tx.Hash())
-					if err != nil {
-						cancel(fmt.Errorf("fetch receipt %d/%d (%s): %w", index+1, len(transactions), tx.Hash(), err))
-						return
-					}
-				}
-				if receipt == nil {
-					cancel(fmt.Errorf("receipt %d is nil", index))
-					return
-				}
-				if receipt.BlockHash != blockHash {
-					cancel(fmt.Errorf("receipt %d block hash mismatch: got %s want %s", index, receipt.BlockHash, blockHash))
-					return
-				}
-				if uint64(receipt.TransactionIndex) != index {
-					cancel(fmt.Errorf("receipt %d transaction index mismatch", index))
-					return
-				}
-				if receipt.TxHash != tx.Hash() {
-					cancel(fmt.Errorf("receipt %d tx hash mismatch", index))
-					return
-				}
-				if err := validateReceiptLogs(receipt, int(index)); err != nil {
+				receipt, err := fetchScannedReceipt(scanCtx, source, blockHash, transactions, target, index)
+				if err != nil {
 					cancel(err)
 					return
 				}
@@ -155,6 +126,37 @@ func fetchBlockReceiptsByTransactionScan(ctx context.Context, source ReceiptSour
 		return nil, err
 	}
 	return encodeAndValidateBlockReceipts(receipts, blockHash, len(transactions))
+}
+
+func fetchScannedReceipt(ctx context.Context, source ReceiptSource, blockHash common.Hash, transactions types.Transactions, target *types.Receipt, index uint64) (*types.Receipt, error) {
+	tx := transactions[index]
+	if tx == nil {
+		return nil, fmt.Errorf("block transaction %d is nil", index)
+	}
+	receipt := target
+	if target == nil || uint64(target.TransactionIndex) != index {
+		var err error
+		receipt, err = source.TransactionReceipt(ctx, tx.Hash())
+		if err != nil {
+			return nil, fmt.Errorf("fetch receipt %d/%d (%s): %w", index+1, len(transactions), tx.Hash(), err)
+		}
+	}
+	if receipt == nil {
+		return nil, fmt.Errorf("receipt %d is nil", index)
+	}
+	if receipt.BlockHash != blockHash {
+		return nil, fmt.Errorf("receipt %d block hash mismatch: got %s want %s", index, receipt.BlockHash, blockHash)
+	}
+	if uint64(receipt.TransactionIndex) != index {
+		return nil, fmt.Errorf("receipt %d transaction index mismatch", index)
+	}
+	if receipt.TxHash != tx.Hash() {
+		return nil, fmt.Errorf("receipt %d tx hash mismatch", index)
+	}
+	if err := validateReceiptLogs(receipt, int(index)); err != nil {
+		return nil, err
+	}
+	return receipt, nil
 }
 
 func encodeAndValidateBlockReceipts(receipts []*types.Receipt, blockHash common.Hash, expectedCount int) ([]hexutil.Bytes, error) {
