@@ -40,6 +40,9 @@ func blockSnapshotHeaderFromHeader(chainID *big.Int, header *types.Header) (bloc
 	if header.Number == nil {
 		return blockSnapshotHeader{}, fmt.Errorf("block header number is nil")
 	}
+	if !header.Number.IsUint64() {
+		return blockSnapshotHeader{}, fmt.Errorf("block header number is outside uint64 range")
+	}
 	chainIDValue, err := proofutil.ChainIDFromBig(chainID)
 	if err != nil {
 		return blockSnapshotHeader{}, err

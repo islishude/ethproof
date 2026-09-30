@@ -7,10 +7,25 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/islishude/ethproof/internal/proofutil"
 )
 
+type transactionSourceData struct {
+	snapshot     *transactionSnapshot
+	receipt      *types.Receipt
+	transactions types.Transactions
+}
+
 func fetchTransactionSnapshot(ctx context.Context, source TransactionSource, txHash common.Hash) (*transactionSnapshot, error) {
+	data, err := fetchTransactionData(ctx, source, txHash)
+	if err != nil {
+		return nil, err
+	}
+	return data.snapshot, nil
+}
+
+func fetchTransactionData(ctx context.Context, source TransactionSource, txHash common.Hash) (*transactionSourceData, error) {
 	chainID, err := source.ChainID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("chain id: %w", err)
@@ -57,6 +72,10 @@ func fetchTransactionSnapshot(ctx context.Context, source TransactionSource, txH
 		return nil, fmt.Errorf("header hash %s does not match block hash %s", header.Hash(), block.Hash())
 	}
 
+	if block.Hash() != receipt.BlockHash {
+		return nil, fmt.Errorf("receipt block hash mismatch: got %s want %s", receipt.BlockHash, block.Hash())
+	}
+
 	// Canonicalize the entire block transaction list so proof generation can rebuild the trie
 	// locally and compare normalized bytes across sources.
 	transactionRLP, err := proofutil.EncodeTransaction(tx)
@@ -82,11 +101,15 @@ func fetchTransactionSnapshot(ctx context.Context, source TransactionSource, txH
 		return nil, fmt.Errorf("transaction bytes mismatch between block body and tx lookup")
 	}
 
-	return &transactionSnapshot{
-		Header:            headerSnapshot,
-		TxHash:            txHash,
-		TxIndex:           targetIndex,
-		TransactionRLP:    transactionRLP,
-		BlockTransactions: blockTransactions,
+	return &transactionSourceData{
+		receipt:      receipt,
+		transactions: blockTxs,
+		snapshot: &transactionSnapshot{
+			Header:            headerSnapshot,
+			TxHash:            txHash,
+			TxIndex:           targetIndex,
+			TransactionRLP:    transactionRLP,
+			BlockTransactions: blockTransactions,
+		},
 	}, nil
 }

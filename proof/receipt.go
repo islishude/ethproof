@@ -6,8 +6,6 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/islishude/ethproof/internal/proofutil"
 )
@@ -50,16 +48,6 @@ func GenerateReceiptProofFromSources(ctx context.Context, req ReceiptProofSource
 		return nil, err
 	}
 
-	// Rebuild the receipts trie locally from the agreed receipt bytes so the returned proof is
-	// anchored to the same receiptsRoot that appears in the agreed block header.
-	blockReceipts, err := decodeReceiptList(base.BlockReceipts)
-	if err != nil {
-		return nil, err
-	}
-	derivedRoot := types.DeriveSha(blockReceipts, trie.NewStackTrie(nil))
-	if derivedRoot != base.Header.ReceiptsRoot {
-		return nil, fmt.Errorf("derived receiptsRoot mismatch: local=%s expected=%s", derivedRoot, base.Header.ReceiptsRoot)
-	}
 	transactionRLP, transactionProofNodes, err := buildTransactionTrieAndProof(base.BlockTransactions, base.TxIndex, base.Header.TransactionsRoot)
 	if err != nil {
 		return nil, err
@@ -211,18 +199,6 @@ func verifyReceiptProofPackageLocal(pkg *ReceiptProofPackage, expect *ReceiptExp
 		}
 	}
 	return nil
-}
-
-func decodeReceiptList(hexReceipts []hexutil.Bytes) (types.Receipts, error) {
-	out := make(types.Receipts, len(hexReceipts))
-	for i, receiptHex := range hexReceipts {
-		receipt, _, err := proofutil.DecodeReceipt(receiptHex)
-		if err != nil {
-			return nil, fmt.Errorf("decode receipt %d: %w", i, err)
-		}
-		out[i] = receipt
-	}
-	return out, nil
 }
 
 func collectReceiptSnapshots(ctx context.Context, req ReceiptProofSourcesRequest) ([]*receiptSnapshot, error) {

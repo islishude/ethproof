@@ -8,17 +8,17 @@ import (
 // VerifyStateProofPackageAgainstRPCs verifies the state proof locally and then checks that the
 // embedded block context matches a fresh independent RPC consensus.
 func VerifyStateProofPackageAgainstRPCs(ctx context.Context, pkg *StateProofPackage, req VerifyRPCRequest) error {
-	return VerifyStateProofPackageAgainstRPCsWithFetcher(ctx, pkg, req, fetchBlockHeadersFromSources)
+	return verifyStateProofPackageAgainstRPCsWithFetcher(ctx, pkg, req, fetchBlockHeadersFromSources)
 }
 
-func VerifyStateProofPackageAgainstRPCsWithFetcher(ctx context.Context, pkg *StateProofPackage, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
+func verifyStateProofPackageAgainstRPCsWithFetcher(ctx context.Context, pkg *StateProofPackage, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
 	sourceSet, err := openNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources)
 	if err != nil {
 		return err
 	}
 	defer sourceSet.Close()
 
-	return VerifyStateProofPackageAgainstSourcesWithFetcher(ctx, pkg, VerifySourcesRequest{
+	return verifyStateProofPackageAgainstSourcesWithFetcher(ctx, pkg, VerifySourcesRequest{
 		Sources:       sourceSet.HeaderSources(),
 		MinRPCSources: req.MinRPCSources,
 	}, fetcher)
@@ -27,10 +27,10 @@ func VerifyStateProofPackageAgainstRPCsWithFetcher(ctx context.Context, pkg *Sta
 // VerifyStateProofPackageAgainstSources verifies the state proof locally and then checks that the
 // embedded block context matches a fresh independent source consensus.
 func VerifyStateProofPackageAgainstSources(ctx context.Context, pkg *StateProofPackage, req VerifySourcesRequest) error {
-	return VerifyStateProofPackageAgainstSourcesWithFetcher(ctx, pkg, req, fetchBlockHeadersFromSources)
+	return verifyStateProofPackageAgainstSourcesWithFetcher(ctx, pkg, req, fetchBlockHeadersFromSources)
 }
 
-func VerifyStateProofPackageAgainstSourcesWithFetcher(ctx context.Context, pkg *StateProofPackage, req VerifySourcesRequest, fetcher blockHeaderFetcher) error {
+func verifyStateProofPackageAgainstSourcesWithFetcher(ctx context.Context, pkg *StateProofPackage, req VerifySourcesRequest, fetcher blockHeaderFetcher) error {
 	if err := VerifyStateProofPackageAgainstEmbeddedRoots(pkg); err != nil {
 		return err
 	}
@@ -108,6 +108,9 @@ func verifyBlockContextAgainstSources(ctx context.Context, block BlockContext, r
 	if err != nil {
 		return err
 	}
+	if fetcher == nil {
+		return fmt.Errorf("block header fetcher is nil")
+	}
 	headers, err := fetcher(ctx, req.Sources, block.BlockHash)
 	if err != nil {
 		return err
@@ -129,4 +132,20 @@ func verifyBlockContextAgainstSources(ctx context.Context, block BlockContext, r
 
 	// Then compare the proof package's embedded block context against that agreed independent view.
 	return verifyBlockContextAgainstAnchor(block, blockAnchorFromSnapshot(base.header))
+}
+
+// VerifyStateProofPackageAgainstRPCsWithFetcher is retained for source compatibility.
+//
+// Deprecated: use VerifyStateProofPackageAgainstRPCs; inject HeaderSource
+// implementations through VerifyStateProofPackageAgainstSources for customization.
+func VerifyStateProofPackageAgainstRPCsWithFetcher(ctx context.Context, pkg *StateProofPackage, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
+	return verifyStateProofPackageAgainstRPCsWithFetcher(ctx, pkg, req, fetcher)
+}
+
+// VerifyStateProofPackageAgainstSourcesWithFetcher is retained for source compatibility.
+//
+// Deprecated: use VerifyStateProofPackageAgainstSources; inject HeaderSource
+// implementations through VerifyStateProofPackageAgainstSources for customization.
+func VerifyStateProofPackageAgainstSourcesWithFetcher(ctx context.Context, pkg *StateProofPackage, req VerifySourcesRequest, fetcher blockHeaderFetcher) error {
+	return verifyStateProofPackageAgainstSourcesWithFetcher(ctx, pkg, req, fetcher)
 }

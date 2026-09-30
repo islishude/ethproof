@@ -48,16 +48,6 @@ func GenerateTransactionProofFromSources(ctx context.Context, req TransactionPro
 		return nil, err
 	}
 
-	// Rebuild the transactions trie locally from the agreed transaction bytes so the proof we
-	// return is anchored to the transactionsRoot in the agreed block header.
-	blockTransactions, err := decodeTransactionList(base.BlockTransactions)
-	if err != nil {
-		return nil, err
-	}
-	derivedRoot := types.DeriveSha(blockTransactions, trie.NewStackTrie(nil))
-	if derivedRoot != base.Header.TransactionsRoot {
-		return nil, fmt.Errorf("derived transactionsRoot mismatch: local=%s expected=%s", derivedRoot, base.Header.TransactionsRoot)
-	}
 	transactionRLP, proofNodes, err := buildTransactionTrieAndProof(base.BlockTransactions, base.TxIndex, base.Header.TransactionsRoot)
 	if err != nil {
 		return nil, err
@@ -143,18 +133,6 @@ func verifyTransactionInclusion(
 		return nil, fmt.Errorf("transaction hash mismatch: got %s want %s", tx.Hash(), txHash)
 	}
 	return tx, nil
-}
-
-func decodeTransactionList(hexTransactions []hexutil.Bytes) (types.Transactions, error) {
-	out := make(types.Transactions, len(hexTransactions))
-	for i, txHex := range hexTransactions {
-		tx, _, err := proofutil.DecodeTransaction(txHex)
-		if err != nil {
-			return nil, fmt.Errorf("decode transaction %d: %w", i, err)
-		}
-		out[i] = tx
-	}
-	return out, nil
 }
 
 func collectTransactionSnapshots(ctx context.Context, req TransactionProofSourcesRequest) ([]*transactionSnapshot, error) {

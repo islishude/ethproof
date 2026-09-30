@@ -132,3 +132,11 @@ func fixedBlockHeaderFetcher(block BlockContext) blockHeaderFetcher {
 		return out, nil
 	}
 }
+
+func TestLegacyStateFetcherRejectsNil(t *testing.T) {
+	pkg := mustLoadStateFixture(t)
+	req := VerifySourcesRequest{Sources: []HeaderSource{&fakeHeaderSource{name: "source"}}, MinRPCSources: 1}
+	if err := VerifyStateProofPackageAgainstSourcesWithFetcher(t.Context(), &pkg, req, nil); err == nil || !strings.Contains(err.Error(), "fetcher is nil") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

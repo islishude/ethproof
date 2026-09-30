@@ -13,10 +13,20 @@ import (
 )
 
 func buildReceiptTrieAndProof(receipts []hexutil.Bytes, targetIndex uint64, expectedRoot common.Hash) (hexutil.Bytes, []hexutil.Bytes, error) {
+	for i, encoded := range receipts {
+		if _, _, err := proofutil.DecodeReceipt(encoded); err != nil {
+			return nil, nil, fmt.Errorf("decode receipt %d: %w", i, err)
+		}
+	}
 	return proofutil.BuildIndexTrieProof(receipts, targetIndex, expectedRoot, "receipt")
 }
 
 func buildTransactionTrieAndProof(transactions []hexutil.Bytes, targetIndex uint64, expectedRoot common.Hash) (hexutil.Bytes, []hexutil.Bytes, error) {
+	for i, encoded := range transactions {
+		if _, _, err := proofutil.DecodeTransaction(encoded); err != nil {
+			return nil, nil, fmt.Errorf("decode transaction %d: %w", i, err)
+		}
+	}
 	return proofutil.BuildIndexTrieProof(transactions, targetIndex, expectedRoot, "transaction")
 }
 
@@ -66,6 +76,17 @@ func verifyAccountProof(stateRoot common.Hash, account common.Address, nodes []h
 }
 
 func verifyStorageProof(storageRoot common.Hash, slot common.Hash, nodes []hexutil.Bytes, expectedValue common.Hash) ([]byte, error) {
+	// An authenticated empty storage root proves that every slot is zero. Geth
+	// returns no proof nodes for this case, which trie.VerifyProof cannot consume.
+	if storageRoot == types.EmptyRootHash {
+		if expectedValue != (common.Hash{}) {
+			return nil, fmt.Errorf("storage value mismatch: empty storage trie requires zero value")
+		}
+		if len(nodes) != 0 {
+			return nil, fmt.Errorf("empty storage trie must not contain proof nodes")
+		}
+		return nil, nil
+	}
 	// Storage proofs are verified against keccak(slot), not the raw slot bytes.
 	db, err := proofutil.ProofDBFromHexNodes(nodes)
 	if err != nil {

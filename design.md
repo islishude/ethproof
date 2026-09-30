@@ -201,13 +201,13 @@ slot ⊂ storage trie(account.storageRoot) -> storageRoot ⊂ account
 1. Fetch from every RPC:
    - block header
    - `eth_getProof(account, [slot], block)`
-2. Normalize:
+2. Require the returned header number to match the requested height, then normalize:
    - sort proof node lists
    - extract the account claim as `nonce/balance/storageRoot/codeHash`
    - normalize the storage value into `common.Hash`
 3. Perform local pre-verification:
    - `verifyAccountProof`
-   - `verifyStorageProof`
+   - `verifyStorageProof` (an authenticated empty storage root requires zero values and no storage proof nodes)
 4. After all RPC snapshots agree strictly:
    - generate `StateProofPackage`
 
@@ -239,13 +239,13 @@ receipt index == transaction index
    - the block containing the tx
    - the tx index
    - canonical transaction bytes
-2. Fetch the target receipt.
+2. Reuse the target receipt and block transaction list already collected by the shared transaction loader.
 3. Fetch all block receipts:
    - prefer `eth_getBlockReceipts`
-   - fall back to per-transaction `TransactionReceipt` scanning if unsupported
+   - fall back to per-transaction `TransactionReceipt` scanning if unsupported, with at most 8 concurrent calls per source; reuse the target receipt, preserve index order, and cancel on failure
 4. Validate:
    - the target receipt bytes must equal the bytes at the corresponding position in the block receipt list
-5. Rebuild both the transactions and receipts tries and export proofs for the same index.
+5. Validate canonical entry encodings, then build each trie once, check its root, and export proofs for the same index.
 6. Reduce the target log into `EventClaim{address, topics, data}`.
 
 ### 8.4 Why It Is Designed This Way

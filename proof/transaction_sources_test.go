@@ -122,6 +122,7 @@ func TestFetchTransactionSnapshotFailures(t *testing.T) {
 					GasPrice: common.Big1,
 				})
 				overrideBlock := types.NewBlock(cloneHeader(source.block.Header()), &types.Body{Transactions: txs}, cloneReceiptList(source.blockReceipts), trie.NewStackTrie(nil))
+				source.receiptsByTxHash[txHash].BlockHash = overrideBlock.Hash()
 				_, err := fetchTransactionSnapshot(context.Background(), &overrideBlockAndHeaderSource{
 					overrideBlockReceiptSource: &overrideBlockReceiptSource{
 						fakeReceiptSource: source,

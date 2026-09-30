@@ -21,20 +21,6 @@ func (methodNotFoundRPCError) ErrorCode() int {
 	return -32601
 }
 
-type secondReceiptSource struct {
-	*fakeReceiptSource
-	second *types.Receipt
-	calls  int
-}
-
-func (s *secondReceiptSource) TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error) {
-	s.calls++
-	if s.calls == 1 || s.second == nil {
-		return s.fakeReceiptSource.TransactionReceipt(ctx, txHash)
-	}
-	return cloneReceipt(s.second), nil
-}
-
 func TestFetchReceiptSnapshot(t *testing.T) {
 	source, txHash, logIndex := mustReceiptSource(t)
 
@@ -71,21 +57,21 @@ func TestFetchReceiptSnapshotFailures(t *testing.T) {
 			mutate: func(receipt *types.Receipt) {
 				receipt.BlockHash = common.HexToHash("0xbeef")
 			},
-			want: "target receipt block hash mismatch",
+			want: "fetch block",
 		},
 		{
 			name: "target receipt transaction index mismatch",
 			mutate: func(receipt *types.Receipt) {
 				receipt.TransactionIndex = 0
 			},
-			want: "target receipt transaction index mismatch",
+			want: "block transaction",
 		},
 		{
 			name: "target receipt tx hash mismatch",
 			mutate: func(receipt *types.Receipt) {
 				receipt.TxHash = common.HexToHash("0xbeef")
 			},
-			want: "target receipt tx hash mismatch",
+			want: "receipt tx hash mismatch",
 		},
 		{
 			name: "receipt bytes mismatch",
@@ -113,13 +99,8 @@ func TestFetchReceiptSnapshotFailures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			source, txHash, logIndex := mustReceiptSource(t)
-			second := cloneReceipt(source.receiptsByTxHash[txHash])
-			tt.mutate(second)
-
-			_, err := fetchReceiptSnapshot(context.Background(), &secondReceiptSource{
-				fakeReceiptSource: source,
-				second:            second,
-			}, txHash, logIndex)
+			tt.mutate(source.receiptsByTxHash[txHash])
+			_, err := fetchReceiptSnapshot(context.Background(), source, txHash, logIndex)
 			if err == nil {
 				t.Fatal("expected fetchReceiptSnapshot to fail")
 			}
@@ -134,7 +115,7 @@ func TestFetchBlockReceipts(t *testing.T) {
 	t.Run("direct block receipts path", func(t *testing.T) {
 		source, _, _ := mustReceiptSource(t)
 
-		got, err := fetchBlockReceipts(context.Background(), source, source.block.Hash(), len(source.block.Transactions()))
+		got, err := fetchBlockReceipts(context.Background(), source, source.block.Hash(), source.block.Transactions(), nil)
 		if err != nil {
 			t.Fatalf("fetchBlockReceipts: %v", err)
 		}
@@ -153,7 +134,7 @@ func TestFetchBlockReceipts(t *testing.T) {
 		source, _, _ := mustReceiptSource(t)
 		source.blockReceiptsErr = methodNotFoundRPCError{}
 
-		got, err := fetchBlockReceipts(context.Background(), source, source.block.Hash(), len(source.block.Transactions()))
+		got, err := fetchBlockReceipts(context.Background(), source, source.block.Hash(), source.block.Transactions(), nil)
 		if err != nil {
 			t.Fatalf("fetchBlockReceipts: %v", err)
 		}
@@ -172,7 +153,7 @@ func TestFetchBlockReceipts(t *testing.T) {
 		source, txHash, _ := mustReceiptSource(t)
 		source.receiptsByTxHash[txHash].BlockHash = common.HexToHash("0xbeef")
 
-		_, err := fetchBlockReceiptsByTransactionScan(context.Background(), source, source.block.Hash(), len(source.block.Transactions()))
+		_, err := fetchBlockReceiptsByTransactionScan(context.Background(), source, source.block.Hash(), source.block.Transactions(), nil)
 		if err == nil {
 			t.Fatal("expected fetchBlockReceiptsByTransactionScan to fail")
 		}

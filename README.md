@@ -24,6 +24,8 @@ Generation uses `eth_getProof` for account/storage proofs, but verification is f
 3. verify each `storageProofs[i]` against `account.storageRoot` and `keccak(slot[i])`
 4. normalize each storage value and compare it with the claimed slot value
 
+For an existing account with an empty storage trie, each slot has value zero and an empty storage proof node list. Generation also checks that every returned header matches the requested block height.
+
 ### Receipt / event proof
 
 ```text
@@ -190,7 +192,7 @@ The library now supports two integration styles:
 - URL-driven helpers such as `GenerateStateProof` and `VerifyTransactionProofPackageAgainstRPCs`
 - source-driven helpers such as `GenerateStateProofFromSources` and `VerifyTransactionProofPackageAgainstSources`
 
-The source-driven APIs are intended for embedders that want to control transport, auth, retries, caching, or a forked `go-ethereum` build.
+The source-driven APIs are intended for embedders that want to control transport, auth, retries, caching, or a forked `go-ethereum` build. `ReceiptSource` implementations must support concurrent `TransactionReceipt` calls: when block receipts are unavailable, fallback performs at most 8 calls concurrently per source and cancels on failure.
 
 If your application uses a modified geth module, a normal module replacement is enough:
 

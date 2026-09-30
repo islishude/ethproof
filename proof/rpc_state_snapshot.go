@@ -28,6 +28,9 @@ func fetchStateSnapshot(ctx context.Context, source StateSource, blockNumber uin
 	if err != nil {
 		return nil, err
 	}
+	if headerSnapshot.BlockNumber != blockNumber {
+		return nil, fmt.Errorf("header block number mismatch: got %d want %d", headerSnapshot.BlockNumber, blockNumber)
+	}
 	proof, err := source.GetProof(ctx, account, stateSlotKeys(slots), blockArg)
 	if err != nil {
 		return nil, fmt.Errorf("eth_getProof: %w", err)

@@ -512,9 +512,9 @@ func parseStorageQuery(query string) (storageQuery, error) {
 			out.steps = append(out.steps, storageQueryStep{kind: storageQueryMember, value: name})
 			pos = next
 		case '[':
-			end := strings.IndexByte(query[pos+1:], ']')
-			if end < 0 {
-				return storageQuery{}, fmt.Errorf("unterminated [ in storage query")
+			end, err := storageSubscriptEnd(query[pos+1:])
+			if err != nil {
+				return storageQuery{}, err
 			}
 			token := strings.TrimSpace(query[pos+1 : pos+1+end])
 			if token == "" {
@@ -716,7 +716,7 @@ func encodeMappingKey(typeID string, typeInfo StorageLayoutType, raw string) ([]
 	case typeInfo.Label == "bool":
 		switch raw {
 		case "true":
-			return leftPadBytes([]byte{1}), nil
+			return leftPadBytes([]byte{1})
 		case "false":
 			return make([]byte, 32), nil
 		default:
@@ -751,7 +751,7 @@ func encodeMappingKey(typeID string, typeInfo StorageLayoutType, raw string) ([]
 		if !common.IsHexAddress(raw) {
 			return nil, fmt.Errorf("expected address literal")
 		}
-		return leftPadBytes(common.HexToAddress(raw).Bytes()), nil
+		return leftPadBytes(common.HexToAddress(raw).Bytes())
 	case strings.HasPrefix(typeInfo.Label, "uint"):
 		value, err := parseSignedIntegerLiteral(raw)
 		if err != nil {
@@ -760,20 +760,20 @@ func encodeMappingKey(typeID string, typeInfo StorageLayoutType, raw string) ([]
 		if value.Sign() < 0 {
 			return nil, fmt.Errorf("uint key must be non-negative")
 		}
-		byteLen, err := decimalStringUint64(typeInfo.NumberOfBytes)
+		byteLen, err := mappingIntegerBytes(typeInfo)
 		if err != nil {
 			return nil, err
 		}
 		if value.BitLen() > int(byteLen*8) {
 			return nil, fmt.Errorf("value exceeds %s", typeInfo.Label)
 		}
-		return leftPadBytes(value.Bytes()), nil
+		return leftPadBytes(value.Bytes())
 	case strings.HasPrefix(typeInfo.Label, "int"):
 		value, err := parseSignedIntegerLiteral(raw)
 		if err != nil {
 			return nil, err
 		}
-		byteLen, err := decimalStringUint64(typeInfo.NumberOfBytes)
+		byteLen, err := mappingIntegerBytes(typeInfo)
 		if err != nil {
 			return nil, err
 		}
@@ -839,11 +839,11 @@ func encodeSignedIntKey(value *big.Int, byteLen uint64) ([]byte, error) {
 		return nil, fmt.Errorf("value exceeds int%d", bits)
 	}
 	if value.Sign() >= 0 {
-		return leftPadBytes(value.Bytes()), nil
+		return leftPadBytes(value.Bytes())
 	}
 	modulus := new(big.Int).Lsh(big.NewInt(1), 256)
 	encoded := new(big.Int).Add(modulus, value)
-	return leftPadBytes(encoded.Bytes()), nil
+	return leftPadBytes(encoded.Bytes())
 }
 
 func fixedBytesSize(label string) (int, error) {
@@ -857,14 +857,66 @@ func fixedBytesSize(label string) (int, error) {
 	return size, nil
 }
 
-func leftPadBytes(in []byte) []byte {
+func leftPadBytes(in []byte) ([]byte, error) {
+	if len(in) > 32 {
+		return nil, fmt.Errorf("mapping key exceeds 32 bytes")
+	}
 	out := make([]byte, 32)
 	copy(out[32-len(in):], in)
-	return out
+	return out, nil
 }
 
 func rightPadBytes(in []byte) []byte {
 	out := make([]byte, 32)
 	copy(out, in)
 	return out
+}
+
+// storageSubscriptEnd skips delimiters inside quoted mapping keys. Double
+// quotes use Go string escapes, matching parseStringLiteral; single quotes
+// preserve their contents literally.
+func storageSubscriptEnd(raw string) (int, error) {
+	trimmed := strings.TrimLeftFunc(raw, unicode.IsSpace)
+	if len(trimmed) == 0 {
+		return 0, fmt.Errorf("unterminated storage subscript")
+	}
+	quote := trimmed[0]
+	if quote != '"' && quote != '\'' {
+		if end := strings.IndexByte(raw, ']'); end >= 0 {
+			return end, nil
+		}
+		return 0, fmt.Errorf("unterminated storage subscript")
+	}
+	start := len(raw) - len(trimmed)
+	for i := start + 1; i < len(raw); i++ {
+		if quote == '"' && raw[i] == '\\' {
+			i++
+			continue
+		}
+		if raw[i] != quote {
+			continue
+		}
+		tail := strings.TrimLeftFunc(raw[i+1:], unicode.IsSpace)
+		if len(tail) == 0 || tail[0] != ']' {
+			return 0, fmt.Errorf("expected ] after quoted storage key")
+		}
+		return len(raw) - len(tail), nil
+	}
+	return 0, fmt.Errorf("unterminated quoted storage key")
+}
+
+func mappingIntegerBytes(info StorageLayoutType) (uint64, error) {
+	prefix := "int"
+	if strings.HasPrefix(info.Label, "uint") {
+		prefix = "uint"
+	}
+	bits, err := strconv.ParseUint(strings.TrimPrefix(info.Label, prefix), 10, 64)
+	if err != nil || bits == 0 || bits > 256 || bits%8 != 0 {
+		return 0, fmt.Errorf("invalid integer type %s", info.Label)
+	}
+	size, err := decimalStringUint64(info.NumberOfBytes)
+	if err != nil || size != bits/8 || info.Encoding != "inplace" {
+		return 0, fmt.Errorf("invalid integer width for %s", info.Label)
+	}
+	return size, nil
 }

@@ -34,7 +34,8 @@ type TransactionSource interface {
 	BlockByHash(context.Context, common.Hash) (*types.Block, error)
 }
 
-// ReceiptSource exposes the RPCs needed to build a receipt proof.
+// ReceiptSource exposes the RPCs needed to build a receipt proof. Implementations
+// must support concurrent TransactionReceipt calls during block-receipt fallback.
 type ReceiptSource interface {
 	TransactionSource
 	BlockReceiptsByHash(context.Context, common.Hash) ([]*types.Receipt, error)
