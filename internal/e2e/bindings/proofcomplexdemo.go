@@ -790,6 +790,10 @@ func (_ProofComplexDemo *ProofComplexDemoFilterer) WatchComplexStateUpdated(opts
 				// New log arrived, parse the event and forward to the user
 				event := new(ProofComplexDemoComplexStateUpdated)
 				if err := _ProofComplexDemo.contract.UnpackLog(event, "ComplexStateUpdated", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
