@@ -423,25 +423,10 @@ func (r *storageResolver) slotsOccupiedWithState(typeID string, active map[strin
 	case typeInfo.Encoding == "mapping", typeInfo.Encoding == "dynamic_array", typeInfo.Encoding == "bytes":
 		slots = big.NewInt(1)
 	case isStructType(typeInfo):
-		maxSlots := big.NewInt(0)
-		for _, member := range typeInfo.Members {
-			memberOffset, err := parseStorageSlot(member.Slot)
-			if err != nil {
-				return nil, fmt.Errorf("parse member slot for %s.%s: %w", typeInfo.Label, member.Label, err)
-			}
-			memberSlots, err := r.slotsOccupiedWithState(member.Type, active, depth+1)
-			if err != nil {
-				return nil, err
-			}
-			end := new(big.Int).Add(memberOffset, memberSlots)
-			if end.Cmp(maxSlots) > 0 {
-				maxSlots = end
-			}
+		slots, err = r.structSlotsOccupied(typeInfo, active, depth)
+		if err != nil {
+			return nil, err
 		}
-		if maxSlots.Sign() == 0 {
-			maxSlots = big.NewInt(1)
-		}
-		slots = maxSlots
 	case isStaticArrayType(typeID, typeInfo):
 		length, ok := staticArrayLength(typeID)
 		if !ok {
@@ -471,6 +456,28 @@ func (r *storageResolver) slotsOccupiedWithState(typeID string, active map[strin
 
 	r.cache[typeID] = new(big.Int).Set(slots)
 	return new(big.Int).Set(slots), nil
+}
+
+func (r *storageResolver) structSlotsOccupied(typeInfo StorageLayoutType, active map[string]struct{}, depth int) (*big.Int, error) {
+	maxSlots := big.NewInt(0)
+	for _, member := range typeInfo.Members {
+		memberOffset, err := parseStorageSlot(member.Slot)
+		if err != nil {
+			return nil, fmt.Errorf("parse member slot for %s.%s: %w", typeInfo.Label, member.Label, err)
+		}
+		memberSlots, err := r.slotsOccupiedWithState(member.Type, active, depth+1)
+		if err != nil {
+			return nil, err
+		}
+		end := new(big.Int).Add(memberOffset, memberSlots)
+		if end.Cmp(maxSlots) > 0 {
+			maxSlots = end
+		}
+	}
+	if maxSlots.Sign() == 0 {
+		maxSlots = big.NewInt(1)
+	}
+	return maxSlots, nil
 }
 
 func (r *storageResolver) typeInfo(typeID string) (StorageLayoutType, error) {
