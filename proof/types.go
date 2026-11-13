@@ -2,6 +2,10 @@
 package proof
 
 import (
+	"encoding/json"
+	"time"
+
+	bt "github.com/ethereum/go-ethereum/beacon/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/holiman/uint256"
@@ -99,4 +103,77 @@ type ReceiptExpectations struct {
 	Emitter *common.Address
 	Topics  []common.Hash
 	Data    []byte
+}
+
+// FinalityHeader is a post-Capella Beacon API light-client header. Execution is
+// kept in its original JSON form so the cache preserves all fork-specific fields.
+type FinalityHeader struct {
+	Beacon          bt.Header       `json:"beacon"`
+	Execution       json.RawMessage `json:"execution"`
+	ExecutionBranch []common.Hash   `json:"execution_branch"`
+}
+
+// FinalityBootstrap authenticates the starting sync committee against a trusted root.
+type FinalityBootstrap struct {
+	Header    FinalityHeader              `json:"header"`
+	Committee *bt.SerializedSyncCommittee `json:"current_sync_committee"`
+	Branch    []common.Hash               `json:"current_sync_committee_branch"`
+}
+
+// FinalityUpdate represents both Beacon API update and finality_update data.
+// A zero branch denotes an absent optional proof, as in the consensus specification.
+type FinalityUpdate struct {
+	Attested       FinalityHeader              `json:"attested_header"`
+	Next           *bt.SerializedSyncCommittee `json:"next_sync_committee,omitempty"`
+	NextBranch     []common.Hash               `json:"next_sync_committee_branch,omitempty"`
+	Finalized      *FinalityHeader             `json:"finalized_header,omitempty"`
+	FinalityBranch []common.Hash               `json:"finality_branch"`
+	Aggregate      bt.SyncAggregate            `json:"sync_aggregate"`
+	SignatureSlot  common.Decimal              `json:"signature_slot"`
+}
+
+// FinalityConfig configures online finality authentication, independently of
+// proof inputs and of the execution RPC. Checkpoint providers are trust inputs.
+type FinalityConfig struct {
+	Network        string   `json:"network"`
+	BeaconRPC      string   `json:"beaconRpc"`
+	CheckpointRPCs []string `json:"checkpointRpcs"`
+	CacheDir       string   `json:"cacheDir,omitempty"`
+	MaxAncestry    uint64   `json:"maxAncestry,omitempty"`
+	TimeoutSeconds uint64   `json:"timeoutSeconds,omitempty"`
+}
+
+// FinalityDependencies allows embedders to control transport, persistence and
+// time. Injected sources and stores remain caller-owned. Now must be trustworthy.
+type FinalityDependencies struct {
+	Beacon        BeaconFinalitySource
+	Checkpoints   []CheckpointSource
+	Store         FinalityStore
+	Now           func() time.Time
+	OnTrustChange func(FinalityTrustEvent)
+}
+
+// FinalityCheckpoint is an external trust statement, not a cryptographic proof.
+type FinalityCheckpoint struct {
+	Epoch common.Decimal `json:"epoch"`
+	Root  common.Hash    `json:"root"`
+}
+
+// CheckpointHeader carries a provider's canonical/finalized assertions.
+type CheckpointHeader struct {
+	Header              bt.Header
+	Canonical           bool
+	Finalized           bool
+	ExecutionOptimistic bool
+}
+
+// FinalityTrustEvent records an externally trusted checkpoint acquisition.
+// It contains only opaque source identifiers, never endpoint credentials.
+type FinalityTrustEvent struct {
+	PreviousRoot common.Hash `json:"previousRoot"`
+	Root         common.Hash `json:"root"`
+	Epoch        uint64      `json:"epoch"`
+	Slot         uint64      `json:"slot"`
+	AcceptedAt   time.Time   `json:"acceptedAt"`
+	Sources      []string    `json:"sources"`
 }

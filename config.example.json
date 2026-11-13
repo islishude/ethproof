@@ -24,7 +24,8 @@
   "verify": {
     "state": {
       "proof": "state.json",
-      "rpc": "https://verify-rpc-1.example"
+      "rpc": "https://verify-rpc-1.example",
+      "finality": false
     },
     "receipt": {
       "proof": "receipt.json",
@@ -33,11 +34,24 @@
         "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       ],
       "expectData": "0xdeadbeef",
-      "rpc": "https://verify-rpc-1.example"
+      "rpc": "https://verify-rpc-1.example",
+      "finality": false
     },
     "tx": {
       "proof": "tx.json",
-      "rpc": "https://verify-rpc-1.example"
+      "rpc": "https://verify-rpc-1.example",
+      "finality": false
     }
+  },
+  "finality": {
+    "network": "mainnet",
+    "beaconRpc": "https://beacon-api.example",
+    "checkpointRpcs": [
+      "https://checkpoint-a.example",
+      "https://checkpoint-b.example",
+      "https://checkpoint-c.example"
+    ],
+    "maxAncestry": 8192,
+    "timeoutSeconds": 300
   }
 }

@@ -3,13 +3,19 @@ module github.com/islishude/ethproof
 go 1.26.2
 
 require (
+	github.com/attestantio/go-eth2-client v0.30.1
 	github.com/ethereum/go-ethereum v1.17.10
+	github.com/gofrs/flock v0.13.0
+	github.com/golang/snappy v1.0.1-0.20260716114414-9ae09f520e93
 	github.com/holiman/uint256 v1.3.2
+	github.com/protolambda/bls12-381-util v0.1.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
 	github.com/DataDog/zstd v1.5.7 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
+	github.com/OffchainLabs/go-bitfield v0.0.0-20251031151322-f427d04d8506 // indirect
 	github.com/ProjectZKM/Ziren/crates/go-runtime/zkvm_runtime v0.0.0-20260416073033-7c2071eaa8d4 // indirect
 	github.com/RaduBerinde/axisds v0.1.0 // indirect
 	github.com/RaduBerinde/btreemap v0.0.0-20250419174037-3d62b7205d54 // indirect
@@ -37,6 +43,7 @@ require (
 	github.com/emicklei/dot v1.11.0 // indirect
 	github.com/ethereum/c-kzg-4844/v2 v2.1.8 // indirect
 	github.com/ethereum/go-bigmodexpfix v0.0.0-20250911101455-f9e208c548ab // indirect
+	github.com/fatih/color v1.16.0 // indirect
 	github.com/ferranbt/fastssz v1.0.0 // indirect
 	github.com/fjl/jsonw v0.1.0 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
@@ -45,11 +52,10 @@ require (
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
-	github.com/gofrs/flock v0.13.0 // indirect
+	github.com/goccy/go-yaml v1.9.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/golang/snappy v1.0.1-0.20260716114414-9ae09f520e93 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/grafana/pyroscope-go v1.2.7 // indirect
@@ -63,6 +69,7 @@ require (
 	github.com/influxdata/influxdb1-client v0.0.0-20220302092344-a9ab5670611c // indirect
 	github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
+	github.com/kilic/bls12-381 v0.1.0 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
@@ -81,6 +88,8 @@ require (
 	github.com/pion/logging v0.2.4 // indirect
 	github.com/pion/stun/v3 v3.1.7 // indirect
 	github.com/pion/transport/v4 v4.1.0 // indirect
+	github.com/pk910/dynamic-ssz v1.4.0 // indirect
+	github.com/pk910/hashtree-bindings v0.2.6 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/client_golang v1.16.0 // indirect
 	github.com/prometheus/client_model v0.3.0 // indirect
@@ -111,10 +120,10 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
+	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 tool github.com/ethereum/go-ethereum/cmd/abigen

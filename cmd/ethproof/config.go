@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/islishude/ethproof/proof"
 )
 
 type cliConfig struct {
+	Finality *proof.FinalityConfig  `json:"finality"`
 	Generate generateConfigSections `json:"generate"`
 	Verify   verifyConfigSections   `json:"verify"`
 }
@@ -48,11 +51,13 @@ type generateTransactionConfigFile struct {
 }
 
 type verifyProofConfigFile struct {
-	RPC   string `json:"rpc"`
-	Proof string `json:"proof"`
+	Finality bool   `json:"finality"`
+	RPC      string `json:"rpc"`
+	Proof    string `json:"proof"`
 }
 
 type verifyReceiptConfigFile struct {
+	Finality      bool     `json:"finality"`
 	RPC           string   `json:"rpc"`
 	Proof         string   `json:"proof"`
 	ExpectEmitter string   `json:"expectEmitter"`

@@ -64,3 +64,29 @@ func isNilSource(v any) bool {
 		return false
 	}
 }
+
+// BeaconFinalitySource supplies untrusted light-client data; every response is
+// verified locally. Implementations must honor cancellation.
+type BeaconFinalitySource interface {
+	Bootstrap(context.Context, common.Hash) (FinalityBootstrap, error)
+	Updates(context.Context, uint64, uint64) ([]FinalityUpdate, error)
+	FinalityUpdate(context.Context) (FinalityUpdate, error)
+}
+
+// CheckpointSource is explicitly trusted when acquiring or refreshing a checkpoint.
+// Name is a stable opaque operator identifier, never a credential-bearing URL.
+type CheckpointSource interface {
+	Name() string
+	Genesis(context.Context) (uint64, common.Hash, error)
+	FinalizedCheckpoint(context.Context) (FinalityCheckpoint, error)
+	CheckpointHeader(context.Context, common.Hash) (CheckpointHeader, error)
+}
+
+// FinalityStore holds locally trusted state. Load returns os.ErrNotExist for a
+// new store. Lock must serialize the entire read/verify/write transaction.
+// Implementations must not accept snapshots from untrusted proof producers.
+type FinalityStore interface {
+	Lock(context.Context) (func() error, error)
+	Load(context.Context) ([]byte, error)
+	Save(context.Context, []byte) error
+}

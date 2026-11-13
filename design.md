@@ -17,7 +17,7 @@ The three proof packages and their requests are defined in [proof/types.go](proo
 
 `Generate*Proof(ctx, source, req)` accepts a caller-owned source. `Generate*ProofFromRPC(ctx, rpcURL, req)` opens one connection, delegates to the same generator, and closes it on return. Requests contain only proof inputs.
 
-[Source interfaces](proof/source.go) require only the methods each flow uses. Nil and typed-nil sources are rejected. Implementations honor cancellation; URL-backed errors redact credentials while preserving error unwrapping. There is no cross-node comparison or endpoint fallback.
+[Source interfaces](proof/source.go) require only the methods each flow uses. Nil and typed-nil sources are rejected. Implementations honor cancellation; URL-backed errors redact credentials while preserving error unwrapping. Execution operations do not compare multiple nodes or fall back to another execution endpoint. The separate finality checkpoint-acquisition policy is described below.
 
 `BlockContext` stores the chain ID, block number/hash, parent hash, and state/transaction/receipt roots. `BlockContextFromHeader` validates and projects a header without establishing trust. `BlockAnchor` is a distinct type with the same fields, supplied through a caller's trust mechanism.
 
@@ -54,6 +54,24 @@ Embedded-root verification checks proof nodes, canonical encodings, and claims l
 [Anchor verification](proof/block_anchor.go) additionally compares every block-context field with a caller-trusted anchor. [Online verification](proof/verify_rpc.go) performs local checks and event expectations first, then obtains chain ID and header from the configured source and applies the same comparison.
 
 CLI verification uses only its own configured RPC or explicit flag. A matching header is trusted only to the extent the caller trusts that endpoint; neither RPC verification nor anchor construction establishes consensus finality.
+
+## Finality light client
+
+The optional finality path lives in `proof/`, sharing the existing `BlockAnchor` boundary. It adds no fourth proof type and does not change proof JSON. CLI verification first runs the existing local/RPC checks, then authenticates the block using the separately configured finality client. The library's finality wrappers compose local MPT verification and the same complete block-context checks through the client.
+
+The client separates three responsibilities:
+
+1. **External trust acquisition:** at least three configured checkpoint providers must match built-in genesis parameters and confirm one candidate root. The earliest advertised finalized epoch is selected; equal-epoch conflicting roots fail. Each provider must return matching header bytes and affirmative canonical/finalized flags. Those flags establish an externally accepted trust statement; they are not a locally verified consensus proof.
+2. **Pure consensus verification:** bootstrap binds the committee to that root. Full/finality updates validate header execution inclusion, normalized state branches, time/period ordering, committee identity and BLS signatures. Signing domains use `signature_slot - 1`. Only supermajority updates can learn/rotate committees or advance finalized state. No optimistic state, ranking fallback or force-update is retained. The own update model avoids geth's full synchronizer's additional period restrictions while reusing geth's SSZ/Merkle/BLS primitives.
+3. **Execution anchoring:** extract the execution block hash, hash-check its execution header, and traverse a bounded parent chain to the target. Comparing the resulting complete `BlockAnchor` also binds all three MPT roots. Beacon SSZ transactions roots are never substituted for execution MPT transaction roots.
+
+On-demand calls use a context deadline and serialize cache read/verify/write transactions using an advisory file lock. The cache holds current/next committees, finalized header and execution proof, network/trust-policy fingerprint, and initial/latest acquisition records. It is trusted local state, not an independently verifiable exported proof. Files are written with restricted permissions through a synced temporary file and atomic rename. Credential-bearing URLs enter only the configuration fingerprint, never persisted records.
+
+A cached finalized slot older than 24 hours triggers the configured external trust acquisition again. All checkpoint providers must confirm the prior finalized root too, and the new checkpoint cannot move backward. This is explicitly a fresh trust decision, not a claim that an arbitrarily old committee chain was cryptographically caught up. Cache corruption/configuration mismatch never triggers silent deletion. Failed refresh leaves existing state intact; successfully verified incremental progress may be saved even if the requested target has not yet finalized.
+
+HTTP transports reject redirects, cap responses at 16 MiB, apply request deadlines, and redact transport/body errors while preserving cancellation through error unwrapping. No remote response may change the network parameters or trusted-provider list. Unknown fork versions fail closed. The v1 supported fork set is Capella through Fulu; pre-Capella and Gloas light-client data are deliberately unsupported.
+
+Consensus behavior is based on the Altair light-client sync protocol with Capella/Deneb/Electra amendments. Reference material and immutable test-vector revisions are recorded in `proof/testdata/finality/`. Official mainnet vectors cover execution SSZ inclusion; real Helios response fixtures exercise bootstrap and committee progression, supplemented by signed boundary/negative cases. The default test suite never contacts public nodes.
 
 ## Storage resolution
 
