@@ -14,7 +14,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: stable
+          check-latest: true
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
@@ -26,7 +27,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: stable
       - name: Golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
@@ -39,7 +40,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: stable
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
@@ -52,7 +53,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: stable
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
