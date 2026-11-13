@@ -58,14 +58,16 @@ func (s *testCheckpointSource) CheckpointHeader(_ context.Context, h common.Hash
 }
 
 type testBeaconSource struct {
-	b          FinalityBootstrap
-	updates    []FinalityUpdate
-	final      FinalityUpdate
-	bootCalls  int
-	syncCalls  int
-	finalCalls int
-	updatesErr error
-	fail       error
+	b            FinalityBootstrap
+	updates      []FinalityUpdate
+	final        FinalityUpdate
+	bootCalls    int
+	syncCalls    int
+	finalCalls   int
+	updatesErr   error
+	fail         error
+	afterFinal   func()
+	afterUpdates func()
 }
 
 func (s *testBeaconSource) Bootstrap(context.Context, common.Hash) (FinalityBootstrap, error) {
@@ -74,6 +76,9 @@ func (s *testBeaconSource) Bootstrap(context.Context, common.Hash) (FinalityBoot
 }
 func (s *testBeaconSource) Updates(context.Context, uint64, uint64) ([]FinalityUpdate, error) {
 	s.syncCalls++
+	if s.afterUpdates != nil {
+		s.afterUpdates()
+	}
 	if s.updatesErr != nil {
 		return nil, s.updatesErr
 	}
@@ -81,6 +86,9 @@ func (s *testBeaconSource) Updates(context.Context, uint64, uint64) ([]FinalityU
 }
 func (s *testBeaconSource) FinalityUpdate(context.Context) (FinalityUpdate, error) {
 	s.finalCalls++
+	if s.afterFinal != nil {
+		s.afterFinal()
+	}
 	return s.final, s.fail
 }
 
@@ -312,7 +320,7 @@ func TestFinalityClientIncrementalSync(t *testing.T) {
 	}
 	_, key := finalityCommittee(t, 1)
 	next, _ := finalityCommittee(t, 2)
-	u := finalityTestUpdate(t, 180, 160, next, key, c.network)
+	u := finalityTestUpdate(t, 200, 160, next, key, c.network)
 	finalized := finalityTestHeader(t, 160, h.Hash(), c.network)
 	u.Finalized = &finalized
 	stateRoot, branch := finalityTree(map[uint64]common.Hash{105: finalized.Beacon.Hash(), 55: next.Root()})
@@ -322,6 +330,10 @@ func TestFinalityClientIncrementalSync(t *testing.T) {
 	signFinalityUpdate(t, &u, key, 342, c.network)
 	beacon.updatesErr = errors.New("historical updates unavailable")
 	beacon.final = u
+	// The response is signed in the slot reached while the request is in flight.
+	beacon.afterFinal = func() {
+		c.now = func() time.Time { return time.Unix(int64(c.network.GenesisTime+201*12), 0) }
+	}
 	if _, err = c.FinalizedAnchor(t.Context(), target); err != nil {
 		t.Fatal(err)
 	}
@@ -483,10 +495,57 @@ func TestFinalitySyncFetchesMissingCommittee(t *testing.T) {
 	cache.State = finalityState{Finalized: finalityTestHeader(t, 8000, common.Hash{1}, c.network), Current: first}
 	beacon.updates = []FinalityUpdate{finalityTestUpdate(t, 8100, 8064, second, k1, c.network)}
 	beacon.final = finalityTestUpdate(t, 8250, 8224, nil, k2, c.network)
-	if err = c.sync(t.Context(), cache, 8300); err != nil {
+	c.now = func() time.Time { return time.Unix(int64(c.network.GenesisTime+8300*12), 0) }
+	if err = c.sync(t.Context(), cache); err != nil {
 		t.Fatal(err)
 	}
 	if beacon.syncCalls != 1 || beacon.finalCalls != 1 || cache.State.Finalized.Beacon.Slot != 8224 || *cache.State.Current != *second {
 		t.Fatal("did not authenticate missing committee before advancing finality")
+	}
+}
+
+func TestFinalitySyncRefreshesClockAfterPeriodUpdates(t *testing.T) {
+	for _, future := range []bool{false, true} {
+		t.Run(fmt.Sprintf("future=%t", future), func(t *testing.T) {
+			c, target, beacon, _ := finalityClientFixture(t)
+			if _, err := c.FinalizedAnchor(t.Context(), target); err != nil {
+				t.Fatal(err)
+			}
+			cache, err := c.load(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			first, k1 := finalityCommittee(t, 1)
+			second, k2 := finalityCommittee(t, 2)
+			third, _ := finalityCommittee(t, 3)
+			cache.State = finalityState{Finalized: finalityTestHeader(t, 8000, common.Hash{1}, c.network), Current: first}
+			beacon.final = finalityTestUpdate(t, 8250, 8224, nil, k2, c.network)
+			beacon.updates = []FinalityUpdate{
+				finalityTestUpdate(t, 8100, 8064, second, k1, c.network),
+				finalityTestUpdate(t, 8260, 8256, third, k2, c.network),
+			}
+			slot := uint64(8250)
+			c.now = func() time.Time { return time.Unix(int64(c.network.GenesisTime+slot*12), 0) }
+			beacon.afterFinal = func() { slot = 8251 }
+			beacon.afterUpdates = func() {
+				slot = 8261
+				if future {
+					slot = 8260
+				}
+			}
+			err = c.sync(t.Context(), cache)
+			if future {
+				if err == nil || cache.State.Finalized.Beacon.Slot != 8064 {
+					t.Fatalf("future update advanced finality: slot=%d err=%v", cache.State.Finalized.Beacon.Slot, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cache.State.Finalized.Beacon.Slot != 8256 || beacon.syncCalls != 1 {
+				t.Fatal("did not advance finality after delayed period response")
+			}
+		})
 	}
 }

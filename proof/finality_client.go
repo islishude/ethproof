@@ -232,13 +232,13 @@ func (c *FinalityClient) FinalizedAnchor(ctx context.Context, target BlockContex
 	if !errors.Is(err, ErrNotFinalized) {
 		return anchor, err
 	}
-	if err = c.sync(ctx, cache, now); err != nil {
+	if err = c.sync(ctx, cache); err != nil {
 		return anchor, err
 	}
 	return c.executionAnchor(ctx, cache.State.Finalized, target)
 }
 
-func (c *FinalityClient) sync(ctx context.Context, cache *finalityCache, now uint64) error {
+func (c *FinalityClient) sync(ctx context.Context, cache *finalityCache) error {
 	latest, err := c.beacon.FinalityUpdate(ctx)
 	if err != nil {
 		return err
@@ -251,7 +251,11 @@ func (c *FinalityClient) sync(ctx context.Context, cache *finalityCache, now uin
 	// A latest finality update signed by an already authenticated committee is
 	// sufficient. Fetch historical period updates only to obtain a missing committee.
 	if signaturePeriod == period || (signaturePeriod == period+1 && cache.State.Next != nil) {
-		return c.applyFinalityUpdate(ctx, cache, latest, now)
+		return c.applyFinalityUpdate(ctx, cache, latest)
+	}
+	now, err := c.currentSlot()
+	if err != nil {
+		return err
 	}
 	current := bt.SyncPeriod(now)
 	if current < period {
@@ -276,6 +280,12 @@ func (c *FinalityClient) sync(ctx context.Context, cache *finalityCache, now uin
 		if !cache.State.updateRelevant(update) {
 			continue
 		}
+		// Requests may cross slot boundaries. Validate against the local clock
+		// at processing time, never a timestamp captured before network I/O.
+		now, err = c.currentSlot()
+		if err != nil {
+			return err
+		}
 		changed, e := cache.State.processUpdate(update, now, c.network)
 		if e != nil {
 			return e
@@ -286,13 +296,17 @@ func (c *FinalityClient) sync(ctx context.Context, cache *finalityCache, now uin
 			}
 		}
 	}
-	return c.applyFinalityUpdate(ctx, cache, latest, now)
+	return c.applyFinalityUpdate(ctx, cache, latest)
 }
 
-func (c *FinalityClient) applyFinalityUpdate(ctx context.Context, cache *finalityCache, update FinalityUpdate, now uint64) error {
+func (c *FinalityClient) applyFinalityUpdate(ctx context.Context, cache *finalityCache, update FinalityUpdate) error {
 	// Full period updates may already have finalized this header.
 	if update.Attested.Beacon.Slot <= cache.State.Finalized.Beacon.Slot {
 		return nil
+	}
+	now, err := c.currentSlot()
+	if err != nil {
+		return err
 	}
 	changed, err := cache.State.processUpdate(update, now, c.network)
 	if err != nil {

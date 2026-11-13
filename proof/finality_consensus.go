@@ -52,7 +52,7 @@ func verifyFinalityHeader(h FinalityHeader, network *bp.ChainConfig) (common.Has
 			Excess common.Decimal `json:"excess_blob_gas"`
 		}
 		if err := json.Unmarshal(h.Execution, &blob); err != nil {
-			return common.Hash{}, fmt.Errorf("execution header: %w", err)
+			return common.Hash{}, errors.New("invalid execution header JSON")
 		}
 		if blob.Used != 0 || blob.Excess != 0 {
 			return common.Hash{}, errors.New("nonzero blob fields before Deneb")
@@ -60,7 +60,9 @@ func verifyFinalityHeader(h FinalityHeader, network *bp.ChainConfig) (common.Has
 	}
 	payload, err := bt.ExecutionHeaderFromJSON(fork, h.Execution)
 	if err != nil {
-		return common.Hash{}, fmt.Errorf("execution header: %w", err)
+		// Deferred decoding happens outside the HTTP sanitizer. Parser errors
+		// can quote response data, including credentials echoed by a provider.
+		return common.Hash{}, errors.New("invalid execution header JSON")
 	}
 	if err := verifyFinalityBranch(h.Beacon.BodyRoot, 25, h.ExecutionBranch, common.Hash(payload.PayloadRoot()), false); err != nil {
 		return common.Hash{}, fmt.Errorf("execution branch: %w", err)

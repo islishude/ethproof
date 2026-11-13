@@ -161,6 +161,59 @@ func TestFinalityHTTPCancellationAndRedirect(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestFinalityHTTPRedactsDeferredExecutionErrors(t *testing.T) {
+	for _, test := range []struct {
+		name, field string
+		slot        uint64
+	}{
+		{"capella payload", "block_number", 10},
+		{"capella blob used", "blob_gas_used", 10},
+		{"capella blob excess", "excess_blob_gas", 10},
+		{"deneb payload", "block_number", 128},
+		{"electra payload", "block_number", 8192},
+		{"fulu payload", "block_number", 16384},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c, _, beacon, _ := finalityClientFixture(t)
+			b := beacon.b
+			b.Header = finalityTestHeader(t, test.slot, common.Hash{1}, c.network)
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(b.Header.Execution, &fields); err != nil {
+				t.Fatal(err)
+			}
+			fields[test.field] = json.RawMessage(`"secret-token"`)
+			var err error
+			b.Header.Execution, err = json.Marshal(fields)
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if err := json.NewEncoder(w).Encode(map[string]any{"version": c.network.ForkNameAtSlot(test.slot), "data": b}); err != nil {
+					t.Error(err)
+				}
+			}))
+			defer server.Close()
+			source, err := NewBeaconFinalitySource(server.URL, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoded, err := source.Bootstrap(t.Context(), b.Header.Beacon.Hash())
+			if err != nil {
+				t.Fatalf("outer HTTP decoding failed before deferred validation: %v", err)
+			}
+			_, err = bootstrapFinality(decoded, b.Header.Beacon.Hash(), test.slot+1, c.network)
+			if err == nil {
+				t.Fatal("accepted malformed execution payload")
+			}
+			for cause := err; cause != nil; cause = errors.Unwrap(cause) {
+				if strings.Contains(fmt.Sprintf("%+v", cause), "secret-token") {
+					t.Fatal("deferred execution decoder exposed response data")
+				}
+			}
+		})
+	}
+}
 func TestFinalityHTTPRequiresExplicitProviderFlags(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"data":{"root":"0x0000000000000000000000000000000000000000000000000000000000000000"}}`))
