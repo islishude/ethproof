@@ -162,12 +162,11 @@ func TestVerifyReceiptProofPackage(t *testing.T) {
 	})
 
 	t.Run("substituted transaction identity fails", func(t *testing.T) {
-		req, _, _ := testReceiptProofSourcesRequest(t)
-		pkg, err := GenerateReceiptProofFromSources(t.Context(), req)
+		req, source := testReceiptRequest(t)
+		pkg, err := GenerateReceiptProof(t.Context(), source, req)
 		if err != nil {
-			t.Fatalf("GenerateReceiptProofFromSources: %v", err)
+			t.Fatalf("GenerateReceiptProof: %v", err)
 		}
-		source := req.Sources[0].(*fakeReceiptSource)
 		otherTx := source.block.Transactions()[0]
 		otherRLP, err := proofutil.EncodeTransaction(otherTx)
 		if err != nil {

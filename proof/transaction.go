@@ -12,52 +12,18 @@ import (
 	"github.com/islishude/ethproof/internal/proofutil"
 )
 
-type transactionSnapshotCollector struct {
-	txHash common.Hash
-}
-
-// GenerateTransactionProof fetches the target transaction data from every RPC source, requires
-// normalized agreement, rebuilds the transactions trie locally, and returns the inclusion proof package.
-func GenerateTransactionProof(ctx context.Context, req TransactionProofRequest) (*TransactionProofPackage, error) {
-	sourceSet, err := openNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources)
+// GenerateTransactionProof builds a transaction proof from one caller-owned source.
+func GenerateTransactionProof(ctx context.Context, source TransactionSource, req TransactionProofRequest) (*TransactionProofPackage, error) {
+	if err := validateSource(ctx, source); err != nil {
+		return nil, err
+	}
+	data, err := fetchTransactionData(ctx, source, req.TxHash)
 	if err != nil {
 		return nil, err
 	}
-	defer sourceSet.Close()
-
-	return GenerateTransactionProofFromSources(ctx, TransactionProofSourcesRequest{
-		Sources:       sourceSet.TransactionSources(),
-		MinRPCSources: req.MinRPCSources,
-		TxHash:        req.TxHash,
-	})
-}
-
-// GenerateTransactionProofFromSources fetches the target transaction data from every source,
-// requires normalized agreement, rebuilds the transactions trie locally, and returns the inclusion proof package.
-func GenerateTransactionProofFromSources(ctx context.Context, req TransactionProofSourcesRequest) (*TransactionProofPackage, error) {
-	sourceNames, err := normalizeSourceNames(req.Sources, req.MinRPCSources)
+	pkg, err := data.prove(req.TxHash)
 	if err != nil {
 		return nil, err
-	}
-	snapshots, err := collectTransactionSnapshots(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	base, consensus, err := consensusForTransactionSnapshots(sourceNames, snapshots)
-	if err != nil {
-		return nil, err
-	}
-
-	transactionRLP, proofNodes, err := buildTransactionTrieAndProof(base.BlockTransactions, base.TxIndex, base.Header.TransactionsRoot)
-	if err != nil {
-		return nil, err
-	}
-	pkg := &TransactionProofPackage{
-		Block:          buildBlockContext(base.Header, consensus),
-		TxHash:         base.TxHash,
-		TxIndex:        base.TxIndex,
-		TransactionRLP: transactionRLP,
-		ProofNodes:     proofNodes,
 	}
 	if err := VerifyTransactionProofPackageAgainstEmbeddedRoots(pkg); err != nil {
 		return nil, fmt.Errorf("verify generated transaction proof package: %w", err)
@@ -80,10 +46,7 @@ func VerifyTransactionProofPackageAgainstEmbeddedRoots(pkg *TransactionProofPack
 	if pkg == nil {
 		return fmt.Errorf("transaction proof package is nil")
 	}
-	if _, err := blockSnapshotHeaderFromContext(pkg.Block); err != nil {
-		return err
-	}
-	if err := validateSourceConsensusMetadata(pkg.Block.SourceConsensus); err != nil {
+	if err := validateBlockContext(pkg.Block); err != nil {
 		return err
 	}
 	_, err := verifyTransactionInclusion(pkg.Block.TransactionsRoot, pkg.TxIndex, pkg.TransactionRLP, pkg.ProofNodes, pkg.TxHash)
@@ -133,13 +96,4 @@ func verifyTransactionInclusion(
 		return nil, fmt.Errorf("transaction hash mismatch: got %s want %s", tx.Hash(), txHash)
 	}
 	return tx, nil
-}
-
-func collectTransactionSnapshots(ctx context.Context, req TransactionProofSourcesRequest) ([]*transactionSnapshot, error) {
-	collector := transactionSnapshotCollector{txHash: req.TxHash}
-	return collectFromSources(ctx, req.Sources, collector.fetch)
-}
-
-func (c transactionSnapshotCollector) fetch(ctx context.Context, source TransactionSource) (*transactionSnapshot, error) {
-	return fetchTransactionSnapshot(ctx, source, c.txHash)
 }

@@ -11,25 +11,32 @@ import (
 	"github.com/islishude/ethproof/internal/proofutil"
 )
 
-func fetchStateSnapshot(ctx context.Context, source StateSource, blockNumber uint64, account common.Address, slots []common.Hash) (*accountSnapshot, error) {
+// GenerateStateProof builds a state proof from one caller-owned source.
+func GenerateStateProof(ctx context.Context, source StateSource, req StateProofRequest) (*StateProofPackage, error) {
+	if err := validateSource(ctx, source); err != nil {
+		return nil, err
+	}
+	if err := validateStateSlots(req.Slots); err != nil {
+		return nil, err
+	}
+	blockNumber, account, slots := req.BlockNumber, req.Account, req.Slots
 	chainID, err := source.ChainID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("chain id: %w", err)
 	}
 
-	// Fetch both the block header and eth_getProof payload at the requested block so the snapshot
-	// can later be compared across RPCs without any additional interpretation.
+	// Fetch the block header and eth_getProof payload at the requested block.
 	blockArg := new(big.Int).SetUint64(blockNumber)
 	header, err := source.HeaderByNumber(ctx, blockArg)
 	if err != nil {
 		return nil, fmt.Errorf("fetch header: %w", err)
 	}
-	headerSnapshot, err := blockSnapshotHeaderFromHeader(chainID, header)
+	block, err := BlockContextFromHeader(chainID, header)
 	if err != nil {
 		return nil, err
 	}
-	if headerSnapshot.BlockNumber != blockNumber {
-		return nil, fmt.Errorf("header block number mismatch: got %d want %d", headerSnapshot.BlockNumber, blockNumber)
+	if block.BlockNumber != blockNumber {
+		return nil, fmt.Errorf("header block number mismatch: got %d want %d", block.BlockNumber, blockNumber)
 	}
 	proof, err := source.GetProof(ctx, account, stateSlotKeys(slots), blockArg)
 	if err != nil {
@@ -45,8 +52,7 @@ func fetchStateSnapshot(ctx context.Context, source StateSource, blockNumber uin
 		return nil, fmt.Errorf("eth_getProof returned invalid account balance")
 	}
 
-	// Normalize proof node ordering before consensus comparison. Different RPCs can return
-	// equivalent node sets in different orders.
+	// Normalize proof node ordering for deterministic proof output.
 	accountProof, err := proofutil.NormalizeHexNodeList(proof.AccountProof)
 	if err != nil {
 		return nil, err
@@ -58,8 +64,7 @@ func fetchStateSnapshot(ctx context.Context, source StateSource, blockNumber uin
 		CodeHash:    proof.CodeHash,
 	}
 
-	// Re-verify the source response locally before accepting it into consensus. This prevents a
-	// source from contributing malformed proof data that merely "matches" another malformed source.
+	// Verify the account response locally against the fetched state root.
 	accountRLP, err := verifyAccountProof(header.Root, account, accountProof, accountClaim)
 	if err != nil {
 		return nil, fmt.Errorf("verify source account proof: %w", err)
@@ -69,14 +74,18 @@ func fetchStateSnapshot(ctx context.Context, source StateSource, blockNumber uin
 		return nil, fmt.Errorf("normalize source storage proofs: %w", err)
 	}
 
-	return &accountSnapshot{
-		Header:        headerSnapshot,
-		Account:       account,
-		AccountRLP:    proofutil.CanonicalBytes(accountRLP),
-		AccountProof:  accountProof,
-		AccountClaim:  accountClaim,
-		StorageProofs: storageProofs,
-	}, nil
+	pkg := &StateProofPackage{
+		Block:             block,
+		Account:           account,
+		AccountRLP:        proofutil.CanonicalBytes(accountRLP),
+		AccountProofNodes: accountProof,
+		AccountClaim:      accountClaim,
+		StorageProofs:     storageProofs,
+	}
+	if err := VerifyStateProofPackageAgainstEmbeddedRoots(pkg); err != nil {
+		return nil, fmt.Errorf("verify generated state proof package: %w", err)
+	}
+	return pkg, nil
 }
 
 func stateSlotKeys(slots []common.Hash) []string {

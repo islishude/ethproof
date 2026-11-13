@@ -5,19 +5,19 @@ import (
 )
 
 type verifyStateConfig struct {
-	ProofPath     string
-	VerifyRequest proof.VerifyRPCRequest
+	ProofPath string
+	RPCURL    string
 }
 
 type verifyReceiptConfig struct {
-	ProofPath     string
-	Expectations  *proof.ReceiptExpectations
-	VerifyRequest proof.VerifyRPCRequest
+	ProofPath    string
+	Expectations *proof.ReceiptExpectations
+	RPCURL       string
 }
 
 type verifyTransactionConfig struct {
-	ProofPath     string
-	VerifyRequest proof.VerifyRPCRequest
+	ProofPath string
+	RPCURL    string
 }
 
 func parseVerifyStateArgs(args []string) (verifyStateConfig, error) {
@@ -28,16 +28,15 @@ func parseVerifyStateArgs(args []string) (verifyStateConfig, error) {
 }
 
 type verifyProofConfig struct {
-	ProofPath     string
-	VerifyRequest proof.VerifyRPCRequest
+	ProofPath string
+	RPCURL    string
 }
 
 func parseVerifyProofArgs(args []string, kind string, selectSection func(*cliConfig) *verifyProofConfigFile) (verifyProofConfig, error) {
 	fs := newFlagSet("verify " + kind)
 	configPath := fs.String("config", "", "config json file")
-	var rpcURLs multiStringFlag
-	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
-	minRPCs := fs.Int("min-rpcs", proof.DefaultMinRPCSources, "minimum distinct RPC sources required")
+	var rpcURL singleRPCFlag
+	fs.Var(&rpcURL, "rpc", "Ethereum RPC URL")
 	proofPath := fs.String("proof", kind+".json", "proof json file")
 
 	parseCtx, err := prepareParse(fs, args, configPath, "parse verify "+kind+" args")
@@ -53,12 +52,12 @@ func parseVerifyProofArgs(args []string, kind string, selectSection func(*cliCon
 	cfg := verifyProofConfig{
 		ProofPath: mergeString(parseCtx.seen, "proof", *proofPath, "", kind+".json"),
 	}
-	cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, nil, nil)
+	cfg.RPCURL = mergeString(parseCtx.seen, "rpc", rpcURL.value, "", "")
 	if section != nil {
 		cfg.ProofPath = mergeString(parseCtx.seen, "proof", *proofPath, section.Proof, kind+".json")
-		cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, section.RPCs, section.MinRPCs)
+		cfg.RPCURL = mergeString(parseCtx.seen, "rpc", rpcURL.value, section.RPC, "")
 	}
-	if err := validateRPCInputs(cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources, "verify "+kind+" requires independent RPCs via --rpc or verify."+kind+".rpcs in --config"); err != nil {
+	if err := validateRPCInput(cfg.RPCURL, "verify "+kind+" requires a separately configured RPC via --rpc or verify."+kind+".rpc in --config"); err != nil {
 		return verifyProofConfig{}, err
 	}
 	return cfg, nil
@@ -67,9 +66,8 @@ func parseVerifyProofArgs(args []string, kind string, selectSection func(*cliCon
 func parseVerifyReceiptArgs(args []string) (verifyReceiptConfig, error) {
 	fs := newFlagSet("verify receipt")
 	configPath := fs.String("config", "", "config json file")
-	var rpcURLs multiStringFlag
-	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
-	minRPCs := fs.Int("min-rpcs", proof.DefaultMinRPCSources, "minimum distinct RPC sources required")
+	var rpcURL singleRPCFlag
+	fs.Var(&rpcURL, "rpc", "Ethereum RPC URL")
 	proofPath := fs.String("proof", "receipt.json", "proof json file")
 	expectEmitterHex := fs.String("expect-emitter", "", "optional expected 20-byte 0x-prefixed emitter address")
 	expectDataHex := fs.String("expect-data", "", "optional expected even-length 0x-prefixed event data")
@@ -89,18 +87,18 @@ func parseVerifyReceiptArgs(args []string) (verifyReceiptConfig, error) {
 	cfg := verifyReceiptConfig{
 		ProofPath: mergeString(parseCtx.seen, "proof", *proofPath, "", "receipt.json"),
 	}
-	cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, nil, nil)
+	cfg.RPCURL = mergeString(parseCtx.seen, "rpc", rpcURL.value, "", "")
 	rawEmitter := mergeString(parseCtx.seen, "expect-emitter", *expectEmitterHex, "", "")
 	rawData := mergeString(parseCtx.seen, "expect-data", *expectDataHex, "", "")
 	rawTopics := mergeStringSlice(parseCtx.seen, "expect-topic", topics, nil)
 	if section != nil {
 		cfg.ProofPath = mergeString(parseCtx.seen, "proof", *proofPath, section.Proof, "receipt.json")
-		cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, section.RPCs, section.MinRPCs)
+		cfg.RPCURL = mergeString(parseCtx.seen, "rpc", rpcURL.value, section.RPC, "")
 		rawEmitter = mergeString(parseCtx.seen, "expect-emitter", *expectEmitterHex, section.ExpectEmitter, "")
 		rawData = mergeString(parseCtx.seen, "expect-data", *expectDataHex, section.ExpectData, "")
 		rawTopics = mergeStringSlice(parseCtx.seen, "expect-topic", topics, section.ExpectTopics)
 	}
-	if err := validateRPCInputs(cfg.VerifyRequest.RPCURLs, cfg.VerifyRequest.MinRPCSources, "verify receipt requires independent RPCs via --rpc or verify.receipt.rpcs in --config"); err != nil {
+	if err := validateRPCInput(cfg.RPCURL, "verify receipt requires a separately configured RPC via --rpc or verify.receipt.rpc in --config"); err != nil {
 		return verifyReceiptConfig{}, err
 	}
 	expect, err := buildReceiptExpectations(rawEmitter, rawData, rawTopics)

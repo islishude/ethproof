@@ -46,11 +46,11 @@ func TestStateProofEmptyStorageTrie(t *testing.T) {
 	}
 
 	source := &fakeStateSource{
-		fakeHeaderSource: &fakeHeaderSource{name: "empty-storage", chainID: big.NewInt(1), header: &types.Header{Number: big.NewInt(0), Root: pkg.Block.StateRoot}},
+		fakeHeaderSource: &fakeHeaderSource{chainID: big.NewInt(1), header: &types.Header{Number: big.NewInt(0), Root: pkg.Block.StateRoot}},
 		expectedAccount:  account, expectedSlots: []common.Hash{pkg.StorageProofs[0].Slot},
 		proof: &gethclient.AccountResult{Address: account, AccountProof: encodeProofNodes(pkg.AccountProofNodes), Balance: big.NewInt(1), StorageHash: types.EmptyRootHash, CodeHash: types.EmptyCodeHash, StorageProof: storageResultsFromFixture(pkg)},
 	}
-	if _, err := GenerateStateProofFromSources(t.Context(), StateProofSourcesRequest{Sources: []StateSource{source}, MinRPCSources: 1, Account: account, Slots: source.expectedSlots}); err != nil {
+	if _, err := GenerateStateProof(t.Context(), source, StateProofRequest{Account: account, Slots: source.expectedSlots}); err != nil {
 		t.Fatalf("generate empty storage proof: %v", err)
 	}
 	pkg.StorageProofs[0].Value = common.HexToHash("0x1")
@@ -62,12 +62,10 @@ func TestStateProofEmptyStorageTrie(t *testing.T) {
 	}
 }
 
-func TestStateSourcesRejectWrongRequestedHeight(t *testing.T) {
-	req, _, _ := testStateProofSourcesRequest(t)
-	for _, source := range req.Sources {
-		source.(*fakeStateSource).header.Number = big.NewInt(702)
-	}
-	if pkg, err := GenerateStateProofFromSources(t.Context(), req); err == nil {
+func TestStateSourceRejectWrongRequestedHeight(t *testing.T) {
+	req, source := testStateRequest(t)
+	source.header.Number = big.NewInt(702)
+	if pkg, err := GenerateStateProof(t.Context(), source, req); err == nil {
 		t.Fatalf("requested %d, accepted %d", req.BlockNumber, pkg.Block.BlockNumber)
 	}
 }

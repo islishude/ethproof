@@ -3,7 +3,6 @@ package proof
 import (
 	"bytes"
 	"context"
-	"slices"
 	"strings"
 	"testing"
 
@@ -21,25 +20,25 @@ func (methodNotFoundRPCError) ErrorCode() int {
 	return -32601
 }
 
-func TestFetchReceiptSnapshot(t *testing.T) {
+func TestGenerateReceiptProofResponse(t *testing.T) {
 	source, txHash, logIndex := mustReceiptSource(t)
 
-	snapshot, err := fetchReceiptSnapshot(context.Background(), source, txHash, logIndex)
+	pkg, err := GenerateReceiptProof(context.Background(), source, ReceiptProofRequest{TxHash: txHash, LogIndex: logIndex})
 	if err != nil {
-		t.Fatalf("fetchReceiptSnapshot: %v", err)
+		t.Fatalf("GenerateReceiptProof: %v", err)
 	}
-	if snapshot.TxHash != txHash {
-		t.Fatalf("unexpected tx hash: got %s want %s", snapshot.TxHash, txHash)
+	if pkg.TxHash != txHash {
+		t.Fatalf("unexpected tx hash: got %s want %s", pkg.TxHash, txHash)
 	}
-	if snapshot.LogIndex != logIndex {
-		t.Fatalf("unexpected log index: got %d want %d", snapshot.LogIndex, logIndex)
+	if pkg.LogIndex != logIndex {
+		t.Fatalf("unexpected log index: got %d want %d", pkg.LogIndex, logIndex)
 	}
-	if got, want := len(snapshot.BlockReceipts), len(source.blockReceipts); got != want {
-		t.Fatalf("unexpected block receipt count: got %d want %d", got, want)
+	if err := VerifyReceiptProofPackageAgainstEmbeddedRoots(pkg); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestFetchReceiptSnapshotFailures(t *testing.T) {
+func TestGenerateReceiptProofResponseFailures(t *testing.T) {
 	tests := []struct {
 		name   string
 		mutate func(*types.Receipt)
@@ -100,9 +99,9 @@ func TestFetchReceiptSnapshotFailures(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			source, txHash, logIndex := mustReceiptSource(t)
 			tt.mutate(source.receiptsByTxHash[txHash])
-			_, err := fetchReceiptSnapshot(context.Background(), source, txHash, logIndex)
+			_, err := GenerateReceiptProof(context.Background(), source, ReceiptProofRequest{TxHash: txHash, LogIndex: logIndex})
 			if err == nil {
-				t.Fatal("expected fetchReceiptSnapshot to fail")
+				t.Fatal("expected GenerateReceiptProof to fail")
 			}
 			if !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("unexpected error: %v", err)
@@ -163,15 +162,12 @@ func TestFetchBlockReceipts(t *testing.T) {
 	})
 }
 
-func TestGenerateReceiptProofFromSources(t *testing.T) {
-	req, verifyReq, wantNames := testReceiptProofSourcesRequest(t)
+func TestGenerateReceiptProof(t *testing.T) {
+	req, source := testReceiptRequest(t)
 
-	pkg, err := GenerateReceiptProofFromSources(context.Background(), req)
+	pkg, err := GenerateReceiptProof(context.Background(), source, req)
 	if err != nil {
-		t.Fatalf("GenerateReceiptProofFromSources: %v", err)
-	}
-	if got := pkg.Block.SourceConsensus.RPCs; !slices.Equal(got, wantNames) {
-		t.Fatalf("unexpected source names: got %v want %v", got, wantNames)
+		t.Fatalf("GenerateReceiptProof: %v", err)
 	}
 	expect := &ReceiptExpectations{
 		Emitter: &pkg.Event.Address,
@@ -181,18 +177,14 @@ func TestGenerateReceiptProofFromSources(t *testing.T) {
 	if err := VerifyReceiptProofPackageWithExpectations(pkg, expect); err != nil {
 		t.Fatalf("VerifyReceiptProofPackageWithExpectations: %v", err)
 	}
-	if err := VerifyReceiptProofPackageWithExpectationsAgainstSources(context.Background(), pkg, expect, verifyReq); err != nil {
-		t.Fatalf("VerifyReceiptProofPackageWithExpectationsAgainstSources: %v", err)
+	if err := VerifyReceiptProofPackageWithExpectationsAgainstSource(context.Background(), pkg, expect, source); err != nil {
+		t.Fatalf("VerifyReceiptProofPackageWithExpectationsAgainstSource: %v", err)
 	}
 }
 
 func mustReceiptSource(t *testing.T) (*fakeReceiptSource, common.Hash, uint64) {
 	t.Helper()
 
-	sources, txHash, logIndex, _ := testReceiptSourceSet(t)
-	source, ok := sources[0].(*fakeReceiptSource)
-	if !ok {
-		t.Fatal("expected fakeReceiptSource")
-	}
+	source, txHash, logIndex := testReceiptSource(t)
 	return source, txHash, logIndex
 }

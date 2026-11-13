@@ -11,18 +11,19 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
 	"github.com/islishude/ethproof/internal/proofutil"
+	"github.com/islishude/ethproof/proof"
 )
 
-func buildOfflineTransactionReceiptFixture() (blockSnapshotHeader, types.Transactions, types.Receipts, SourceConsensus, error) {
+func buildOfflineTransactionReceiptFixture() (proof.BlockContext, types.Transactions, types.Receipts, error) {
 	chainID := big.NewInt(1)
 	signer := types.LatestSignerForChainID(chainID)
-	keyA, err := fixedPrivateKey("59c6995e998f97a5a0044966f094538e11d1b5c5f7e36c7f5d4c1a1f5f1d5edb")
+	keyA, err := crypto.HexToECDSA("59c6995e998f97a5a0044966f094538e11d1b5c5f7e36c7f5d4c1a1f5f1d5edb")
 	if err != nil {
-		return blockSnapshotHeader{}, nil, nil, SourceConsensus{}, err
+		return proof.BlockContext{}, nil, nil, err
 	}
-	keyB, err := fixedPrivateKey("8b3a350cf5c34c9194ca3c4c1b4d1a1e0e9b9e2c0f45b6d0c2b5e2d4a5f6c7d8")
+	keyB, err := crypto.HexToECDSA("8b3a350cf5c34c9194ca3c4c1b4d1a1e0e9b9e2c0f45b6d0c2b5e2d4a5f6c7d8")
 	if err != nil {
-		return blockSnapshotHeader{}, nil, nil, SourceConsensus{}, err
+		return proof.BlockContext{}, nil, nil, err
 	}
 
 	recipientA := common.HexToAddress("0x1000000000000000000000000000000000000001")
@@ -38,7 +39,7 @@ func buildOfflineTransactionReceiptFixture() (blockSnapshotHeader, types.Transac
 		Data:      common.FromHex("0xabcdef01"),
 	}), signer, keyA)
 	if err != nil {
-		return blockSnapshotHeader{}, nil, nil, SourceConsensus{}, fmt.Errorf("sign tx0: %w", err)
+		return proof.BlockContext{}, nil, nil, fmt.Errorf("sign tx0: %w", err)
 	}
 	tx1, err := types.SignTx(types.NewTx(&types.LegacyTx{
 		Nonce:    11,
@@ -49,7 +50,7 @@ func buildOfflineTransactionReceiptFixture() (blockSnapshotHeader, types.Transac
 		Data:     common.FromHex("0x010203"),
 	}), signer, keyB)
 	if err != nil {
-		return blockSnapshotHeader{}, nil, nil, SourceConsensus{}, fmt.Errorf("sign tx1: %w", err)
+		return proof.BlockContext{}, nil, nil, fmt.Errorf("sign tx1: %w", err)
 	}
 
 	txs := types.Transactions{tx0, tx1}
@@ -84,7 +85,7 @@ func buildOfflineTransactionReceiptFixture() (blockSnapshotHeader, types.Transac
 	receipt1.Bloom = types.CreateBloom(receipt1)
 	receipts := types.Receipts{receipt0, receipt1}
 
-	header := blockSnapshotHeader{
+	header := proof.BlockContext{
 		ChainID:          uint256.MustFromBig(chainID),
 		BlockNumber:      18_765_432,
 		ParentHash:       crypto.Keccak256Hash([]byte("offline-parent-transaction-receipt")),
@@ -110,28 +111,11 @@ func buildOfflineTransactionReceiptFixture() (blockSnapshotHeader, types.Transac
 	}
 	header.BlockHash = ethHeader.Hash()
 
-	blockTransactions := make([]hexutil.Bytes, len(txs))
-	for i, tx := range txs {
-		encoded, encErr := proofutil.EncodeTransaction(tx)
-		if encErr != nil {
-			return blockSnapshotHeader{}, nil, nil, SourceConsensus{}, encErr
-		}
-		blockTransactions[i] = encoded
-	}
-	targetTransactionDigest, err := offlineTransactionDigests(header, blockTransactions, blockTransactions[0])
-	if err != nil {
-		return blockSnapshotHeader{}, nil, nil, SourceConsensus{}, err
-	}
-	consensus := sourceConsensus(
-		"offline-fixture",
-		nil,
-		targetTransactionDigest,
-		offlineTransactionFields(tx0.Hash(), 0, header),
-	)
-	return header, txs, receipts, consensus, nil
+	return header, txs, receipts, nil
 }
 
-func buildOfflineReceiptFixture(header blockSnapshotHeader, txs types.Transactions, receipts types.Receipts, txIndex uint64) (*ReceiptProofPackage, error) {
+func buildOfflineReceiptFixture(header proof.BlockContext, txs types.Transactions, receipts types.Receipts, txIndex uint64) (*ReceiptProofPackage, error) {
+	header.ChainID = proofutil.CloneChainID(header.ChainID)
 	blockTransactions := make([]hexutil.Bytes, len(txs))
 	blockReceipts := make([]hexutil.Bytes, len(receipts))
 	for i := range txs {
@@ -155,32 +139,8 @@ func buildOfflineReceiptFixture(header blockSnapshotHeader, txs types.Transactio
 		return nil, err
 	}
 	log := receipts[txIndex].Logs[0]
-	digests, err := canonicalOfflineReceiptDigests(header, blockTransactions, blockReceipts, blockTransactions[txIndex], receiptRLP, log)
-	if err != nil {
-		return nil, err
-	}
-	receiptConsensus := sourceConsensus(
-		"offline-fixture",
-		nil,
-		digests,
-		[]ConsensusField{
-			{Name: "chainId", Value: proofutil.ChainIDString(header.ChainID), Consistent: true},
-			{Name: "blockNumber", Value: fmt.Sprintf("%d", header.BlockNumber), Consistent: true},
-			{Name: "blockHash", Value: header.BlockHash.Hex(), Consistent: true},
-			{Name: "parentHash", Value: header.ParentHash.Hex(), Consistent: true},
-			{Name: "stateRoot", Value: header.StateRoot.Hex(), Consistent: true},
-			{Name: "transactionsRoot", Value: header.TransactionsRoot.Hex(), Consistent: true},
-			{Name: "receiptsRoot", Value: header.ReceiptsRoot.Hex(), Consistent: true},
-			{Name: "txHash", Value: txs[txIndex].Hash().Hex(), Consistent: true},
-			{Name: "txIndex", Value: fmt.Sprintf("%d", txIndex), Consistent: true},
-			{Name: "logIndex", Value: "0", Consistent: true},
-			{Name: "event.address", Value: log.Address.Hex(), Consistent: true},
-			{Name: "event.topics", Value: fmt.Sprintf("%v", log.Topics), Consistent: true},
-			{Name: "event.data", Value: hexutil.Encode(log.Data), Consistent: true},
-		},
-	)
 	return &ReceiptProofPackage{
-		Block:                 buildBlockContext(header, receiptConsensus),
+		Block:                 header,
 		TxHash:                txs[txIndex].Hash(),
 		TxIndex:               txIndex,
 		LogIndex:              0,
@@ -196,7 +156,8 @@ func buildOfflineReceiptFixture(header blockSnapshotHeader, txs types.Transactio
 	}, nil
 }
 
-func transactionSnapshotFromBlock(header blockSnapshotHeader, txs types.Transactions, txIndex uint64, consensus SourceConsensus) (*TransactionProofPackage, error) {
+func buildOfflineTransactionFixture(header proof.BlockContext, txs types.Transactions, txIndex uint64) (*TransactionProofPackage, error) {
+	header.ChainID = proofutil.CloneChainID(header.ChainID)
 	if int(txIndex) >= len(txs) {
 		return nil, fmt.Errorf("transaction index %d out of range", txIndex)
 	}
@@ -217,7 +178,7 @@ func transactionSnapshotFromBlock(header blockSnapshotHeader, txs types.Transact
 		return nil, err
 	}
 	return &TransactionProofPackage{
-		Block:          buildBlockContext(header, consensus),
+		Block:          header,
 		TxHash:         targetTx.Hash(),
 		TxIndex:        txIndex,
 		TransactionRLP: transactionRLP,

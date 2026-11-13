@@ -41,7 +41,7 @@ func TestReceiptGenerationReusesFetchedData(t *testing.T) {
 				base.blockReceiptsErr = methodNotFoundRPCError{}
 			}
 			source := &countingReceiptSource{fakeReceiptSource: base, receipts: make(map[common.Hash]int)}
-			pkg, err := GenerateReceiptProofFromSources(t.Context(), ReceiptProofSourcesRequest{Sources: []ReceiptSource{source}, MinRPCSources: 1, TxHash: hash, LogIndex: logIndex})
+			pkg, err := GenerateReceiptProof(t.Context(), source, ReceiptProofRequest{TxHash: hash, LogIndex: logIndex})
 			if err != nil {
 				t.Fatal(err)
 			}

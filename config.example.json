@@ -1,73 +1,43 @@
 {
   "generate": {
     "state": {
-      "rpcs": [
-        "https://rpc-1.example",
-        "https://rpc-2.example",
-        "https://rpc-3.example"
-      ],
-      "minRpcs": 3,
       "block": 22000000,
       "account": "0x1111111111111111111111111111111111111111",
       "slots": [
         "0x0000000000000000000000000000000000000000000000000000000000000000"
       ],
-      "out": "state.json"
+      "out": "state.json",
+      "rpc": "https://rpc-1.example"
     },
     "receipt": {
-      "rpcs": [
-        "https://rpc-1.example",
-        "https://rpc-2.example",
-        "https://rpc-3.example"
-      ],
-      "minRpcs": 3,
       "tx": "0x2222222222222222222222222222222222222222222222222222222222222222",
       "logIndex": 0,
-      "out": "receipt.json"
+      "out": "receipt.json",
+      "rpc": "https://rpc-1.example"
     },
     "tx": {
-      "rpcs": [
-        "https://rpc-1.example",
-        "https://rpc-2.example",
-        "https://rpc-3.example"
-      ],
-      "minRpcs": 3,
       "tx": "0x3333333333333333333333333333333333333333333333333333333333333333",
-      "out": "tx.json"
+      "out": "tx.json",
+      "rpc": "https://rpc-1.example"
     }
   },
   "verify": {
     "state": {
-      "rpcs": [
-        "https://verify-rpc-1.example",
-        "https://verify-rpc-2.example",
-        "https://verify-rpc-3.example"
-      ],
-      "minRpcs": 3,
-      "proof": "state.json"
+      "proof": "state.json",
+      "rpc": "https://verify-rpc-1.example"
     },
     "receipt": {
-      "rpcs": [
-        "https://verify-rpc-1.example",
-        "https://verify-rpc-2.example",
-        "https://verify-rpc-3.example"
-      ],
-      "minRpcs": 3,
       "proof": "receipt.json",
       "expectEmitter": "0x4444444444444444444444444444444444444444",
       "expectTopics": [
         "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       ],
-      "expectData": "0xdeadbeef"
+      "expectData": "0xdeadbeef",
+      "rpc": "https://verify-rpc-1.example"
     },
     "tx": {
-      "rpcs": [
-        "https://verify-rpc-1.example",
-        "https://verify-rpc-2.example",
-        "https://verify-rpc-3.example"
-      ],
-      "minRpcs": 3,
-      "proof": "tx.json"
+      "proof": "tx.json",
+      "rpc": "https://verify-rpc-1.example"
     }
   }
 }
