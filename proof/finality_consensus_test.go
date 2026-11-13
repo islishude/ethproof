@@ -305,3 +305,71 @@ func TestFinalityDenebTransitionAndUnknownFork(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestFinalityGenesisCheckpointOnlyLearnsCommittee(t *testing.T) {
+	for _, fork := range []string{"CAPELLA", "DENEB", "ELECTRA", "FULU"} {
+		t.Run(fork, func(t *testing.T) {
+			net := (&bp.ChainConfig{GenesisTime: 100, GenesisValidatorsRoot: common.Hash{8}}).AddFork(fork, 0, []byte{3, 0, 0, 0})
+			committee, key := finalityCommittee(t, 1)
+			next, _ := finalityCommittee(t, 2)
+			var payload any = &deneb.ExecutionPayloadHeader{BaseFeePerGas: new(uint256.Int), ExtraData: []byte{}}
+			if fork == "CAPELLA" {
+				payload = &capella.ExecutionPayloadHeader{ExtraData: []byte{}}
+			}
+			execution, err := json.Marshal(payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			empty := FinalityHeader{Execution: execution, ExecutionBranch: make([]common.Hash, 4)}
+			u := FinalityUpdate{Attested: finalityTestHeader(t, 40, common.Hash{1}, net), Finalized: &empty, Next: next, SignatureSlot: 41}
+			finalIndex := bp.StateIndexFinalBlock(net.ForkNameAtSlot(40))
+			nextIndex := bp.StateIndexNextSyncCommittee(net.ForkNameAtSlot(40))
+			root, branch := finalityTree(map[uint64]common.Hash{finalIndex: {}, nextIndex: next.Root()})
+			u.Attested.Beacon.StateRoot = root
+			u.FinalityBranch = branch(finalIndex)
+			u.NextBranch = branch(nextIndex)
+			signFinalityUpdate(t, &u, key, 342, net)
+			for _, bad := range []string{"", "beacon", "execution", "branch", "signature", "finality-proof"} {
+				t.Run(bad, func(t *testing.T) {
+					s := finalityState{Finalized: finalityTestHeader(t, 64, common.Hash{2}, net), Current: committee}
+					original := s.Finalized.Beacon.Hash()
+					// Deep copy to ensure mutations are isolated from subsequent cases.
+					encoded, err := json.Marshal(u)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var update FinalityUpdate
+					if err = json.Unmarshal(encoded, &update); err != nil {
+						t.Fatal(err)
+					}
+					switch bad {
+					case "beacon":
+						update.Finalized.Beacon.ParentRoot[0] = 1
+					case "execution":
+						update.Finalized.Execution = finalityTestHeader(t, 40, common.Hash{1}, net).Execution
+					case "branch":
+						update.Finalized.ExecutionBranch[0][0] = 1
+					case "signature":
+						update.Aggregate.Signature[0] ^= 1
+					case "finality-proof":
+						update.FinalityBranch[0][0] ^= 1
+					}
+					changed, err := s.processUpdate(update, 100, net)
+					if bad == "" {
+						if err != nil || !changed || s.Next == nil {
+							t.Fatalf("genesis committee update failed: %v", err)
+						}
+					} else if err == nil || changed || s.Next != nil {
+						t.Fatal("accepted tampered genesis update")
+					}
+					if s.Finalized.Beacon.Hash() != original {
+						t.Fatal("genesis sentinel changed finalized anchor")
+					}
+				})
+			}
+			if _, err = verifyFinalityHeader(empty, net); err == nil {
+				t.Fatal("accepted empty header as execution anchor")
+			}
+		})
+	}
+}

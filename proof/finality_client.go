@@ -24,6 +24,7 @@ type FinalityClient struct {
 	config        FinalityConfig
 	network       *bp.ChainConfig
 	chainID       *big.Int
+	slotSeconds   uint64
 	execution     HeaderSource
 	beacon        BeaconFinalitySource
 	checkpoints   []CheckpointSource
@@ -50,9 +51,6 @@ type configOnlyHeaderSource struct{ HeaderSource }
 // The object is never used for execution calls.
 
 func NewFinalityClientWithDependencies(cfg FinalityConfig, execution HeaderSource, deps FinalityDependencies) (*FinalityClient, error) {
-	if isNilSource(execution) {
-		return nil, errors.New("execution source is nil")
-	}
 	var net *bp.ChainConfig
 	var chain uint64
 	switch cfg.Network {
@@ -64,6 +62,18 @@ func NewFinalityClientWithDependencies(cfg FinalityConfig, execution HeaderSourc
 		chain = 11155111
 	default:
 		return nil, errors.New("finality network must be mainnet or sepolia")
+	}
+	return newFinalityClientForNetwork(cfg, execution, deps, net, chain, 12)
+}
+
+// Private networks are used by the PoS integration test. The public constructor
+// accepts only the pinned mainnet and Sepolia parameters above.
+func newFinalityClientForNetwork(cfg FinalityConfig, execution HeaderSource, deps FinalityDependencies, net *bp.ChainConfig, chain, slotSeconds uint64) (*FinalityClient, error) {
+	if isNilSource(execution) {
+		return nil, errors.New("execution source is nil")
+	}
+	if net == nil || slotSeconds == 0 {
+		return nil, errors.New("invalid finality network parameters")
 	}
 	if cfg.MaxAncestry == 0 {
 		cfg.MaxAncestry = 8192
@@ -102,17 +112,19 @@ func NewFinalityClientWithDependencies(cfg FinalityConfig, execution HeaderSourc
 	// Bind persisted state to the exact trust policy and fork schedule. Endpoint
 	// strings enter only this one-way digest; they are never persisted themselves.
 	b, err := json.Marshal(struct {
-		Network string
-		Genesis common.Hash
-		Time    uint64
-		Forks   bp.Forks
-		Sources []string
-	}{cfg.Network, net.GenesisValidatorsRoot, net.GenesisTime, net.Forks, identities})
+		Network     string
+		Genesis     common.Hash
+		Time        uint64
+		Forks       bp.Forks
+		Sources     []string
+		ChainID     uint64
+		SlotSeconds uint64
+	}{cfg.Network, net.GenesisValidatorsRoot, net.GenesisTime, net.Forks, identities, chain, slotSeconds})
 	if err != nil {
 		return nil, err
 	}
 	digest := sha256.Sum256(b)
-	return &FinalityClient{cfg, net, new(big.Int).SetUint64(chain), execution, deps.Beacon, deps.Checkpoints, deps.Store, deps.Now, deps.OnTrustChange, common.Hash(digest)}, nil
+	return &FinalityClient{config: cfg, network: net, chainID: new(big.Int).SetUint64(chain), slotSeconds: slotSeconds, execution: execution, beacon: deps.Beacon, checkpoints: deps.Checkpoints, store: deps.Store, now: deps.Now, onTrustChange: deps.OnTrustChange, fingerprint: common.Hash(digest)}, nil
 }
 
 func configureCheckpointSources(cfg FinalityConfig, deps *FinalityDependencies) ([]string, error) {
@@ -162,7 +174,7 @@ func (c *FinalityClient) currentSlot() (uint64, error) {
 	if unix < 0 || uint64(unix) < c.network.GenesisTime {
 		return 0, errors.New("clock precedes network genesis")
 	}
-	return (uint64(unix) - c.network.GenesisTime) / 12, nil
+	return (uint64(unix) - c.network.GenesisTime) / c.slotSeconds, nil
 }
 func freshFinalitySlot(slot, now uint64) bool { return slot <= now && now-slot < 7200 } // 24h, a startup policy, not a computed WSP.
 
@@ -227,7 +239,20 @@ func (c *FinalityClient) FinalizedAnchor(ctx context.Context, target BlockContex
 }
 
 func (c *FinalityClient) sync(ctx context.Context, cache *finalityCache, now uint64) error {
+	latest, err := c.beacon.FinalityUpdate(ctx)
+	if err != nil {
+		return err
+	}
+	if latest.Attested.Beacon.Slot <= cache.State.Finalized.Beacon.Slot {
+		return nil
+	}
 	period := cache.State.Finalized.Beacon.SyncPeriod()
+	signaturePeriod := bt.SyncPeriod(uint64(latest.SignatureSlot))
+	// A latest finality update signed by an already authenticated committee is
+	// sufficient. Fetch historical period updates only to obtain a missing committee.
+	if signaturePeriod == period || (signaturePeriod == period+1 && cache.State.Next != nil) {
+		return c.applyFinalityUpdate(ctx, cache, latest, now)
+	}
 	current := bt.SyncPeriod(now)
 	if current < period {
 		return errors.New("future cached period")
@@ -261,11 +286,11 @@ func (c *FinalityClient) sync(ctx context.Context, cache *finalityCache, now uin
 			}
 		}
 	}
-	update, err := c.beacon.FinalityUpdate(ctx)
-	if err != nil {
-		return err
-	}
-	// A latest finality update can repeat an already processed full update.
+	return c.applyFinalityUpdate(ctx, cache, latest, now)
+}
+
+func (c *FinalityClient) applyFinalityUpdate(ctx context.Context, cache *finalityCache, update FinalityUpdate, now uint64) error {
+	// Full period updates may already have finalized this header.
 	if update.Attested.Beacon.Slot <= cache.State.Finalized.Beacon.Slot {
 		return nil
 	}

@@ -58,12 +58,14 @@ func (s *testCheckpointSource) CheckpointHeader(_ context.Context, h common.Hash
 }
 
 type testBeaconSource struct {
-	b         FinalityBootstrap
-	updates   []FinalityUpdate
-	final     FinalityUpdate
-	bootCalls int
-	syncCalls int
-	fail      error
+	b          FinalityBootstrap
+	updates    []FinalityUpdate
+	final      FinalityUpdate
+	bootCalls  int
+	syncCalls  int
+	finalCalls int
+	updatesErr error
+	fail       error
 }
 
 func (s *testBeaconSource) Bootstrap(context.Context, common.Hash) (FinalityBootstrap, error) {
@@ -72,9 +74,13 @@ func (s *testBeaconSource) Bootstrap(context.Context, common.Hash) (FinalityBoot
 }
 func (s *testBeaconSource) Updates(context.Context, uint64, uint64) ([]FinalityUpdate, error) {
 	s.syncCalls++
+	if s.updatesErr != nil {
+		return nil, s.updatesErr
+	}
 	return s.updates, s.fail
 }
 func (s *testBeaconSource) FinalityUpdate(context.Context) (FinalityUpdate, error) {
+	s.finalCalls++
 	return s.final, s.fail
 }
 
@@ -108,11 +114,10 @@ func finalityClientFixture(t *testing.T) (*FinalityClient, BlockContext, *testBe
 		cps[i] = &testCheckpointSource{name: fmt.Sprintf("operator-%d", i), net: net, cp: FinalityCheckpoint{Epoch: 4, Root: b.Header.Beacon.Hash()}, headers: map[common.Hash]CheckpointHeader{b.Header.Beacon.Hash(): {Header: b.Header.Beacon, Canonical: true, Finalized: true}}}
 		sources[i] = cps[i]
 	}
-	client, err := NewFinalityClientWithDependencies(FinalityConfig{Network: "mainnet", CacheDir: t.TempDir()}, execution, FinalityDependencies{Beacon: beacon, Checkpoints: sources, Now: func() time.Time { return time.Unix(int64(net.GenesisTime+200*12), 0) }})
+	client, err := newFinalityClientForNetwork(FinalityConfig{Network: "test", CacheDir: t.TempDir()}, execution, FinalityDependencies{Beacon: beacon, Checkpoints: sources, Now: func() time.Time { return time.Unix(int64(net.GenesisTime+200*12), 0) }}, net, 1, 12)
 	if err != nil {
 		t.Fatal(err)
 	}
-	client.network = net
 	return client, target, beacon, cps
 }
 func TestFinalityClientAncestryCacheAndTamper(t *testing.T) {
@@ -315,18 +320,18 @@ func TestFinalityClientIncrementalSync(t *testing.T) {
 	u.FinalityBranch = branch(105)
 	u.NextBranch = branch(55)
 	signFinalityUpdate(t, &u, key, 342, c.network)
-	beacon.updates = []FinalityUpdate{u}
+	beacon.updatesErr = errors.New("historical updates unavailable")
 	beacon.final = u
 	if _, err = c.FinalizedAnchor(t.Context(), target); err != nil {
 		t.Fatal(err)
 	}
-	if beacon.syncCalls != 1 {
-		t.Fatalf("sync calls: %d", beacon.syncCalls)
+	if beacon.finalCalls != 1 || beacon.syncCalls != 0 {
+		t.Fatalf("sync calls: %d", beacon.finalCalls)
 	}
 	if _, err = c.FinalizedAnchor(t.Context(), target); err != nil {
 		t.Fatal(err)
 	}
-	if beacon.syncCalls != 1 {
+	if beacon.finalCalls != 1 || beacon.syncCalls != 0 {
 		t.Fatal("did not reuse advanced cache")
 	}
 }
@@ -439,5 +444,49 @@ func TestFinalityOversizedCacheDoesNotReplaceTrustedState(t *testing.T) {
 	}
 	if string(before) != string(after) || trustChanged {
 		t.Fatal("failed refresh replaced trusted state")
+	}
+}
+
+func TestFinalityNetworkParametersBindCache(t *testing.T) {
+	c, target, _, _ := finalityClientFixture(t)
+	if _, err := c.FinalizedAnchor(t.Context(), target); err != nil {
+		t.Fatal(err)
+	}
+	deps := FinalityDependencies{Beacon: c.beacon, Checkpoints: c.checkpoints, Store: c.store, Now: c.now}
+	for _, test := range []struct {
+		name           string
+		chain, seconds uint64
+	}{{"chain", 2, 12}, {"slot-duration", 1, 3}} {
+		t.Run(test.name, func(t *testing.T) {
+			other, err := newFinalityClientForNetwork(c.config, c.execution, deps, c.network, test.chain, test.seconds)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = other.load(t.Context()); !errors.Is(err, ErrFinalityCache) {
+				t.Fatalf("accepted incompatible cached network: %v", err)
+			}
+		})
+	}
+}
+
+func TestFinalitySyncFetchesMissingCommittee(t *testing.T) {
+	c, target, beacon, _ := finalityClientFixture(t)
+	if _, err := c.FinalizedAnchor(t.Context(), target); err != nil {
+		t.Fatal(err)
+	}
+	cache, err := c.load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, k1 := finalityCommittee(t, 1)
+	second, k2 := finalityCommittee(t, 2)
+	cache.State = finalityState{Finalized: finalityTestHeader(t, 8000, common.Hash{1}, c.network), Current: first}
+	beacon.updates = []FinalityUpdate{finalityTestUpdate(t, 8100, 8064, second, k1, c.network)}
+	beacon.final = finalityTestUpdate(t, 8250, 8224, nil, k2, c.network)
+	if err = c.sync(t.Context(), cache, 8300); err != nil {
+		t.Fatal(err)
+	}
+	if beacon.syncCalls != 1 || beacon.finalCalls != 1 || cache.State.Finalized.Beacon.Slot != 8224 || *cache.State.Current != *second {
+		t.Fatal("did not authenticate missing committee before advancing finality")
 	}
 }

@@ -1,0 +1,98 @@
+name: ethproof-pos-e2e
+
+x-reth: &reth
+  image: ghcr.io/paradigmxyz/reth:v2.9.0
+  user: "0:0"
+  init: true
+  command:
+    - node
+    - --chain=/network/metadata/genesis.json
+    - --datadir=/reth
+    - --http
+    - --http.addr=0.0.0.0
+    - --http.api=eth,net,web3
+    - --authrpc.addr=0.0.0.0
+    - --authrpc.jwtsecret=/network/jwt/jwtsecret
+    - --disable-discovery
+    - --ipcdisable
+  depends_on:
+    genesis:
+      condition: service_completed_successfully
+  stop_grace_period: 30s
+
+x-beacon: &beacon
+  image: sigp/lighthouse:v8.3.2
+  init: true
+  entrypoint: [sh, /scripts/beacon.sh]
+  stop_grace_period: 30s
+
+services:
+  genesis:
+    image: ethpandaops/ethereum-genesis-generator:6.2.7
+    entrypoint: [bash, /scripts/generate.sh]
+    volumes:
+      - network:/data
+      - .:/scripts:ro
+
+  reth-1:
+    <<: *reth
+    volumes: [network:/network:ro, reth-1:/reth]
+    ports: ["127.0.0.1:18545:8545"]
+  reth-2:
+    <<: *reth
+    volumes: [network:/network:ro, reth-2:/reth]
+  reth-3:
+    <<: *reth
+    volumes: [network:/network:ro, reth-3:/reth]
+
+  lighthouse-1:
+    <<: *beacon
+    environment: {NODE_INDEX: "1"}
+    volumes: [network:/network:ro, beacon-1:/beacon, .:/scripts:ro]
+    ports: ["127.0.0.1:15052:5052"]
+    depends_on: {reth-1: {condition: service_started}}
+
+  bootnode:
+    image: ethpandaops/ethereum-genesis-generator:6.2.7
+    entrypoint: [sh, /scripts/bootnode.sh]
+    volumes: [network:/data, .:/scripts:ro]
+    depends_on: {lighthouse-1: {condition: service_started}}
+
+  lighthouse-2:
+    <<: *beacon
+    environment: {NODE_INDEX: "2"}
+    volumes: [network:/network:ro, beacon-2:/beacon, .:/scripts:ro]
+    ports: ["127.0.0.1:15053:5052"]
+    depends_on:
+      reth-2: {condition: service_started}
+      bootnode: {condition: service_completed_successfully}
+  lighthouse-3:
+    <<: *beacon
+    environment: {NODE_INDEX: "3"}
+    volumes: [network:/network:ro, beacon-3:/beacon, .:/scripts:ro]
+    ports: ["127.0.0.1:15054:5052"]
+    depends_on:
+      reth-3: {condition: service_started}
+      bootnode: {condition: service_completed_successfully}
+
+  validator:
+    image: sigp/lighthouse:v8.3.2
+    init: true
+    entrypoint: [sh, /scripts/validator.sh]
+    volumes: [network:/network:ro, validators:/validators, .:/scripts:ro]
+    depends_on: {lighthouse-1: {condition: service_started}}
+    stop_grace_period: 30s
+
+networks:
+  default:
+    driver: bridge
+
+volumes:
+  network:
+  reth-1:
+  reth-2:
+  reth-3:
+  beacon-1:
+  beacon-2:
+  beacon-3:
+  validators:

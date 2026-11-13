@@ -92,6 +92,36 @@ ETH_PROOF_FINALITY_LIVE_CONFIG=/absolute/path/config.json go test -v ./proof -ru
 
 The default test suite uses pinned official SSZ proof vectors, historical Helios responses with real signatures, deterministic signed state-machine scenarios, and local HTTP servers. Anvil tests exercise execution-layer compatibility; they do not simulate PoS finality.
 
+## Local Reth + Lighthouse PoS E2E
+
+The isolated test project runs three Reth/Lighthouse pairs and 64 validators, with a separate genesis, chain ID `31337`, mainnet preset, Fulu from genesis, and 3-second slots. All HTTP ports bind to localhost; no public RPC credentials are used. The validator mnemonic and funded account keys are public development identities.
+
+```bash
+# Fresh network, real finality tests, then remove this project's containers/volumes:
+make pos-e2e-test
+
+# Keep the tested network running for inspection:
+POS_E2E_KEEP=1 make pos-e2e-test
+
+# Or manage a persistent local test network directly:
+make pos-e2e-up
+ETH_PROOF_REQUIRE_POS_E2E=1 go test -v -race ./proof -run '^TestPoSE2E$' -count=1 -timeout=17m
+make pos-e2e-down
+```
+
+`pos-e2e-up` starts services and exports generated network parameters into `bin/pos-testnet/network`; the test waits for readiness and finality. The test command resets **only this PoS project's** disposable state. Anvil and its ports are independent. Allow roughly 10–15 minutes for a fresh run, plus image downloads; the test deadline is 15 minutes. Logs from the managed test run are saved to `bin/pos-testnet/compose.log`, including on failure.
+
+| Service | Local endpoint |
+| --- | --- |
+| Reth execution RPC | `http://127.0.0.1:18545` |
+| Lighthouse 1 | `http://127.0.0.1:15052` |
+| Lighthouse 2 | `http://127.0.0.1:15053` |
+| Lighthouse 3 | `http://127.0.0.1:15054` |
+
+The test obtains checkpoint confirmation from three actual Beacon nodes, bootstraps the client, deploys the existing proof contract, rejects an unfinalized transaction, and verifies transaction/event/storage proofs after signed light-client updates advance finality. It also checks cache reuse after client restart. Unit tests additionally cover the spec-defined empty genesis finalized-header sentinel without treating it as an execution anchor. These nodes share one local operator and deterministic validator set; this tests the multi-source mechanics, not operator independence. Mainnet-preset sync committee periods are retained, so committee rotation remains covered by deterministic unit tests rather than this short E2E run.
+
+Private network parameters enter through an internal test constructor, loaded from the generated genesis state and fork configuration. The public API and CLI still accept only the pinned mainnet/Sepolia networks. The real PoS job runs separately in CI; `make ci` continues to run the faster offline and Anvil checks.
+
 ## Go API
 
 Generation requests contain only proof inputs. Pass a URL separately; the helper owns the connection:

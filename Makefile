@@ -52,3 +52,14 @@ ci: fmt-check lint build unit-test
 	$(MAKE) bindings
 	git diff --exit-code -- internal/e2e/bindings
 	$(MAKE) e2e-test
+
+# Real PoS finality tests are separate from the fast Anvil suite.
+.PHONY: pos-e2e-up pos-e2e-down pos-e2e-test
+pos-e2e-up:
+	sh scripts/pos_e2e.sh up
+
+pos-e2e-down:
+	sh scripts/pos_e2e.sh down
+
+pos-e2e-test:
+	sh scripts/pos_e2e.sh test

@@ -7,10 +7,13 @@ import (
 	"math/bits"
 	"strconv"
 
+	"github.com/attestantio/go-eth2-client/spec/capella"
+	"github.com/attestantio/go-eth2-client/spec/deneb"
 	"github.com/ethereum/go-ethereum/beacon/merkle"
 	bp "github.com/ethereum/go-ethereum/beacon/params"
 	bt "github.com/ethereum/go-ethereum/beacon/types"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/holiman/uint256"
 )
 
 type finalityState struct {
@@ -167,10 +170,17 @@ func (s *finalityState) validateUpdateProofs(u FinalityUpdate, net *bp.ChainConf
 		if u.Finalized == nil || u.Finalized.Beacon.Slot > u.Attested.Beacon.Slot {
 			return errors.New("invalid finalized slot")
 		}
-		if _, err := verifyFinalityHeader(*u.Finalized, net); err != nil {
+		root := u.Finalized.Beacon.Hash()
+		if u.Finalized.Beacon.Slot == 0 {
+			// The genesis checkpoint is represented by an empty light-client
+			// header and a zero leaf, not hash_tree_root(BeaconBlockHeader()).
+			if !emptyFinalityHeader(*u.Finalized, fork) {
+				return errors.New("nonempty genesis finalized header")
+			}
+			root = common.Hash{}
+		} else if _, err := verifyFinalityHeader(*u.Finalized, net); err != nil {
 			return err
 		}
-		root := u.Finalized.Beacon.Hash()
 		if err := verifyFinalityBranch(u.Attested.Beacon.StateRoot, bp.StateIndexFinalBlock(fork), u.FinalityBranch, root, true); err != nil {
 			return fmt.Errorf("finality branch: %w", err)
 		}
@@ -197,6 +207,32 @@ func (s *finalityState) validateUpdateProofs(u FinalityUpdate, net *bp.ChainConf
 		return errors.New("next committee without proof")
 	}
 	return nil
+}
+
+// This sentinel is valid only inside an update's finalized-checkpoint proof.
+// verifyFinalityHeader still rejects it as a bootstrap or execution anchor.
+func emptyFinalityHeader(h FinalityHeader, fork string) bool {
+	if h.Beacon != (bt.Header{}) || len(h.ExecutionBranch) != 4 || hasFinalityBranch(h.ExecutionBranch) {
+		return false
+	}
+	payload, err := bt.ExecutionHeaderFromJSON(fork, h.Execution)
+	if err != nil {
+		return false
+	}
+	var empty *bt.ExecutionHeader
+	if fork == "capella" {
+		var blob struct {
+			Used   common.Decimal `json:"blob_gas_used"`
+			Excess common.Decimal `json:"excess_blob_gas"`
+		}
+		if json.Unmarshal(h.Execution, &blob) != nil || blob.Used != 0 || blob.Excess != 0 {
+			return false
+		}
+		empty = bt.NewExecutionHeader(&capella.ExecutionPayloadHeader{})
+	} else {
+		empty = bt.NewExecutionHeader(&deneb.ExecutionPayloadHeader{BaseFeePerGas: new(uint256.Int)})
+	}
+	return payload.PayloadRoot() == empty.PayloadRoot()
 }
 
 func (s *finalityState) processUpdate(u FinalityUpdate, now uint64, net *bp.ChainConfig) (bool, error) {
