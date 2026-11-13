@@ -20,7 +20,7 @@ func TestRunVerifyCommandsSuccess(t *testing.T) {
 	}{
 		{
 			name: "state",
-			args: []string{"--rpc", "http://127.0.0.1:8545", "--min-rpcs", "1", "--proof", "state.json"},
+			args: []string{"--rpc", "http://127.0.0.1:8545", "--proof", "state.json"},
 			run:  runVerifyState,
 			install: func(deps *commandDeps, calls *verifyCalls) {
 				deps.loadJSON = func(path string, v any) error {
@@ -28,7 +28,7 @@ func TestRunVerifyCommandsSuccess(t *testing.T) {
 					*(v.(*proof.StateProofPackage)) = *stubStateProofPackage()
 					return nil
 				}
-				deps.verifyState = func(_ context.Context, pkg *proof.StateProofPackage, req proof.VerifyRPCRequest) error {
+				deps.verifyState = func(_ context.Context, pkg *proof.StateProofPackage, req string) error {
 					calls.stateReq = &req
 					calls.statePkg = pkg
 					return nil
@@ -44,7 +44,6 @@ func TestRunVerifyCommandsSuccess(t *testing.T) {
 			name: "receipt",
 			args: []string{
 				"--rpc", "http://127.0.0.1:8545",
-				"--min-rpcs", "1",
 				"--proof", "receipt.json",
 				"--expect-emitter", "0x2222222222222222222222222222222222222222",
 				"--expect-topic", testHash01,
@@ -57,7 +56,7 @@ func TestRunVerifyCommandsSuccess(t *testing.T) {
 					*(v.(*proof.ReceiptProofPackage)) = *stubReceiptProofPackage()
 					return nil
 				}
-				deps.verifyReceipt = func(_ context.Context, pkg *proof.ReceiptProofPackage, expect *proof.ReceiptExpectations, req proof.VerifyRPCRequest) error {
+				deps.verifyReceipt = func(_ context.Context, pkg *proof.ReceiptProofPackage, expect *proof.ReceiptExpectations, req string) error {
 					calls.receiptReq = &req
 					calls.receiptPkg = pkg
 					calls.receiptExpect = expect
@@ -75,7 +74,7 @@ func TestRunVerifyCommandsSuccess(t *testing.T) {
 		},
 		{
 			name: "transaction",
-			args: []string{"--rpc", "http://127.0.0.1:8545", "--min-rpcs", "1", "--proof", "tx.json"},
+			args: []string{"--rpc", "http://127.0.0.1:8545", "--proof", "tx.json"},
 			run:  runVerifyTransaction,
 			install: func(deps *commandDeps, calls *verifyCalls) {
 				deps.loadJSON = func(path string, v any) error {
@@ -83,7 +82,7 @@ func TestRunVerifyCommandsSuccess(t *testing.T) {
 					*(v.(*proof.TransactionProofPackage)) = *stubTransactionProofPackage()
 					return nil
 				}
-				deps.verifyTransaction = func(_ context.Context, pkg *proof.TransactionProofPackage, req proof.VerifyRPCRequest) error {
+				deps.verifyTransaction = func(_ context.Context, pkg *proof.TransactionProofPackage, req string) error {
 					calls.transactionReq = &req
 					calls.transactionPkg = pkg
 					return nil
@@ -122,7 +121,7 @@ func TestRunVerifyCommandsWrapErrors(t *testing.T) {
 		{
 			name: "state load error",
 			run:  runVerifyState,
-			args: []string{"--rpc", "http://127.0.0.1:8545", "--min-rpcs", "1", "--proof", "state.json"},
+			args: []string{"--rpc", "http://127.0.0.1:8545", "--proof", "state.json"},
 			install: func(deps *commandDeps, err error) {
 				deps.loadJSON = func(string, any) error { return err }
 			},
@@ -131,12 +130,12 @@ func TestRunVerifyCommandsWrapErrors(t *testing.T) {
 		{
 			name: "receipt verify error",
 			run:  runVerifyReceipt,
-			args: []string{"--rpc", "http://127.0.0.1:8545", "--min-rpcs", "1", "--proof", "receipt.json"},
+			args: []string{"--rpc", "http://127.0.0.1:8545", "--proof", "receipt.json"},
 			install: func(deps *commandDeps, err error) {
 				deps.loadJSON = func(string, any) error {
 					return nil
 				}
-				deps.verifyReceipt = func(context.Context, *proof.ReceiptProofPackage, *proof.ReceiptExpectations, proof.VerifyRPCRequest) error {
+				deps.verifyReceipt = func(context.Context, *proof.ReceiptProofPackage, *proof.ReceiptExpectations, string) error {
 					return err
 				}
 			},
@@ -145,13 +144,13 @@ func TestRunVerifyCommandsWrapErrors(t *testing.T) {
 		{
 			name: "transaction verify error",
 			run:  runVerifyTransaction,
-			args: []string{"--rpc", "http://127.0.0.1:8545", "--min-rpcs", "1", "--proof", "tx.json"},
+			args: []string{"--rpc", "http://127.0.0.1:8545", "--proof", "tx.json"},
 			install: func(deps *commandDeps, err error) {
 				deps.loadJSON = func(string, any) error {
 					*(new(proof.TransactionProofPackage)) = *stubTransactionProofPackage()
 					return nil
 				}
-				deps.verifyTransaction = func(context.Context, *proof.TransactionProofPackage, proof.VerifyRPCRequest) error {
+				deps.verifyTransaction = func(context.Context, *proof.TransactionProofPackage, string) error {
 					return err
 				}
 			},
@@ -188,7 +187,6 @@ func TestRunMainVerifyRuntimeErrorWritesErrorLog(t *testing.T) {
 		exit = runMain([]string{
 			"verify", "tx",
 			"--rpc", "http://127.0.0.1:8545",
-			"--min-rpcs", "1",
 			"--proof", "tx.json",
 		})
 	})
@@ -207,7 +205,7 @@ func TestRunMainVerifySuccessWritesReadableStatus(t *testing.T) {
 			*(v.(*proof.TransactionProofPackage)) = *stubTransactionProofPackage()
 			return nil
 		}
-		deps.verifyTransaction = func(context.Context, *proof.TransactionProofPackage, proof.VerifyRPCRequest) error {
+		deps.verifyTransaction = func(context.Context, *proof.TransactionProofPackage, string) error {
 			return nil
 		}
 	})
@@ -217,7 +215,6 @@ func TestRunMainVerifySuccessWritesReadableStatus(t *testing.T) {
 		exit = runMain([]string{
 			"verify", "tx",
 			"--rpc", "http://127.0.0.1:8545",
-			"--min-rpcs", "1",
 			"--proof", "tx.json",
 		})
 	})
@@ -232,11 +229,11 @@ func TestRunMainVerifySuccessWritesReadableStatus(t *testing.T) {
 
 type verifyCalls struct {
 	loadPath       string
-	stateReq       *proof.VerifyRPCRequest
+	stateReq       *string
 	statePkg       *proof.StateProofPackage
-	receiptReq     *proof.VerifyRPCRequest
+	receiptReq     *string
 	receiptPkg     *proof.ReceiptProofPackage
 	receiptExpect  *proof.ReceiptExpectations
-	transactionReq *proof.VerifyRPCRequest
+	transactionReq *string
 	transactionPkg *proof.TransactionProofPackage
 }

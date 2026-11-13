@@ -16,7 +16,7 @@ func TestGenerateParsersRejectMalformedEthereumValues(t *testing.T) {
 		{
 			name: "invalid account",
 			run: func() error {
-				_, err := parseGenerateStateArgs([]string{"--rpc", "http://rpc", "--min-rpcs", "1", "--account", "not-hex", "--slot", "0x0"})
+				_, err := parseGenerateStateArgs([]string{"--rpc", "http://rpc", "--account", "not-hex", "--slot", "0x0"})
 				return err
 			},
 			want: "20-byte",
@@ -24,7 +24,7 @@ func TestGenerateParsersRejectMalformedEthereumValues(t *testing.T) {
 		{
 			name: "invalid storage slot",
 			run: func() error {
-				_, err := parseGenerateStateArgs([]string{"--rpc", "http://rpc", "--min-rpcs", "1", "--account", "0x1111111111111111111111111111111111111111", "--slot", "0xzz"})
+				_, err := parseGenerateStateArgs([]string{"--rpc", "http://rpc", "--account", "0x1111111111111111111111111111111111111111", "--slot", "0xzz"})
 				return err
 			},
 			want: "not valid hex",
@@ -32,7 +32,7 @@ func TestGenerateParsersRejectMalformedEthereumValues(t *testing.T) {
 		{
 			name: "oversized storage slot",
 			run: func() error {
-				_, err := parseGenerateStateArgs([]string{"--rpc", "http://rpc", "--min-rpcs", "1", "--account", "0x1111111111111111111111111111111111111111", "--slot", "0x" + strings.Repeat("1", 65)})
+				_, err := parseGenerateStateArgs([]string{"--rpc", "http://rpc", "--account", "0x1111111111111111111111111111111111111111", "--slot", "0x" + strings.Repeat("1", 65)})
 				return err
 			},
 			want: "between 1 and 64",
@@ -40,7 +40,7 @@ func TestGenerateParsersRejectMalformedEthereumValues(t *testing.T) {
 		{
 			name: "invalid receipt tx hash",
 			run: func() error {
-				_, err := parseGenerateReceiptArgs([]string{"--rpc", "http://rpc", "--min-rpcs", "1", "--tx", "not-hex"})
+				_, err := parseGenerateReceiptArgs([]string{"--rpc", "http://rpc", "--tx", "not-hex"})
 				return err
 			},
 			want: "32-byte",
@@ -48,7 +48,7 @@ func TestGenerateParsersRejectMalformedEthereumValues(t *testing.T) {
 		{
 			name: "short transaction tx hash",
 			run: func() error {
-				_, err := parseGenerateTransactionArgs([]string{"--rpc", "http://rpc", "--min-rpcs", "1", "--tx", "0x01"})
+				_, err := parseGenerateTransactionArgs([]string{"--rpc", "http://rpc", "--tx", "0x01"})
 				return err
 			},
 			want: "32-byte",

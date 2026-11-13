@@ -24,8 +24,8 @@ func TestVerifyStateAndTransactionConfigIsolation(t *testing.T) {
 	}
 	configPath := writeTestConfig(t, `{
   "verify": {
-    "state": {"rpcs": ["http://state"], "minRpcs": 1, "proof": "configured-state.json"},
-    "tx": {"rpcs": ["http://tx"], "minRpcs": 1, "proof": "configured-tx.json"}
+    "state": {"rpc": "http://state", "proof": "configured-state.json"},
+    "tx": {"rpc": "http://tx", "proof": "configured-tx.json"}
   }
 }`)
 	for _, parser := range parsers {
@@ -34,10 +34,10 @@ func TestVerifyStateAndTransactionConfigIsolation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if cfg.ProofPath != "configured-"+parser.kind+".json" || cfg.VerifyRequest.MinRPCSources != 1 || strings.Join(cfg.VerifyRequest.RPCURLs, ",") != "http://"+parser.kind {
+			if cfg.ProofPath != "configured-"+parser.kind+".json" || cfg.RPCURL != "http://"+parser.kind {
 				t.Fatalf("wrong config section: %+v", cfg)
 			}
-			cfg, err = parser.parse([]string{"--rpc", "http://override", "--min-rpcs", "1"})
+			cfg, err = parser.parse([]string{"--rpc", "http://override"})
 			if err != nil || cfg.ProofPath != parser.kind+".json" {
 				t.Fatalf("wrong default proof path: %+v, %v", cfg, err)
 			}
@@ -45,10 +45,10 @@ func TestVerifyStateAndTransactionConfigIsolation(t *testing.T) {
 			if parser.kind == "state" {
 				other = "tx"
 			}
-			otherConfig := writeTestConfig(t, fmt.Sprintf(`{"verify": {%q: {"rpcs": ["http://other"], "minRpcs": 1}}}`, other))
+			otherConfig := writeTestConfig(t, fmt.Sprintf(`{"verify": {%q: {"rpc": "http://other"}}}`, other))
 			_, err = parser.parse([]string{"--config", otherConfig})
-			if err == nil || !strings.Contains(err.Error(), "verify "+parser.kind+" requires independent RPCs") {
-				t.Fatalf("must not reuse the other section's RPCs: %v", err)
+			if err == nil || !strings.Contains(err.Error(), "verify "+parser.kind+" requires a separately configured RPC") {
+				t.Fatalf("must not reuse the other section's RPC endpoint: %v", err)
 			}
 		})
 	}
@@ -65,8 +65,7 @@ func TestParseVerifyArgsScenarios(t *testing.T) {
 				configPath := writeTestConfig(t, `{
   "verify": {
     "receipt": {
-      "rpcs": ["http://127.0.0.1:9545", "http://127.0.0.1:9546", "http://127.0.0.1:9547"],
-      "minRpcs": 2,
+      "rpc": "http://127.0.0.1:9545",
       "proof": "receipt-from-config.json",
       "expectEmitter": "0x2222222222222222222222222222222222222222",
       "expectTopics": [
@@ -81,11 +80,11 @@ func TestParseVerifyArgsScenarios(t *testing.T) {
 				if err != nil {
 					t.Fatalf("parseVerifyReceiptArgs: %v", err)
 				}
-				if cfg.ProofPath != "receipt-from-config.json" || cfg.VerifyRequest.MinRPCSources != 2 {
+				if cfg.ProofPath != "receipt-from-config.json" {
 					t.Fatalf("unexpected verify receipt config: %+v", cfg)
 				}
-				if got := strings.Join(cfg.VerifyRequest.RPCURLs, ","); got != "http://127.0.0.1:9545,http://127.0.0.1:9546,http://127.0.0.1:9547" {
-					t.Fatalf("unexpected rpc urls: %s", got)
+				if got := cfg.RPCURL; got != "http://127.0.0.1:9545" {
+					t.Fatalf("unexpected rpc URL: %s", got)
 				}
 				if cfg.Expectations == nil || cfg.Expectations.Emitter == nil || *cfg.Expectations.Emitter != common.HexToAddress("0x2222222222222222222222222222222222222222") {
 					t.Fatalf("unexpected expectations: %+v", cfg.Expectations)
@@ -96,13 +95,12 @@ func TestParseVerifyArgsScenarios(t *testing.T) {
 			},
 		},
 		{
-			name: "state requires independent rpcs",
+			name: "state requires separately configured rpc",
 			run: func(t *testing.T) {
 				configPath := writeTestConfig(t, `{
   "generate": {
     "state": {
-      "rpcs": ["http://127.0.0.1:9545", "http://127.0.0.1:9546", "http://127.0.0.1:9547"],
-      "minRpcs": 3,
+      "rpc": "http://127.0.0.1:9545",
       "account": "0x1111111111111111111111111111111111111111",
       "slots": ["0x04"]
     }
@@ -114,7 +112,7 @@ func TestParseVerifyArgsScenarios(t *testing.T) {
   }
 }`)
 				_, err := parseVerifyStateArgs([]string{"--config", configPath})
-				if err == nil || !strings.Contains(err.Error(), "verify state requires independent RPCs") {
+				if err == nil || !strings.Contains(err.Error(), "verify state requires a separately configured RPC") {
 					t.Fatalf("unexpected error: %v", err)
 				}
 			},
@@ -125,8 +123,7 @@ func TestParseVerifyArgsScenarios(t *testing.T) {
 				configPath := writeTestConfig(t, `{
   "verify": {
     "tx": {
-      "rpcs": ["http://127.0.0.1:9545", "http://127.0.0.1:9546", "http://127.0.0.1:9547"],
-      "minRpcs": 3,
+      "rpc": "http://127.0.0.1:9545",
       "proof": "from-config.json"
     }
   }
@@ -134,16 +131,15 @@ func TestParseVerifyArgsScenarios(t *testing.T) {
 				cfg, err := parseVerifyTransactionArgs([]string{
 					"--config", configPath,
 					"--rpc", "http://127.0.0.1:8545",
-					"--min-rpcs", "1",
 					"--proof", "override.json",
 				})
 				if err != nil {
 					t.Fatalf("parseVerifyTransactionArgs: %v", err)
 				}
-				if cfg.ProofPath != "override.json" || cfg.VerifyRequest.MinRPCSources != 1 {
+				if cfg.ProofPath != "override.json" {
 					t.Fatalf("unexpected verify tx config: %+v", cfg)
 				}
-				if got := strings.Join(cfg.VerifyRequest.RPCURLs, ","); got != "http://127.0.0.1:8545" {
+				if got := cfg.RPCURL; got != "http://127.0.0.1:8545" {
 					t.Fatalf("unexpected rpc override: %s", got)
 				}
 			},
@@ -158,8 +154,7 @@ func TestParseVerifyArgsScenarios(t *testing.T) {
   },
   "verify": {
     "tx": {
-      "rpcs": ["http://127.0.0.1:9545"],
-      "minRpcs": 1,
+      "rpc": "http://127.0.0.1:9545",
       "proof": "from-config.json"
     }
   }
@@ -175,7 +170,6 @@ func TestParseVerifyArgsScenarios(t *testing.T) {
 			run: func(t *testing.T) {
 				_, err := parseVerifyTransactionArgs([]string{
 					"--rpc", "http://127.0.0.1:8545",
-					"--min-rpcs", "1",
 					"--proof", "tx.json",
 					"--log-format", "yaml",
 				})

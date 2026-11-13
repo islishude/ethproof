@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/islishude/ethproof/proof"
 )
 
 func TestParseGenerateRequests(t *testing.T) {
@@ -18,7 +17,6 @@ func TestParseGenerateRequests(t *testing.T) {
 			run: func(t *testing.T) {
 				cfg, err := parseGenerateStateArgs([]string{
 					"--rpc", "http://127.0.0.1:8545",
-					"--min-rpcs", "1",
 					"--block", "12",
 					"--account", "0x1111111111111111111111111111111111111111",
 					"--slot", "0x01",
@@ -28,7 +26,7 @@ func TestParseGenerateRequests(t *testing.T) {
 				if err != nil {
 					t.Fatalf("parseGenerateStateArgs: %v", err)
 				}
-				if cfg.Request.MinRPCSources != 1 || cfg.Request.BlockNumber != 12 {
+				if cfg.Request.BlockNumber != 12 {
 					t.Fatalf("unexpected state request: %+v", cfg.Request)
 				}
 				if cfg.Request.Account != common.HexToAddress("0x1111111111111111111111111111111111111111") {
@@ -43,20 +41,18 @@ func TestParseGenerateRequests(t *testing.T) {
 			},
 		},
 		{
-			name: "receipt default min rpcs",
+			name: "receipt single rpc",
 			run: func(t *testing.T) {
 				cfg, err := parseGenerateReceiptArgs([]string{
 					"--rpc", "http://127.0.0.1:8545",
-					"--rpc", "http://127.0.0.1:8546",
-					"--rpc", "http://127.0.0.1:8547",
 					"--tx", testHash02,
 					"--log-index", "3",
 				})
 				if err != nil {
 					t.Fatalf("parseGenerateReceiptArgs: %v", err)
 				}
-				if cfg.Request.MinRPCSources != proof.DefaultMinRPCSources {
-					t.Fatalf("expected default MinRPCSources=%d, got %d", proof.DefaultMinRPCSources, cfg.Request.MinRPCSources)
+				if cfg.RPCURL != "http://127.0.0.1:8545" {
+					t.Fatalf("unexpected RPC: %s", cfg.RPCURL)
 				}
 				if cfg.Request.LogIndex != 3 {
 					t.Fatalf("unexpected log index: %d", cfg.Request.LogIndex)
@@ -68,14 +64,13 @@ func TestParseGenerateRequests(t *testing.T) {
 			run: func(t *testing.T) {
 				cfg, err := parseGenerateTransactionArgs([]string{
 					"--rpc", "http://127.0.0.1:8545",
-					"--min-rpcs", "1",
 					"--tx", testHash03,
 					"--out", "tx.json",
 				})
 				if err != nil {
 					t.Fatalf("parseGenerateTransactionArgs: %v", err)
 				}
-				if cfg.Request.MinRPCSources != 1 || cfg.Request.TxHash != common.HexToHash("0x03") {
+				if cfg.Request.TxHash != common.HexToHash("0x03") {
 					t.Fatalf("unexpected tx request: %+v", cfg.Request)
 				}
 				if cfg.Out != "tx.json" {
@@ -101,8 +96,7 @@ func TestParseGenerateStateArgsScenarios(t *testing.T) {
 				configPath := writeTestConfig(t, `{
   "generate": {
     "state": {
-      "rpcs": ["http://127.0.0.1:9545", "http://127.0.0.1:9546", "http://127.0.0.1:9547"],
-      "minRpcs": 2,
+      "rpc": "http://127.0.0.1:9545",
       "block": 99,
       "account": "0x1111111111111111111111111111111111111111",
       "slots": ["0x04", "0x05"],
@@ -114,10 +108,10 @@ func TestParseGenerateStateArgsScenarios(t *testing.T) {
 				if err != nil {
 					t.Fatalf("parseGenerateStateArgs: %v", err)
 				}
-				if got := strings.Join(cfg.Request.RPCURLs, ","); got != "http://127.0.0.1:9545,http://127.0.0.1:9546,http://127.0.0.1:9547" {
-					t.Fatalf("unexpected rpc urls: %s", got)
+				if got := cfg.RPCURL; got != "http://127.0.0.1:9545" {
+					t.Fatalf("unexpected rpc URL: %s", got)
 				}
-				if cfg.Request.MinRPCSources != 2 || cfg.Request.BlockNumber != 99 || cfg.Out != "from-config.json" {
+				if cfg.Request.BlockNumber != 99 || cfg.Out != "from-config.json" {
 					t.Fatalf("unexpected config merge result: %+v", cfg)
 				}
 			},
@@ -128,8 +122,7 @@ func TestParseGenerateStateArgsScenarios(t *testing.T) {
 				configPath := writeTestConfig(t, `{
   "generate": {
     "state": {
-      "rpcs": ["http://127.0.0.1:9545", "http://127.0.0.1:9546", "http://127.0.0.1:9547"],
-      "minRpcs": 3,
+      "rpc": "http://127.0.0.1:9545",
       "block": 99,
       "account": "0x1111111111111111111111111111111111111111",
       "slots": ["0x04"],
@@ -140,16 +133,15 @@ func TestParseGenerateStateArgsScenarios(t *testing.T) {
 				cfg, err := parseGenerateStateArgs([]string{
 					"--config", configPath,
 					"--rpc", "http://127.0.0.1:8545",
-					"--min-rpcs", "1",
 					"--out", "override.json",
 				})
 				if err != nil {
 					t.Fatalf("parseGenerateStateArgs: %v", err)
 				}
-				if got := strings.Join(cfg.Request.RPCURLs, ","); got != "http://127.0.0.1:8545" {
+				if got := cfg.RPCURL; got != "http://127.0.0.1:8545" {
 					t.Fatalf("unexpected rpc override: %s", got)
 				}
-				if cfg.Request.MinRPCSources != 1 || cfg.Out != "override.json" || cfg.Request.BlockNumber != 99 {
+				if cfg.Out != "override.json" || cfg.Request.BlockNumber != 99 {
 					t.Fatalf("unexpected override result: %+v", cfg)
 				}
 			},
@@ -164,8 +156,7 @@ func TestParseGenerateStateArgsScenarios(t *testing.T) {
   },
   "generate": {
     "state": {
-      "rpcs": ["http://127.0.0.1:9545"],
-      "minRpcs": 1,
+      "rpc": "http://127.0.0.1:9545",
       "block": 99,
       "account": "0x1111111111111111111111111111111111111111",
       "slots": ["0x04"]
@@ -183,7 +174,6 @@ func TestParseGenerateStateArgsScenarios(t *testing.T) {
 			run: func(t *testing.T) {
 				_, err := parseGenerateStateArgs([]string{
 					"--rpc", "http://127.0.0.1:8545",
-					"--min-rpcs", "1",
 					"--block", "12",
 					"--account", "0x1111111111111111111111111111111111111111",
 					"--slot", "0x01",
@@ -200,8 +190,7 @@ func TestParseGenerateStateArgsScenarios(t *testing.T) {
 				configPath := writeTestConfig(t, `{
   "generate": {
     "state": {
-      "rpcs": ["http://127.0.0.1:9545"],
-      "minRpcs": 1,
+      "rpc": "http://127.0.0.1:9545",
       "block": 99,
       "account": "0x1111111111111111111111111111111111111111",
       "slot": "0x04"

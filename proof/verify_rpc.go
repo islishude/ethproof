@@ -5,147 +5,90 @@ import (
 	"fmt"
 )
 
-// VerifyStateProofPackageAgainstRPCs verifies the state proof locally and then checks that the
-// embedded block context matches a fresh independent RPC consensus.
-func VerifyStateProofPackageAgainstRPCs(ctx context.Context, pkg *StateProofPackage, req VerifyRPCRequest) error {
-	return verifyStateProofPackageAgainstRPCsWithFetcher(ctx, pkg, req, fetchBlockHeadersFromSources)
-}
-
-func verifyStateProofPackageAgainstRPCsWithFetcher(ctx context.Context, pkg *StateProofPackage, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
-	sourceSet, err := openNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources)
-	if err != nil {
-		return err
-	}
-	defer sourceSet.Close()
-
-	return verifyStateProofPackageAgainstSourcesWithFetcher(ctx, pkg, VerifySourcesRequest{
-		Sources:       sourceSet.HeaderSources(),
-		MinRPCSources: req.MinRPCSources,
-	}, fetcher)
-}
-
-// VerifyStateProofPackageAgainstSources verifies the state proof locally and then checks that the
-// embedded block context matches a fresh independent source consensus.
-func VerifyStateProofPackageAgainstSources(ctx context.Context, pkg *StateProofPackage, req VerifySourcesRequest) error {
-	return verifyStateProofPackageAgainstSourcesWithFetcher(ctx, pkg, req, fetchBlockHeadersFromSources)
-}
-
-func verifyStateProofPackageAgainstSourcesWithFetcher(ctx context.Context, pkg *StateProofPackage, req VerifySourcesRequest, fetcher blockHeaderFetcher) error {
+// VerifyStateProofPackageAgainstRPC verifies the proof locally, then compares its block context
+// with a header from the caller-configured RPC. The caller establishes trust in that source.
+func VerifyStateProofPackageAgainstRPC(ctx context.Context, pkg *StateProofPackage, rpcURL string) error {
 	if err := VerifyStateProofPackageAgainstEmbeddedRoots(pkg); err != nil {
 		return err
 	}
-	return verifyBlockContextAgainstSources(ctx, pkg.Block, req, fetcher)
-}
-
-// VerifyReceiptProofPackageWithExpectationsAgainstRPCs verifies the receipt proof locally,
-// applies optional caller expectations, and then checks the embedded block context against an
-// independent RPC consensus.
-func VerifyReceiptProofPackageWithExpectationsAgainstRPCs(ctx context.Context, pkg *ReceiptProofPackage, expect *ReceiptExpectations, req VerifyRPCRequest) error {
-	return verifyReceiptProofPackageWithExpectationsAgainstRPCsWithFetcher(ctx, pkg, expect, req, fetchBlockHeadersFromSources)
-}
-
-func verifyReceiptProofPackageWithExpectationsAgainstRPCsWithFetcher(ctx context.Context, pkg *ReceiptProofPackage, expect *ReceiptExpectations, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
-	sourceSet, err := openNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources)
+	source, err := openRPCSource(ctx, rpcURL)
 	if err != nil {
 		return err
 	}
-	defer sourceSet.Close()
-
-	return verifyReceiptProofPackageWithExpectationsAgainstSourcesWithFetcher(ctx, pkg, expect, VerifySourcesRequest{
-		Sources:       sourceSet.HeaderSources(),
-		MinRPCSources: req.MinRPCSources,
-	}, fetcher)
+	defer source.Close()
+	return verifyBlockContextAgainstSource(ctx, pkg.Block, source)
 }
 
-// VerifyReceiptProofPackageWithExpectationsAgainstSources verifies the receipt proof locally,
-// applies optional caller expectations, and then checks the embedded block context against an
-// independent source consensus.
-func VerifyReceiptProofPackageWithExpectationsAgainstSources(ctx context.Context, pkg *ReceiptProofPackage, expect *ReceiptExpectations, req VerifySourcesRequest) error {
-	return verifyReceiptProofPackageWithExpectationsAgainstSourcesWithFetcher(ctx, pkg, expect, req, fetchBlockHeadersFromSources)
-}
-
-func verifyReceiptProofPackageWithExpectationsAgainstSourcesWithFetcher(ctx context.Context, pkg *ReceiptProofPackage, expect *ReceiptExpectations, req VerifySourcesRequest, fetcher blockHeaderFetcher) error {
-	if err := verifyReceiptProofPackageLocal(pkg, expect); err != nil {
+// VerifyStateProofPackageAgainstSource verifies the proof locally, then compares its block context
+// with a header from the caller-configured Source. The caller establishes trust in that source.
+func VerifyStateProofPackageAgainstSource(ctx context.Context, pkg *StateProofPackage, source HeaderSource) error {
+	if err := VerifyStateProofPackageAgainstEmbeddedRoots(pkg); err != nil {
 		return err
 	}
-	return verifyBlockContextAgainstSources(ctx, pkg.Block, req, fetcher)
+	return verifyBlockContextAgainstSource(ctx, pkg.Block, source)
 }
 
-// VerifyTransactionProofPackageAgainstRPCs verifies the transaction proof locally and then checks
-// that the embedded block context matches a fresh independent RPC consensus.
-func VerifyTransactionProofPackageAgainstRPCs(ctx context.Context, pkg *TransactionProofPackage, req VerifyRPCRequest) error {
-	return verifyTransactionProofPackageAgainstRPCsWithFetcher(ctx, pkg, req, fetchBlockHeadersFromSources)
-}
-
-func verifyTransactionProofPackageAgainstRPCsWithFetcher(ctx context.Context, pkg *TransactionProofPackage, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
-	sourceSet, err := openNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources)
-	if err != nil {
-		return err
-	}
-	defer sourceSet.Close()
-
-	return verifyTransactionProofPackageAgainstSourcesWithFetcher(ctx, pkg, VerifySourcesRequest{
-		Sources:       sourceSet.HeaderSources(),
-		MinRPCSources: req.MinRPCSources,
-	}, fetcher)
-}
-
-// VerifyTransactionProofPackageAgainstSources verifies the transaction proof locally and then checks
-// that the embedded block context matches a fresh independent source consensus.
-func VerifyTransactionProofPackageAgainstSources(ctx context.Context, pkg *TransactionProofPackage, req VerifySourcesRequest) error {
-	return verifyTransactionProofPackageAgainstSourcesWithFetcher(ctx, pkg, req, fetchBlockHeadersFromSources)
-}
-
-func verifyTransactionProofPackageAgainstSourcesWithFetcher(ctx context.Context, pkg *TransactionProofPackage, req VerifySourcesRequest, fetcher blockHeaderFetcher) error {
+// VerifyTransactionProofPackageAgainstRPC verifies the proof locally, then compares its block context
+// with a header from the caller-configured RPC. The caller establishes trust in that source.
+func VerifyTransactionProofPackageAgainstRPC(ctx context.Context, pkg *TransactionProofPackage, rpcURL string) error {
 	if err := VerifyTransactionProofPackageAgainstEmbeddedRoots(pkg); err != nil {
 		return err
 	}
-	return verifyBlockContextAgainstSources(ctx, pkg.Block, req, fetcher)
-}
-
-func verifyBlockContextAgainstSources(ctx context.Context, block BlockContext, req VerifySourcesRequest, fetcher blockHeaderFetcher) error {
-	sourceNames, err := normalizeSourceNames(req.Sources, req.MinRPCSources)
+	source, err := openRPCSource(ctx, rpcURL)
 	if err != nil {
 		return err
 	}
-	if fetcher == nil {
-		return fmt.Errorf("block header fetcher is nil")
+	defer source.Close()
+	return verifyBlockContextAgainstSource(ctx, pkg.Block, source)
+}
+
+// VerifyTransactionProofPackageAgainstSource verifies the proof locally, then compares its block context
+// with a header from the caller-configured Source. The caller establishes trust in that source.
+func VerifyTransactionProofPackageAgainstSource(ctx context.Context, pkg *TransactionProofPackage, source HeaderSource) error {
+	if err := VerifyTransactionProofPackageAgainstEmbeddedRoots(pkg); err != nil {
+		return err
 	}
-	headers, err := fetcher(ctx, req.Sources, block.BlockHash)
+	return verifyBlockContextAgainstSource(ctx, pkg.Block, source)
+}
+
+// VerifyReceiptProofPackageWithExpectationsAgainstRPC verifies the proof locally, then compares its block context
+// with a header from the caller-configured RPC. The caller establishes trust in that source.
+func VerifyReceiptProofPackageWithExpectationsAgainstRPC(ctx context.Context, pkg *ReceiptProofPackage, expect *ReceiptExpectations, rpcURL string) error {
+	if err := VerifyReceiptProofPackageWithExpectationsAgainstEmbeddedRoots(pkg, expect); err != nil {
+		return err
+	}
+	source, err := openRPCSource(ctx, rpcURL)
 	if err != nil {
 		return err
 	}
-	if len(headers) == 0 {
-		return fmt.Errorf("no rpc headers returned")
-	}
-	if len(headers) != len(sourceNames) {
-		return fmt.Errorf("expected %d rpc headers, got %d", len(sourceNames), len(headers))
-	}
-
-	// First require the verify sources to agree with each other.
-	base := headers[0]
-	for i := 1; i < len(headers); i++ {
-		if err := combineMismatch(base.source, headers[i].source, compareHeader(base.header, headers[i].header)); err != nil {
-			return err
-		}
-	}
-
-	// Then compare the proof package's embedded block context against that agreed independent view.
-	return verifyBlockContextAgainstAnchor(block, blockAnchorFromSnapshot(base.header))
+	defer source.Close()
+	return verifyBlockContextAgainstSource(ctx, pkg.Block, source)
 }
 
-// VerifyStateProofPackageAgainstRPCsWithFetcher is retained for source compatibility.
-//
-// Deprecated: use VerifyStateProofPackageAgainstRPCs; inject HeaderSource
-// implementations through VerifyStateProofPackageAgainstSources for customization.
-func VerifyStateProofPackageAgainstRPCsWithFetcher(ctx context.Context, pkg *StateProofPackage, req VerifyRPCRequest, fetcher blockHeaderFetcher) error {
-	return verifyStateProofPackageAgainstRPCsWithFetcher(ctx, pkg, req, fetcher)
+// VerifyReceiptProofPackageWithExpectationsAgainstSource verifies the proof locally, then compares its block context
+// with a header from the caller-configured Source. The caller establishes trust in that source.
+func VerifyReceiptProofPackageWithExpectationsAgainstSource(ctx context.Context, pkg *ReceiptProofPackage, expect *ReceiptExpectations, source HeaderSource) error {
+	if err := VerifyReceiptProofPackageWithExpectationsAgainstEmbeddedRoots(pkg, expect); err != nil {
+		return err
+	}
+	return verifyBlockContextAgainstSource(ctx, pkg.Block, source)
 }
 
-// VerifyStateProofPackageAgainstSourcesWithFetcher is retained for source compatibility.
-//
-// Deprecated: use VerifyStateProofPackageAgainstSources; inject HeaderSource
-// implementations through VerifyStateProofPackageAgainstSources for customization.
-func VerifyStateProofPackageAgainstSourcesWithFetcher(ctx context.Context, pkg *StateProofPackage, req VerifySourcesRequest, fetcher blockHeaderFetcher) error {
-	return verifyStateProofPackageAgainstSourcesWithFetcher(ctx, pkg, req, fetcher)
+func verifyBlockContextAgainstSource(ctx context.Context, block BlockContext, source HeaderSource) error {
+	if err := validateSource(ctx, source); err != nil {
+		return err
+	}
+	chainID, err := source.ChainID(ctx)
+	if err != nil {
+		return fmt.Errorf("chain id: %w", err)
+	}
+	header, err := source.HeaderByHash(ctx, block.BlockHash)
+	if err != nil {
+		return fmt.Errorf("fetch header: %w", err)
+	}
+	anchor, err := BlockAnchorFromHeader(chainID, header)
+	if err != nil {
+		return err
+	}
+	return verifyBlockContextAgainstAnchor(block, anchor)
 }

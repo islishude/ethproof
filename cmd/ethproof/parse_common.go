@@ -42,6 +42,11 @@ func prepareParse(fs *flag.FlagSet, args []string, configPath *string, parseErrP
 		}
 		return parseContext{}, newUsageError("%s: %v", parseErrPrefix, err)
 	}
+	if rpcFlag := fs.Lookup("rpc"); rpcFlag != nil {
+		if value, ok := rpcFlag.Value.(*singleRPCFlag); ok && value.repeated {
+			return parseContext{}, newUsageError("--rpc may only be supplied once")
+		}
+	}
 	if err := ensureNoPositionalArgs(fs); err != nil {
 		return parseContext{}, err
 	}
@@ -97,16 +102,6 @@ func mergeStringSlice(seen map[string]bool, flagName string, flagValue []string,
 	return append([]string(nil), configValue...)
 }
 
-func mergeInt(seen map[string]bool, flagName string, flagValue int, configValue *int, defaultValue int) int {
-	if seen[flagName] {
-		return flagValue
-	}
-	if configValue != nil {
-		return *configValue
-	}
-	return defaultValue
-}
-
 func mergeUint64(seen map[string]bool, flagName string, flagValue uint64, configValue *uint64) uint64 {
 	if seen[flagName] {
 		return flagValue
@@ -117,19 +112,28 @@ func mergeUint64(seen map[string]bool, flagName string, flagValue uint64, config
 	return 0
 }
 
-func mergeRPCInputs(seen map[string]bool, rpcValues multiStringFlag, minRPCs int, configRPCs []string, configMinRPCs *int) ([]string, int) {
-	return mergeStringSlice(seen, "rpc", rpcValues, configRPCs), mergeInt(seen, "min-rpcs", minRPCs, configMinRPCs, proof.DefaultMinRPCSources)
+// singleRPCFlag rejects repeated endpoints instead of silently picking one.
+type singleRPCFlag struct {
+	value    string
+	set      bool
+	repeated bool
 }
 
-func validateRPCInputs(rpcURLs []string, minRPCs int, missingMessage string) error {
-	if len(rpcURLs) == 0 {
+func (f *singleRPCFlag) String() string { return f.value }
+func (f *singleRPCFlag) Set(value string) error {
+	if f.set {
+		// Report this in prepareParse: flag.Parse includes the raw value in Set errors.
+		f.repeated = true
+		return nil
+	}
+	f.value = value
+	f.set = true
+	return nil
+}
+
+func validateRPCInput(rpcURL string, missingMessage string) error {
+	if strings.TrimSpace(rpcURL) == "" {
 		return newUsageError("%s", missingMessage)
-	}
-	if minRPCs < 1 {
-		return newUsageError("--min-rpcs must be at least 1")
-	}
-	if len(rpcURLs) < minRPCs {
-		return newUsageError("--min-rpcs=%d requires at least %d rpc values, got %d", minRPCs, minRPCs, len(rpcURLs))
 	}
 	return nil
 }

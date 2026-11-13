@@ -103,15 +103,10 @@ func cloneHexBytesList(in []hexutil.Bytes) []hexutil.Bytes {
 }
 
 type fakeHeaderSource struct {
-	name       string
 	chainID    *big.Int
 	header     *types.Header
 	chainIDErr error
 	headerErr  error
-}
-
-func (s *fakeHeaderSource) SourceName() string {
-	return s.name
 }
 
 func (s *fakeHeaderSource) ChainID(context.Context) (*big.Int, error) {
@@ -230,12 +225,13 @@ func (s *fakeReceiptSource) BlockReceiptsByHash(_ context.Context, blockHash com
 	return cloneReceiptList(s.blockReceipts), nil
 }
 
-func testStateProofSourcesRequest(t *testing.T) (StateProofSourcesRequest, VerifySourcesRequest, []string) {
+func testStateRequest(t *testing.T) (StateProofRequest, *fakeStateSource) {
 	t.Helper()
 
 	fixture := mustLoadStateFixture(t)
 	header := &types.Header{
 		Number:      new(big.Int).SetUint64(701),
+		Difficulty:  big.NewInt(0),
 		ParentHash:  common.HexToHash("0x1111"),
 		Root:        fixture.Block.StateRoot,
 		TxHash:      common.HexToHash("0x2222"),
@@ -260,85 +256,48 @@ func testStateProofSourcesRequest(t *testing.T) (StateProofSourcesRequest, Verif
 		proof.StorageProof[i], proof.StorageProof[j] = proof.StorageProof[j], proof.StorageProof[i]
 	}
 
-	names := []string{"source-a", "source-b", "source-c"}
-	sources := make([]StateSource, len(names))
-	headerSources := make([]HeaderSource, len(names))
-	for i, name := range names {
-		source := &fakeStateSource{
-			fakeHeaderSource: &fakeHeaderSource{
-				name:    name,
-				chainID: fixture.Block.ChainID.ToBig(),
-				header:  header,
-			},
-			expectedBlockNumber: header.Number.Uint64(),
-			expectedAccount:     fixture.Account,
-			expectedSlots:       storageProofSlotsFromFixture(fixture),
-			proof:               proof,
-		}
-		sources[i] = source
-		headerSources[i] = source
+	source := &fakeStateSource{
+		fakeHeaderSource: &fakeHeaderSource{
+			chainID: fixture.Block.ChainID.ToBig(),
+			header:  header,
+		},
+		expectedBlockNumber: header.Number.Uint64(),
+		expectedAccount:     fixture.Account,
+		expectedSlots:       storageProofSlotsFromFixture(fixture),
+		proof:               proof,
 	}
-
-	return StateProofSourcesRequest{
-			Sources:       sources,
-			MinRPCSources: len(sources),
-			BlockNumber:   header.Number.Uint64(),
-			Account:       fixture.Account,
-			Slots:         storageProofSlotsFromFixture(fixture),
+	return StateProofRequest{
+			BlockNumber: header.Number.Uint64(),
+			Account:     fixture.Account,
+			Slots:       storageProofSlotsFromFixture(fixture),
 		},
-		VerifySourcesRequest{
-			Sources:       headerSources,
-			MinRPCSources: len(headerSources),
-		},
-		testSourceIDs(len(names))
+		source
 }
 
-func testReceiptProofSourcesRequest(t *testing.T) (ReceiptProofSourcesRequest, VerifySourcesRequest, []string) {
+func testReceiptRequest(t *testing.T) (ReceiptProofRequest, *fakeReceiptSource) {
 	t.Helper()
 
-	sources, txHash, logIndex, names := testReceiptSourceSet(t)
-	headerSources := make([]HeaderSource, len(sources))
-	for i, source := range sources {
-		headerSources[i] = source
-	}
+	source, txHash, logIndex := testReceiptSource(t)
 
-	return ReceiptProofSourcesRequest{
-			Sources:       sources,
-			MinRPCSources: len(sources),
-			TxHash:        txHash,
-			LogIndex:      logIndex,
+	return ReceiptProofRequest{
+			TxHash:   txHash,
+			LogIndex: logIndex,
 		},
-		VerifySourcesRequest{
-			Sources:       headerSources,
-			MinRPCSources: len(headerSources),
-		},
-		names
+		source
 }
 
-func testTransactionProofSourcesRequest(t *testing.T) (TransactionProofSourcesRequest, VerifySourcesRequest, []string) {
+func testTransactionRequest(t *testing.T) (TransactionProofRequest, *fakeReceiptSource) {
 	t.Helper()
 
-	sources, txHash, _, names := testReceiptSourceSet(t)
-	txSources := make([]TransactionSource, len(sources))
-	headerSources := make([]HeaderSource, len(sources))
-	for i, source := range sources {
-		txSources[i] = source
-		headerSources[i] = source
-	}
+	source, txHash, _ := testReceiptSource(t)
 
-	return TransactionProofSourcesRequest{
-			Sources:       txSources,
-			MinRPCSources: len(txSources),
-			TxHash:        txHash,
+	return TransactionProofRequest{
+			TxHash: txHash,
 		},
-		VerifySourcesRequest{
-			Sources:       headerSources,
-			MinRPCSources: len(headerSources),
-		},
-		names
+		source
 }
 
-func testReceiptSourceSet(t *testing.T) ([]ReceiptSource, common.Hash, uint64, []string) {
+func testReceiptSource(t *testing.T) (*fakeReceiptSource, common.Hash, uint64) {
 	t.Helper()
 
 	to0 := common.HexToAddress("0x1000000000000000000000000000000000000001")
@@ -412,34 +371,20 @@ func testReceiptSourceSet(t *testing.T) ([]ReceiptSource, common.Hash, uint64, [
 		tx0.Hash(): blockReceipts[0],
 		tx1.Hash(): blockReceipts[1],
 	}
-	names := []string{"source-a", "source-b", "source-c"}
-	sources := make([]ReceiptSource, len(names))
-	for i, name := range names {
-		sources[i] = &fakeReceiptSource{
-			fakeHeaderSource: &fakeHeaderSource{
-				name:    name,
-				chainID: big.NewInt(31337),
-				header:  block.Header(),
-			},
-			block:         block,
-			blockReceipts: blockReceipts,
-			receiptsByTxHash: map[common.Hash]*types.Receipt{
-				tx0.Hash(): cloneReceipt(receiptsByHash[tx0.Hash()]),
-				tx1.Hash(): cloneReceipt(receiptsByHash[tx1.Hash()]),
-			},
-			txsByHash: txsByHash,
-		}
+	source := &fakeReceiptSource{
+		fakeHeaderSource: &fakeHeaderSource{
+			chainID: big.NewInt(31337),
+			header:  block.Header(),
+		},
+		block:         block,
+		blockReceipts: blockReceipts,
+		receiptsByTxHash: map[common.Hash]*types.Receipt{
+			tx0.Hash(): cloneReceipt(receiptsByHash[tx0.Hash()]),
+			tx1.Hash(): cloneReceipt(receiptsByHash[tx1.Hash()]),
+		},
+		txsByHash: txsByHash,
 	}
-
-	return sources, tx1.Hash(), 0, testSourceIDs(len(names))
-}
-
-func testSourceIDs(count int) []string {
-	ids := make([]string, count)
-	for i := range count {
-		ids[i] = sourceID(i)
-	}
-	return ids
+	return source, tx1.Hash(), 0
 }
 
 func storageResultsFromFixture(fixture StateProofPackage) []gethclient.StorageResult {
@@ -540,20 +485,14 @@ func cloneReceiptList(in []*types.Receipt) []*types.Receipt {
 	return out
 }
 
-func blockSnapshotHeaderFromBlockContext(block BlockContext) blockSnapshotHeader {
-	return blockSnapshotHeader{
-		ChainID:          proofutil.CloneChainID(block.ChainID),
-		BlockNumber:      block.BlockNumber,
-		BlockHash:        block.BlockHash,
-		ParentHash:       block.ParentHash,
-		StateRoot:        block.StateRoot,
-		TransactionsRoot: block.TransactionsRoot,
-		ReceiptsRoot:     block.ReceiptsRoot,
+func cloneStateStorageProofs(in []StateStorageProof) []StateStorageProof {
+	out := make([]StateStorageProof, len(in))
+	for i, storageProof := range in {
+		out[i] = StateStorageProof{
+			Slot:       storageProof.Slot,
+			Value:      storageProof.Value,
+			ProofNodes: cloneHexBytesList(storageProof.ProofNodes),
+		}
 	}
-}
-
-func cloneBlockSnapshotHeader(in blockSnapshotHeader) blockSnapshotHeader {
-	out := in
-	out.ChainID = proofutil.CloneChainID(in.ChainID)
 	return out
 }

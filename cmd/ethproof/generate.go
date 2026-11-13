@@ -41,7 +41,7 @@ func runGenerateState(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), stateProofTimeout)
 	defer cancel()
 
-	pkg, err := cliDeps.generateState(ctx, cfg.Request)
+	pkg, err := cliDeps.generateState(ctx, cfg.RPCURL, cfg.Request)
 	if err != nil {
 		return fmt.Errorf("generate state proof: %w", err)
 	}
@@ -68,7 +68,7 @@ func runGenerateReceipt(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), receiptProofTimeout)
 	defer cancel()
 
-	pkg, err := cliDeps.generateReceipt(ctx, cfg.Request)
+	pkg, err := cliDeps.generateReceipt(ctx, cfg.RPCURL, cfg.Request)
 	if err != nil {
 		return fmt.Errorf("generate receipt proof: %w", err)
 	}
@@ -94,7 +94,7 @@ func runGenerateTransaction(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), transactionProofTimeout)
 	defer cancel()
 
-	pkg, err := cliDeps.generateTransaction(ctx, cfg.Request)
+	pkg, err := cliDeps.generateTransaction(ctx, cfg.RPCURL, cfg.Request)
 	if err != nil {
 		return fmt.Errorf("generate transaction proof: %w", err)
 	}

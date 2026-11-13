@@ -11,21 +11,14 @@ import (
 	"github.com/islishude/ethproof/internal/proofutil"
 )
 
-type transactionSourceData struct {
-	snapshot     *transactionSnapshot
-	receipt      *types.Receipt
-	transactions types.Transactions
+type transactionData struct {
+	block               BlockContext
+	receipt             *types.Receipt
+	transactions        types.Transactions
+	encodedTransactions []hexutil.Bytes
 }
 
-func fetchTransactionSnapshot(ctx context.Context, source TransactionSource, txHash common.Hash) (*transactionSnapshot, error) {
-	data, err := fetchTransactionData(ctx, source, txHash)
-	if err != nil {
-		return nil, err
-	}
-	return data.snapshot, nil
-}
-
-func fetchTransactionData(ctx context.Context, source TransactionSource, txHash common.Hash) (*transactionSourceData, error) {
+func fetchTransactionData(ctx context.Context, source TransactionSource, txHash common.Hash) (*transactionData, error) {
 	chainID, err := source.ChainID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("chain id: %w", err)
@@ -64,12 +57,9 @@ func fetchTransactionData(ctx context.Context, source TransactionSource, txHash 
 	if receipt.TransactionIndex >= uint(len(blockTxs)) {
 		return nil, fmt.Errorf("transaction index %d out of range for block size %d", receipt.TransactionIndex, len(blockTxs))
 	}
-	header, headerSnapshot, err := fetchBlockHeader(ctx, source, receipt.BlockHash, chainID)
+	blockContext, err := BlockContextFromHeader(chainID, block.Header())
 	if err != nil {
 		return nil, err
-	}
-	if header.Hash() != block.Hash() {
-		return nil, fmt.Errorf("header hash %s does not match block hash %s", header.Hash(), block.Hash())
 	}
 
 	if block.Hash() != receipt.BlockHash {
@@ -77,7 +67,7 @@ func fetchTransactionData(ctx context.Context, source TransactionSource, txHash 
 	}
 
 	// Canonicalize the entire block transaction list so proof generation can rebuild the trie
-	// locally and compare normalized bytes across sources.
+	// locally.
 	transactionRLP, err := proofutil.EncodeTransaction(tx)
 	if err != nil {
 		return nil, fmt.Errorf("encode target tx: %w", err)
@@ -101,15 +91,19 @@ func fetchTransactionData(ctx context.Context, source TransactionSource, txHash 
 		return nil, fmt.Errorf("transaction bytes mismatch between block body and tx lookup")
 	}
 
-	return &transactionSourceData{
-		receipt:      receipt,
-		transactions: blockTxs,
-		snapshot: &transactionSnapshot{
-			Header:            headerSnapshot,
-			TxHash:            txHash,
-			TxIndex:           targetIndex,
-			TransactionRLP:    transactionRLP,
-			BlockTransactions: blockTransactions,
-		},
+	return &transactionData{
+		block:               blockContext,
+		receipt:             receipt,
+		transactions:        blockTxs,
+		encodedTransactions: blockTransactions,
 	}, nil
+}
+
+func (data *transactionData) prove(txHash common.Hash) (*TransactionProofPackage, error) {
+	index := uint64(data.receipt.TransactionIndex)
+	encoded, nodes, err := buildTransactionTrieAndProof(data.encodedTransactions, index, data.block.TransactionsRoot)
+	if err != nil {
+		return nil, err
+	}
+	return &TransactionProofPackage{Block: data.block, TxHash: txHash, TxIndex: index, TransactionRLP: encoded, ProofNodes: nodes}, nil
 }

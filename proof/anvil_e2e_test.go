@@ -84,15 +84,10 @@ func TestAnvilE2E(t *testing.T) {
 func testAnvilAPIFlow(t *testing.T, ctx context.Context, scenario complexAnvilScenario) {
 	t.Helper()
 
-	verifyReq := VerifyRPCRequest{
-		RPCURLs:       []string{scenario.rpcURL},
-		MinRPCSources: 1,
-	}
+	verifyURL := scenario.rpcURL
 
-	txPkg, err := GenerateTransactionProof(ctx, TransactionProofRequest{
-		RPCURLs:       []string{scenario.rpcURL},
-		MinRPCSources: 1,
-		TxHash:        scenario.txHash,
+	txPkg, err := GenerateTransactionProofFromRPC(ctx, scenario.rpcURL, TransactionProofRequest{
+		TxHash: scenario.txHash,
 	})
 	if err != nil {
 		t.Fatalf("GenerateTransactionProof: %v", err)
@@ -100,8 +95,8 @@ func testAnvilAPIFlow(t *testing.T, ctx context.Context, scenario complexAnvilSc
 	if err := VerifyTransactionProofPackage(txPkg); err != nil {
 		t.Fatalf("VerifyTransactionProofPackage: %v", err)
 	}
-	if err := VerifyTransactionProofPackageAgainstRPCs(ctx, txPkg, verifyReq); err != nil {
-		t.Fatalf("VerifyTransactionProofPackageAgainstRPCs: %v", err)
+	if err := VerifyTransactionProofPackageAgainstRPC(ctx, txPkg, verifyURL); err != nil {
+		t.Fatalf("VerifyTransactionProofPackageAgainstRPC: %v", err)
 	}
 
 	receiptExpect := &ReceiptExpectations{
@@ -109,11 +104,9 @@ func testAnvilAPIFlow(t *testing.T, ctx context.Context, scenario complexAnvilSc
 		Topics:  scenario.eventTopics,
 		Data:    scenario.eventData,
 	}
-	receiptPkg, err := GenerateReceiptProof(ctx, ReceiptProofRequest{
-		RPCURLs:       []string{scenario.rpcURL},
-		MinRPCSources: 1,
-		TxHash:        scenario.txHash,
-		LogIndex:      scenario.logIndex,
+	receiptPkg, err := GenerateReceiptProofFromRPC(ctx, scenario.rpcURL, ReceiptProofRequest{
+		TxHash:   scenario.txHash,
+		LogIndex: scenario.logIndex,
 	})
 	if err != nil {
 		t.Fatalf("GenerateReceiptProof: %v", err)
@@ -124,16 +117,14 @@ func testAnvilAPIFlow(t *testing.T, ctx context.Context, scenario complexAnvilSc
 	if err := VerifyReceiptProofPackageWithExpectations(receiptPkg, receiptExpect); err != nil {
 		t.Fatalf("VerifyReceiptProofPackageWithExpectations: %v", err)
 	}
-	if err := VerifyReceiptProofPackageWithExpectationsAgainstRPCs(ctx, receiptPkg, receiptExpect, verifyReq); err != nil {
-		t.Fatalf("VerifyReceiptProofPackageWithExpectationsAgainstRPCs: %v", err)
+	if err := VerifyReceiptProofPackageWithExpectationsAgainstRPC(ctx, receiptPkg, receiptExpect, verifyURL); err != nil {
+		t.Fatalf("VerifyReceiptProofPackageWithExpectationsAgainstRPC: %v", err)
 	}
 
-	statePkg, err := GenerateStateProof(ctx, StateProofRequest{
-		RPCURLs:       []string{scenario.rpcURL},
-		MinRPCSources: 1,
-		BlockNumber:   scenario.blockNumber,
-		Account:       scenario.contractAddress,
-		Slots:         []common.Hash{scenario.mainlineSlot},
+	statePkg, err := GenerateStateProofFromRPC(ctx, scenario.rpcURL, StateProofRequest{
+		BlockNumber: scenario.blockNumber,
+		Account:     scenario.contractAddress,
+		Slots:       []common.Hash{scenario.mainlineSlot},
 	})
 	if err != nil {
 		t.Fatalf("GenerateStateProof: %v", err)
@@ -141,8 +132,8 @@ func testAnvilAPIFlow(t *testing.T, ctx context.Context, scenario complexAnvilSc
 	if err := VerifyStateProofPackage(statePkg); err != nil {
 		t.Fatalf("VerifyStateProofPackage: %v", err)
 	}
-	if err := VerifyStateProofPackageAgainstRPCs(ctx, statePkg, verifyReq); err != nil {
-		t.Fatalf("VerifyStateProofPackageAgainstRPCs: %v", err)
+	if err := VerifyStateProofPackageAgainstRPC(ctx, statePkg, verifyURL); err != nil {
+		t.Fatalf("VerifyStateProofPackageAgainstRPC: %v", err)
 	}
 	if got, want := len(statePkg.StorageProofs), 1; got != want {
 		t.Fatalf("unexpected storage proof count: got %d want %d", got, want)
@@ -696,21 +687,18 @@ func writeAnvilCLIConfig(
 	config := map[string]any{
 		"generate": map[string]any{
 			"tx": map[string]any{
-				"rpcs":    []string{rpcURL},
-				"minRpcs": 1,
-				"tx":      txHash.Hex(),
-				"out":     txProof,
+				"rpc": rpcURL,
+				"tx":  txHash.Hex(),
+				"out": txProof,
 			},
 			"receipt": map[string]any{
-				"rpcs":     []string{rpcURL},
-				"minRpcs":  1,
+				"rpc":      rpcURL,
 				"tx":       txHash.Hex(),
 				"logIndex": logIndex,
 				"out":      receiptProof,
 			},
 			"state": map[string]any{
-				"rpcs":    []string{rpcURL},
-				"minRpcs": 1,
+				"rpc":     rpcURL,
 				"block":   blockNumber,
 				"account": account.Hex(),
 				"slots":   slotHexes,
@@ -719,22 +707,19 @@ func writeAnvilCLIConfig(
 		},
 		"verify": map[string]any{
 			"tx": map[string]any{
-				"rpcs":    []string{rpcURL},
-				"minRpcs": 1,
-				"proof":   txProof,
+				"rpc":   rpcURL,
+				"proof": txProof,
 			},
 			"receipt": map[string]any{
-				"rpcs":          []string{rpcURL},
-				"minRpcs":       1,
+				"rpc":           rpcURL,
 				"proof":         receiptProof,
 				"expectEmitter": expectEmitter.Hex(),
 				"expectTopics":  topics,
 				"expectData":    hexutil.Encode(eventData),
 			},
 			"state": map[string]any{
-				"rpcs":    []string{rpcURL},
-				"minRpcs": 1,
-				"proof":   stateProof,
+				"rpc":   rpcURL,
+				"proof": stateProof,
 			},
 		},
 	}

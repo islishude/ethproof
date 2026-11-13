@@ -2,74 +2,10 @@ package proof
 
 import (
 	"bytes"
-	"context"
 	"fmt"
-	"slices"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 )
-
-type stateSnapshotCollector struct {
-	blockNumber uint64
-	account     common.Address
-	slots       []common.Hash
-}
-
-// GenerateStateProof fetches a state proof from every RPC source, requires normalized agreement,
-// and returns the agreed proof package.
-func GenerateStateProof(ctx context.Context, req StateProofRequest) (*StateProofPackage, error) {
-	sourceSet, err := openNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources)
-	if err != nil {
-		return nil, err
-	}
-	defer sourceSet.Close()
-
-	return GenerateStateProofFromSources(ctx, StateProofSourcesRequest{
-		Sources:       sourceSet.StateSources(),
-		MinRPCSources: req.MinRPCSources,
-		BlockNumber:   req.BlockNumber,
-		Account:       req.Account,
-		Slots:         req.Slots,
-	})
-}
-
-// GenerateStateProofFromSources fetches a state proof from every source, requires normalized
-// agreement, and returns the agreed proof package.
-func GenerateStateProofFromSources(ctx context.Context, req StateProofSourcesRequest) (*StateProofPackage, error) {
-	if err := validateStateSlots(req.Slots); err != nil {
-		return nil, err
-	}
-
-	sourceNames, err := normalizeSourceNames(req.Sources, req.MinRPCSources)
-	if err != nil {
-		return nil, err
-	}
-	snapshots, err := collectStateSnapshots(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	base, consensus, err := consensusForStateSnapshots(sourceNames, snapshots)
-	if err != nil {
-		return nil, err
-	}
-	return buildVerifiedStateProofPackage(base, consensus)
-}
-
-func buildVerifiedStateProofPackage(base *accountSnapshot, consensus SourceConsensus) (*StateProofPackage, error) {
-	pkg := &StateProofPackage{
-		Block:             buildBlockContext(base.Header, consensus),
-		Account:           base.Account,
-		AccountRLP:        hexutil.Bytes(common.CopyBytes(base.AccountRLP)),
-		AccountClaim:      base.AccountClaim,
-		StorageProofs:     cloneStateStorageProofs(base.StorageProofs),
-		AccountProofNodes: cloneHexBytesNodes(base.AccountProof),
-	}
-	if err := VerifyStateProofPackageAgainstEmbeddedRoots(pkg); err != nil {
-		return nil, fmt.Errorf("verify generated state proof package: %w", err)
-	}
-	return pkg, nil
-}
 
 // VerifyStateProofPackage verifies internal consistency against the roots embedded in pkg.
 //
@@ -85,10 +21,7 @@ func VerifyStateProofPackageAgainstEmbeddedRoots(pkg *StateProofPackage) error {
 	if pkg == nil {
 		return fmt.Errorf("state proof package is nil")
 	}
-	if _, err := blockSnapshotHeaderFromContext(pkg.Block); err != nil {
-		return err
-	}
-	if err := validateSourceConsensusMetadata(pkg.Block.SourceConsensus); err != nil {
+	if err := validateBlockContext(pkg.Block); err != nil {
 		return err
 	}
 	if err := validateStateStorageProofs(pkg.StorageProofs); err != nil {
@@ -126,19 +59,6 @@ func VerifyStateProofPackageAgainstBlockAnchor(pkg *StateProofPackage, anchor Bl
 	return verifyBlockContextAgainstAnchor(pkg.Block, anchor)
 }
 
-func collectStateSnapshots(ctx context.Context, req StateProofSourcesRequest) ([]*accountSnapshot, error) {
-	collector := stateSnapshotCollector{
-		blockNumber: req.BlockNumber,
-		account:     req.Account,
-		slots:       slices.Clone(req.Slots),
-	}
-	return collectFromSources(ctx, req.Sources, collector.fetch)
-}
-
-func (c stateSnapshotCollector) fetch(ctx context.Context, source StateSource) (*accountSnapshot, error) {
-	return fetchStateSnapshot(ctx, source, c.blockNumber, c.account, c.slots)
-}
-
 func validateStateSlots(slots []common.Hash) error {
 	if len(slots) == 0 {
 		return fmt.Errorf("state proof requires at least one storage slot")
@@ -167,24 +87,4 @@ func validateStateStorageProofs(storageProofs []StateStorageProof) error {
 		seen[storageProof.Slot] = struct{}{}
 	}
 	return nil
-}
-
-func cloneStateStorageProofs(in []StateStorageProof) []StateStorageProof {
-	out := make([]StateStorageProof, len(in))
-	for i, storageProof := range in {
-		out[i] = StateStorageProof{
-			Slot:       storageProof.Slot,
-			Value:      storageProof.Value,
-			ProofNodes: cloneHexBytesNodes(storageProof.ProofNodes),
-		}
-	}
-	return out
-}
-
-func cloneHexBytesNodes(in []hexutil.Bytes) []hexutil.Bytes {
-	out := make([]hexutil.Bytes, len(in))
-	for i, node := range in {
-		out[i] = hexutil.Bytes(common.CopyBytes(node))
-	}
-	return out
 }

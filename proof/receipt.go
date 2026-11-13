@@ -2,80 +2,13 @@ package proof
 
 import (
 	"bytes"
-	"context"
 	"fmt"
+	"slices"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/islishude/ethproof/internal/proofutil"
 )
-
-type receiptSnapshotCollector struct {
-	txHash   common.Hash
-	logIndex uint64
-}
-
-// GenerateReceiptProof fetches the target receipt data from every RPC source, requires normalized
-// agreement, rebuilds the receipts trie locally, and returns the inclusion proof package.
-func GenerateReceiptProof(ctx context.Context, req ReceiptProofRequest) (*ReceiptProofPackage, error) {
-	sourceSet, err := openNormalizedRPCSources(ctx, req.RPCURLs, req.MinRPCSources)
-	if err != nil {
-		return nil, err
-	}
-	defer sourceSet.Close()
-
-	return GenerateReceiptProofFromSources(ctx, ReceiptProofSourcesRequest{
-		Sources:       sourceSet.ReceiptSources(),
-		MinRPCSources: req.MinRPCSources,
-		TxHash:        req.TxHash,
-		LogIndex:      req.LogIndex,
-	})
-}
-
-// GenerateReceiptProofFromSources fetches the target receipt data from every source, requires
-// normalized agreement, rebuilds the receipts trie locally, and returns the inclusion proof package.
-func GenerateReceiptProofFromSources(ctx context.Context, req ReceiptProofSourcesRequest) (*ReceiptProofPackage, error) {
-	sourceNames, err := normalizeSourceNames(req.Sources, req.MinRPCSources)
-	if err != nil {
-		return nil, err
-	}
-	snapshots, err := collectReceiptSnapshots(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	base, consensus, err := consensusForReceiptSnapshots(sourceNames, snapshots)
-	if err != nil {
-		return nil, err
-	}
-
-	transactionRLP, transactionProofNodes, err := buildTransactionTrieAndProof(base.BlockTransactions, base.TxIndex, base.Header.TransactionsRoot)
-	if err != nil {
-		return nil, err
-	}
-	if !bytes.Equal(transactionRLP, base.TransactionRLP) {
-		return nil, fmt.Errorf("transaction proof bytes do not match target transaction bytes")
-	}
-	receiptRLP, proofNodes, err := buildReceiptTrieAndProof(base.BlockReceipts, base.TxIndex, base.Header.ReceiptsRoot)
-	if err != nil {
-		return nil, err
-	}
-	pkg := &ReceiptProofPackage{
-		Block:                 buildBlockContext(base.Header, consensus),
-		TxHash:                base.TxHash,
-		TxIndex:               base.TxIndex,
-		LogIndex:              base.LogIndex,
-		TransactionRLP:        transactionRLP,
-		TransactionProofNodes: transactionProofNodes,
-		ReceiptRLP:            receiptRLP,
-		ProofNodes:            proofNodes,
-		Event:                 base.Event,
-	}
-	if err := VerifyReceiptProofPackageAgainstEmbeddedRoots(pkg); err != nil {
-		return nil, fmt.Errorf("verify generated receipt proof package: %w", err)
-	}
-	return pkg, nil
-}
 
 // VerifyReceiptProofPackage verifies internal consistency against the roots embedded in pkg.
 //
@@ -126,10 +59,7 @@ func verifyReceiptProofPackageLocal(pkg *ReceiptProofPackage, expect *ReceiptExp
 	if pkg == nil {
 		return fmt.Errorf("receipt proof package is nil")
 	}
-	if _, err := blockSnapshotHeaderFromContext(pkg.Block); err != nil {
-		return err
-	}
-	if err := validateSourceConsensusMetadata(pkg.Block.SourceConsensus); err != nil {
+	if err := validateBlockContext(pkg.Block); err != nil {
 		return err
 	}
 	if len(pkg.ProofNodes) == 0 {
@@ -178,8 +108,8 @@ func verifyReceiptProofPackageLocal(pkg *ReceiptProofPackage, expect *ReceiptExp
 	if !bytes.Equal(log.Data, pkg.Event.Data) {
 		return fmt.Errorf("event data mismatch")
 	}
-	if diffs := compareHashSlices("event.topics", log.Topics, pkg.Event.Topics); len(diffs) > 0 {
-		return fmt.Errorf("%s", diffs[0])
+	if !slices.Equal(log.Topics, pkg.Event.Topics) {
+		return fmt.Errorf("event topics mismatch")
 	}
 	return verifyReceiptExpectations(log, expect)
 }
@@ -205,16 +135,4 @@ func verifyReceiptExpectations(log *types.Log, expect *ReceiptExpectations) erro
 		return fmt.Errorf("expected data mismatch")
 	}
 	return nil
-}
-
-func collectReceiptSnapshots(ctx context.Context, req ReceiptProofSourcesRequest) ([]*receiptSnapshot, error) {
-	collector := receiptSnapshotCollector{
-		txHash:   req.TxHash,
-		logIndex: req.LogIndex,
-	}
-	return collectFromSources(ctx, req.Sources, collector.fetch)
-}
-
-func (c receiptSnapshotCollector) fetch(ctx context.Context, source ReceiptSource) (*receiptSnapshot, error) {
-	return fetchReceiptSnapshot(ctx, source, c.txHash, c.logIndex)
 }

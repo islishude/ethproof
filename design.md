@@ -1,508 +1,72 @@
-# eth-proof Design
+# Internal design
 
-## 1. Document Purpose
+For commands and integration examples, see [README.md](README.md). This document describes the implementation boundaries and correctness checks.
 
-This document describes the code organization, runtime architecture, key data flows, and design constraints of `eth-proof`. The target audience is future maintainers, refactorers, and engineers who need to add capabilities on top of the current implementation.
+## Code ownership
 
-`README.md` primarily answers “what this tool does” and “how to use it”; this document primarily answers “how the code is layered”, “why it is designed this way”, and “which boundaries must be preserved when making changes”.
-
-## 2. Design Goals and Boundaries
-
-### 2.1 Goals
-
-- Provide three types of Ethereum MPT proofs:
-  - `state`
-  - `receipt`
-  - `transaction`
-- Provide compiler-output-driven storage slot resolution for discovering concrete `state` proof keys.
-- Support two verification modes:
-  - fully offline verification
-  - offline verification + independent RPC block header revalidation
-- Use a strict multi-RPC consistency model for live proof generation.
-- Keep the CLI thin and centralize proof correctness logic in `proof/`.
-- Provide deterministic offline fixtures so tests do not depend on external networks.
-
-### 2.2 Non-goals
-
-- Do not implement 2-of-3 quorum, voting, or tolerance-based repair.
-- Do not implicitly trust a single RPC anywhere inside the proof package.
-- Do not turn the CLI into a business logic layer.
-- Do not change the public proof JSON structure unless a schema change is explicitly required.
-
-## 3. Overall Architecture
-
-```mermaid
-flowchart TD
-    CLI["cmd/ethproof<br/>Command entry / config parsing / output"]
-    FIX["cmd/mkfixtures<br/>Offline fixture construction"]
-    PROOF["proof<br/>Proof generation / verification / consensus / RPC normalization"]
-    UTIL["internal/proofutil<br/>Encoding / trie / digest / proof node helpers"]
-    RPC["Ethereum RPC Sources"]
-    DATA["proof/testdata/*.json"]
-    E2E["Anvil + demo contracts + e2e tests"]
-
-    CLI --> PROOF
-    FIX --> PROOF
-    FIX --> UTIL
-    PROOF --> UTIL
-    PROOF --> RPC
-    FIX --> DATA
-    E2E --> CLI
-    E2E --> PROOF
-```
-
-### 3.1 Layering Principles
-
-- `cmd/ethproof`
-  - Responsible for argument parsing, config merging, output, and exit codes.
-  - Owns `generate`, `verify`, and `resolve slot` command wiring.
-  - Does not contain proof correctness logic.
-- `proof`
-  - The core of the repository.
-  - Owns the public APIs for the three proof types, the source-injected API surface, snapshot collection, strict consistency checks, local trie proof verification, independent RPC block revalidation, compiler-output loading, and storage slot resolution.
-- `internal/proofutil`
-  - Contains only low-level infrastructure:
-    - transaction/receipt encoding and decoding
-    - trie proof node dumping / proof DB construction
-    - canonical digests
-    - storage proof value encoding and decoding
-  - Does not contain business semantics or proof rules.
-- `cmd/mkfixtures`
-  - Responsible only for constructing deterministic offline samples.
-  - Reuses the public models from `proof` and the low-level helpers from `internal/proofutil`.
-
-## 4. Repository Structure and Responsibilities
-
-| Path | Role |
+| Area | Responsibility |
 | --- | --- |
-| `proof/types.go` | Public proof data models and request models |
-| `proof/state.go` | Public generation/verification entrypoints for `state` proof |
-| `proof/receipt.go` | Public generation/verification entrypoints for `receipt` proof |
-| `proof/transaction.go` | Public generation/verification entrypoints for `transaction` proof |
-| `proof/source_api.go` | Source-injected interfaces plus shared source collection helpers for embedders and tests |
-| `proof/block_anchor.go` | Caller-trusted block-anchor construction and full block-context comparison |
-| `proof/verify_rpc.go` | Independent block-header revalidation against injected sources or RPC URLs |
-| `proof/rpc_sources.go` | RPC URL normalization, connection lifecycle, and URL-backed source adapters |
-| `proof/rpc_headers.go` | Block header fetching and header snapshots |
-| `proof/rpc_state_snapshot.go` | Normalization of a single-RPC state snapshot |
-| `proof/rpc_receipt_snapshot.go` | Normalization of a single-RPC receipt snapshot |
-| `proof/rpc_transaction_snapshot.go` | Normalization of a single-RPC transaction snapshot |
-| `proof/state_consensus.go` | State snapshot comparison and consensus metadata generation |
-| `proof/receipt_consensus.go` | Receipt snapshot comparison and consensus metadata generation |
-| `proof/transaction_consensus.go` | Transaction snapshot comparison and consensus metadata generation |
-| `proof/consensus_shared.go` | Shared consistency-comparison entrypoint reused across proof types |
-| `proof/proof_helpers.go` | Trie proof construction and local proof verification helpers |
-| `proof/storage_layout.go` | Compiler-output format detection and `storageLayout` extraction |
-| `proof/storage_resolver.go` | Solidity storage query parsing and slot expansion |
-| `proof/common.go` | Generic comparisons, `BlockContext` assembly, and shared consensus helpers |
-| `internal/proofutil/proofutil.go` | Encoding, digest, proof node, and trie helpers |
-| `cmd/ethproof/*.go` | CLI command dispatch, config parsing, and thin generate/verify/resolve wrappers |
-| `cmd/mkfixtures/*.go` | Fixture construction, offline digests, shared helpers |
-| `config.example.json` | Example config for `generate` / `verify` |
-| `proof/testdata/*.json` | Deterministic proof fixtures plus storage-layout fixtures used by tests |
-| `proof/*_test.go` | Proof, consensus, storage resolver, and e2e tests |
-| `contracts/ProofComplexDemo.sol` | Demo contract used by local proof-generation and resolver e2e |
-| `internal/e2e/bindings/*.go` | Generated Go bindings, must not be edited by hand |
-
-## 5. Public Data Model
-
-### 5.1 Core Models
-
-- `BlockContext`
-  - The block header fields embedded in a proof.
-  - Must be compared with a caller-trusted `BlockAnchor` or independent sources before its roots are authenticated.
-- `SourceConsensus`
-  - Unauthenticated generation metadata recording:
-    - opaque ordered source identifiers
-    - digests of normalized inputs
-    - field lists for human auditability
-- `StateProofPackage`
-  - account proof + one or more storage slot proofs
-- `ReceiptProofPackage`
-  - transaction inclusion proof + receipt inclusion proof at the same index + event claim
-- `TransactionProofPackage`
-  - transaction inclusion proof
-
-### 5.2 Design Notes
-
-- `...AgainstEmbeddedRoots` verifies cryptographic consistency offline but does not authenticate roots supplied by the package itself.
-- `...AgainstBlockAnchor`, `...AgainstSources`, and `...AgainstRPCs` add a trusted block-context comparison after embedded-root verification succeeds.
-- RPC metadata from generation is never reused by verify logic.
-
-## 6. Shared Processing Pipeline for the Three Proof Types
-
-The architecture of the three live generation flows is the same; only the snapshot contents differ.
-
-```mermaid
-sequenceDiagram
-    participant Caller
-    participant API as proof.Generate*
-    participant RPC as openNormalizedRPCSources
-    participant SrcAPI as proof.Generate*FromSources
-    participant Col as collectFromSources
-    participant Snap as fetch*Snapshot
-    participant Con as consensusFor*Snapshots
-    participant Trie as Local Trie Rebuild
-
-    Caller->>API: Generate*(ctx, req)
-    API->>RPC: Normalize URLs + open RPC-backed sources
-    RPC-->>API: source set
-    API->>SrcAPI: delegate to source-driven entrypoint
-    SrcAPI->>Col: Fetch a snapshot from each source
-    Col->>Snap: Normalize single-source snapshot
-    Snap-->>Col: snapshot
-    Col-->>SrcAPI: []snapshot
-    SrcAPI->>Con: Strictly compare all snapshots
-    Con-->>SrcAPI: canonical snapshot + SourceConsensus
-    SrcAPI->>Trie: Rebuild trie locally / extract proof nodes
-    Trie-->>SrcAPI: proof bytes + nodes
-    SrcAPI-->>Caller: *ProofPackage
-```
-
-### 6.1 Shared Steps
-
-1. `openNormalizedRPCSources`
-   - trims whitespace, deduplicates RPC URLs, validates the minimum source count, and wraps each URL as a `StateSource` / `ReceiptSource` / `TransactionSource` / `HeaderSource`.
-   - enforces distinct configured identifiers, while operational independence of the backing providers remains a deployment responsibility.
-2. `Generate*FromSources` + `collectFromSources`
-   - provide the shared source-driven path used by embedders, tests, and the URL-backed helpers.
-   - preserve source order and uniformly prefix framework errors with opaque `source[n]` identifiers.
-   - use `SourceName()` only to reject empty/duplicate configured sources; never persist or add it to framework errors.
-3. `fetch*Snapshot`
-   - converts raw responses from a single source into a comparable normalized structure.
-4. `requireMatchingSnapshots`
-   - compares every snapshot against the normalized view from the first source.
-   - any difference is a hard failure.
-5. `build*Consensus`
-   - generates `SourceConsensus`.
-6. Local trie rebuild / local proof verification
-   - the system does not trust an RPC to “prove itself correct”.
+| [proof](proof) | Generation, verification, RPC response validation, JSON I/O, and storage resolution. |
+| [cmd/ethproof](cmd/ethproof) | Parse configuration and flags, set timeouts, dispatch calls, and format output. |
+| [internal/proofutil](internal/proofutil) | Ethereum encoding, trie construction, and proof-node helpers. |
+| [cmd/mkfixtures](cmd/mkfixtures) | Deterministic fixtures using the public proof types. |
 
-## 7. State Proof Design
+The three proof packages and their requests are defined in [proof/types.go](proof/types.go). Storage resolution is an auxiliary tool, not another proof type.
 
-### 7.1 Data Model
+## Transport and block context
 
-The `state` proof represents:
+`Generate*Proof(ctx, source, req)` accepts a caller-owned source. `Generate*ProofFromRPC(ctx, rpcURL, req)` opens one connection, delegates to the same generator, and closes it on return. Requests contain only proof inputs.
 
-```text
-account ⊂ state trie -> stateRoot
-slot ⊂ storage trie(account.storageRoot) -> storageRoot ⊂ account
-```
+[Source interfaces](proof/source.go) require only the methods each flow uses. Nil and typed-nil sources are rejected. Implementations honor cancellation; URL-backed errors redact credentials while preserving error unwrapping. There is no cross-node comparison or endpoint fallback.
 
-### 7.2 Key Files
+`BlockContext` stores the chain ID, block number/hash, parent hash, and state/transaction/receipt roots. `BlockContextFromHeader` validates and projects a header without establishing trust. `BlockAnchor` is a distinct type with the same fields, supplied through a caller's trust mechanism.
 
-- `proof/state.go`
-- `proof/rpc_state_snapshot.go`
-- `proof/state_consensus.go`
-- `proof/proof_helpers.go`
+Proof JSON contains neither RPC endpoints nor consensus metadata. `LoadJSON` ignores unknown fields, including legacy `sourceConsensus`. Receipt packages require transaction inclusion proof nodes; packages missing them are rejected.
 
-### 7.3 Generation Flow
+## Generation
 
-1. Fetch from every RPC:
-   - block header
-   - `eth_getProof(account, [slot], block)`
-2. Require the returned header number to match the requested height, then normalize:
-   - sort proof node lists
-   - extract the account claim as `nonce/balance/storageRoot/codeHash`
-   - normalize the storage value into `common.Hash`
-3. Perform local pre-verification:
-   - `verifyAccountProof`
-   - `verifyStorageProof` (an authenticated empty storage root requires zero values and no storage proof nodes)
-4. After all RPC snapshots agree strictly:
-   - generate `StateProofPackage`
+All three flows construct a proof package directly and locally verify it before returning.
 
-### 7.4 Why It Is Designed This Way
+### State
 
-- `eth_getProof` is an RPC dependency point, but proof correctness does not depend on the RPC’s “word”.
-- Verifying each source proof locally before entering consensus avoids the case where multiple incorrect RPCs are merely “consistently wrong”.
+[State generation](proof/state_generate.go) fetches a header at the requested height and calls `eth_getProof` for the account and slots. It checks the returned height, sorts proof nodes for deterministic output, and restores storage proofs to requested-slot order.
 
-## 8. Receipt Proof Design
+Account proof verification derives the account RLP and checks nonce, balance, storage root, and code hash against the claim. Each storage proof is checked under that account's storage root. An empty storage trie requires zero values and no storage proof nodes. Empty or duplicate requested slots, unexpected response slots, and malformed values are rejected.
 
-### 8.1 Data Model
+### Transaction
 
-```text
-log ⊂ receipt ⊂ receipts trie -> receiptsRoot
-transaction ⊂ transactions trie -> transactionsRoot
-receipt index == transaction index
-```
+[Shared transaction loading](proof/transaction_data.go) fetches the transaction, its receipt, and the containing block. The receipt supplies the block hash and transaction index; both are checked against the block. The target transaction's hash and encoded bytes must match the entry at that index.
 
-### 8.2 Key Files
+The block already includes its header, so generation makes no separate header-by-hash request. [Transaction generation](proof/transaction.go) rebuilds the transaction trie, checks `transactionsRoot`, and exports the target inclusion proof.
 
-- `proof/receipt.go`
-- `proof/rpc_receipt_snapshot.go`
-- `proof/receipt_consensus.go`
-- `proof/proof_helpers.go`
+### Receipt / event
 
-### 8.3 Generation Flow
+[Receipt generation](proof/receipt_generate.go) reuses the transaction data and builds both transaction and receipt proofs at the same index. The target receipt must match the corresponding block receipt, and both reconstructed trie roots must match the header.
 
-1. Reuse the transaction snapshot first to lock:
-   - the block containing the tx
-   - the tx index
-   - canonical transaction bytes
-2. Reuse the target receipt and block transaction list already collected by the shared transaction loader.
-3. Fetch all block receipts:
-   - prefer `eth_getBlockReceipts`
-   - fall back to per-transaction `TransactionReceipt` scanning if unsupported, with at most 8 concurrent calls per source; reuse the target receipt, preserve index order, and cancel on failure
-4. Validate:
-   - the target receipt bytes must equal the bytes at the corresponding position in the block receipt list
-5. Validate canonical entry encodings, then build each trie once, check its root, and export proofs for the same index.
-6. Reduce the target log into `EventClaim{address, topics, data}`.
+[Receipt retrieval](proof/receipt_fetch.go) prefers `eth_getBlockReceipts`. Only a method-not-found error triggers per-transaction fallback, with at most 8 concurrent requests to the same node. Fallback reuses the target receipt, preserves transaction order, and cancels on failure.
 
-### 8.4 Why It Is Designed This Way
+Verification binds the transaction hash to the receipt index, checks matching transaction/receipt types, and compares the selected log's address, topics, and data. Caller expectations may additionally constrain emitter, topic prefix, or data.
 
-- A receipt proof does not only prove that the receipt is in the trie; it must also prove that the event claimed in the package is exactly the specified log inside that receipt.
-- The transaction proof binds `txHash` to that receipt index; hashing an otherwise unrelated `transactionRlp` is insufficient.
-- The “point lookup vs full block list” cross-check helps detect inconsistencies inside the RPC itself.
+## Verification and trust
 
-## 9. Transaction Proof Design
+Embedded-root verification checks proof nodes, canonical encodings, and claims locally. It does not authenticate the roots against the advertised block hash.
 
-### 9.1 Data Model
+[Anchor verification](proof/block_anchor.go) additionally compares every block-context field with a caller-trusted anchor. [Online verification](proof/verify_rpc.go) performs local checks and event expectations first, then obtains chain ID and header from the configured source and applies the same comparison.
 
-```text
-transaction ⊂ transactions trie -> transactionsRoot
-```
+CLI verification uses only its own configured RPC or explicit flag. A matching header is trusted only to the extent the caller trusts that endpoint; neither RPC verification nor anchor construction establishes consensus finality.
 
-### 9.2 Key Files
+## Storage resolution
 
-- `proof/transaction.go`
-- `proof/rpc_transaction_snapshot.go`
-- `proof/transaction_consensus.go`
-- `proof/proof_helpers.go`
+[Layout loading](proof/storage_layout.go) accepts raw layouts, Foundry artifacts, and Hardhat build-info. Artifact/build-info inputs require a validated contract selector; raw layouts reject one.
 
-### 9.3 Generation Flow
+[Path resolution](proof/storage_resolver.go) walks fields, mappings, arrays, and bytes/string `@word(n)` suffixes. It returns logical slot/offset/size entries plus first-seen, deduplicated `proofSlots`. Expansion rejects cyclic types and is bounded to 4096 fields and 64 recursive levels; larger arrays require explicit indexing.
 
-1. Lock the transaction’s block and index from the receipt.
-2. Fetch the full block transaction list.
-3. Cross-check the target tx bytes against the transaction bytes at the same index in the block body.
-4. Rebuild the transactions trie locally and export the proof nodes.
+## Test coverage
 
-### 9.4 Why It Is Designed This Way
+- Offline proof fixtures and golden tests check deterministic encoding and serialization.
+- Generation tests cover malformed node responses, wrong block heights, root mismatches, and receipt fallback.
+- Verification tests cover tampered proofs, event expectations, every anchor field, cancellation, and credential redaction.
+- CLI tests cover configuration isolation, flag precedence, strict inputs, and output behavior.
+- Anvil E2E exercises all three proof flows through Go and CLI, plus storage resolution checked against deployed contracts.
 
-- The flow first uses the receipt to lock block/index, then uses the block body to rebuild the trie, instead of depending on a single lookup result.
-
-## 10. Multi-RPC Consistency Model
-
-### 10.1 Basic Rules
-
-- By default, at least 3 distinct RPCs are required.
-- There is no quorum fallback.
-- Comparisons are performed on normalized bytes/fields, not on fuzzy high-level semantics.
-
-### 10.2 Normalized Contents
-
-- `state`
-  - block header
-  - account proof nodes
-  - account RLP
-  - decoded account claim
-  - storage proof nodes
-  - normalized storage value
-- `receipt`
-  - block header
-  - target tx bytes
-  - target receipt bytes
-  - block transaction list
-  - block receipt list
-  - event claim
-- `transaction`
-  - block header
-  - target tx bytes
-  - block transaction list
-
-### 10.3 Code Locations
-
-- `proof/consensus_shared.go`
-- `proof/state_consensus.go`
-- `proof/receipt_consensus.go`
-- `proof/transaction_consensus.go`
-- `proof/common.go`
-
-## 11. Offline Verification and Independent Revalidation
-
-### 11.1 Embedded-root and trusted-anchor verification
-
-Explicit embedded-root entrypoints:
-
-- `VerifyStateProofPackageAgainstEmbeddedRoots`
-- `VerifyReceiptProofPackageAgainstEmbeddedRoots`
-- `VerifyReceiptProofPackageWithExpectationsAgainstEmbeddedRoots`
-- `VerifyTransactionProofPackageAgainstEmbeddedRoots`
-
-Characteristics:
-
-- Depends only on the proof package itself.
-- Does not access the network.
-- Does not establish that the embedded roots belong to the advertised block hash.
-- Core logic lives in `proof/proof_helpers.go` and the verify flow inside `proof/*.go`.
-
-The matching `...AgainstBlockAnchor` entrypoints compare every embedded block field with a caller-trusted `BlockAnchor`. The caller remains responsible for header authenticity and finality. The older `Verify*ProofPackage` names are deprecated embedded-root wrappers.
-
-### 11.2 Source-aware and RPC-aware Verification
-
-Public entrypoints:
-
-- `VerifyStateProofPackageAgainstSources` / `VerifyStateProofPackageAgainstRPCs`
-- `VerifyReceiptProofPackageWithExpectationsAgainstSources` / `VerifyReceiptProofPackageWithExpectationsAgainstRPCs`
-- `VerifyTransactionProofPackageAgainstSources` / `VerifyTransactionProofPackageAgainstRPCs`
-
-Processing order:
-
-1. Perform local proof verification first.
-2. Re-fetch the block header from an independent verify source set.
-3. First require agreement across the verify sources.
-4. Then require the proof package’s `BlockContext` to match that independent view.
-
-The `...AgainstRPCs` helpers only normalize/open URL-backed sources and then delegate into the same source-driven verification logic in `proof/verify_rpc.go`.
-
-## 12. CLI Design
-
-### 12.1 Design Principles
-
-- The CLI only coordinates entrypoints; it does not make proof business decisions.
-- `--config` is the primary input layer, and flags act as overrides.
-
-### 12.2 Key Files
-
-| Path | Responsibility |
-| --- | --- |
-| `cmd/ethproof/run.go` | root command dispatch, error rendering, exit codes |
-| `cmd/ethproof/generate.go` | thin wrapper for generate subcommands |
-| `cmd/ethproof/verify.go` | thin wrapper for verify subcommands |
-| `cmd/ethproof/resolve.go` | thin wrapper for `resolve slot` |
-| `cmd/ethproof/config.go` | config JSON structure and loading |
-| `cmd/ethproof/parse_common.go` | shared flag/config/default merge logic |
-| `cmd/ethproof/parse_generate.go` | generate argument parsing |
-| `cmd/ethproof/parse_verify.go` | verify argument parsing |
-| `cmd/ethproof/parse_resolve.go` | resolve argument parsing |
-| `cmd/ethproof/usage.go` | usage error / help semantics |
-
-### 12.3 Runtime Flow
-
-1. `main -> runMain -> run`
-2. Dispatch subcommands to `generate`, `verify`, or `resolve`
-3. Parse flags and optional config JSON for `generate` / `verify`
-4. For `generate` / `verify`, create a timeout-bounded context and call the `proof` package
-5. For `resolve`, load compiler output via `proof.LoadStorageLayout`, then resolve the query via `proof.ResolveStorageSlots`
-6. `generate` / `verify` write JSON files plus a short status line to `stderr`; `resolve` writes JSON to `stdout` unless `--out` is provided
-
-### 12.4 `resolve slot`
-
-`resolve slot` is intentionally kept outside the proof-generation flow, but its core logic still lives in `proof/`:
-
-1. Parse `--compiler-output`, optional format-dependent `--contract`, `--var`, and `--format` using strict hexadecimal validation.
-2. Detect or enforce one of three compiler-output shapes:
-   - raw `storageLayout` JSON
-   - Foundry artifact JSON containing `storageLayout`
-   - Hardhat build-info JSON via `output.contracts`
-3. Walk the query path across structs, mappings, arrays, and optional `@word(n)` suffixes.
-4. Validate artifact selectors through Foundry compilation-target metadata; build-info performs its own contract selection, while raw layouts reject selectors.
-5. Return logical slot/offset/size entries plus first-seen, deduplicated `proofSlots` for state-proof generation.
-
-Expansion is fail-closed at 4096 logical fields and 64 recursive type levels, and cyclic compiler type graphs are rejected. Larger arrays must be indexed explicitly.
-
-## 13. Fixture and Test Design
-
-### 13.1 Offline Fixture
-
-`cmd/mkfixtures` provides deterministic offline sample construction:
-
-- `fixtures.go`
-  - unified assembly entrypoint `BuildOfflineFixtures`
-- `transaction_receipt_fixture.go`
-  - transaction / receipt fixture construction
-- `state_fixture.go`
-  - state fixture construction
-- `consensus_helpers.go`
-  - offline digest / consensus field construction
-- `shared.go`
-  - shared helpers
-
-### 13.2 Test Layers
-
-- `cmd/mkfixtures/fixtures_golden_test.go`
-  - checked-in proof fixtures match regenerated offline fixtures
-- `proof/state_verify_test.go`, `proof/receipt_verify_test.go`, `proof/transaction_verify_test.go`
-  - local verification and tamper-style regression coverage for each proof type
-- `proof/state_sources_test.go`, `proof/receipt_sources_test.go`, `proof/transaction_sources_test.go`
-  - source-driven generation and snapshot normalization
-- `proof/verify_sources_test.go`
-  - independent source/RPC revalidation and generation-metadata isolation
-- `proof/consensus_helpers_test.go`
-  - compare / consensus builder helpers
-- `proof/source_consensus_test.go`, `proof/rpc_threshold_test.go`
-  - source-name validation, `collectFromSources`, and RPC minimum-threshold normalization
-- `proof/rpc_test.go`
-  - receipt list encoding and validation
-- `proof/storage_layout_test.go`
-  - compiler-output parsing and slot resolution
-- `cmd/ethproof/*_test.go`
-  - CLI parsing, usage behavior, status output, and runtime wrapper behavior
-- `cmd/mkfixtures/helpers_test.go`
-  - offline digest stability, proof node ordering, encoding roundtrip
-- `proof/anvil_e2e_test.go`
-  - local Anvil end-to-end path, including CLI `resolve` / `generate` / `verify`
-
-### 13.3 Why It Is Designed This Way
-
-- Fixtures keep unit tests independent from external networks.
-- e2e ensures that the CLI, proof package, contract, bindings, and Anvil environment work together.
-- Live tests depend on explicit environment variables so default local or CI test runs remain stable.
-
-## 14. Key Invariants
-
-The following invariants must be preserved when changing the code:
-
-1. Do not weaken the strict multi-RPC consistency model.
-2. Do not change the public JSON structure in `proof/types.go` unless a correctness fix explicitly requires it; receipt transaction proofs are mandatory and legacy receipt JSON fails closed.
-3. CLI `verify` must use an independent verify RPC set and must not reuse generation metadata.
-4. Offline verification must distinguish embedded-root consistency from caller-trusted `BlockAnchor` verification.
-5. `internal/e2e/bindings/*.go` is generated output and must not be edited by hand.
-6. Logic related to proof correctness should stay in `proof/`; do not duplicate it in the CLI.
-
-## 15. Extension and Refactoring Guidance
-
-### 15.1 If a New Proof Type Is Added
-
-The recommended pattern is to add a matching set of files:
-
-- `proof/<kind>.go`
-- `proof/rpc_<kind>_snapshot.go`
-- `proof/<kind>_consensus.go`
-
-And reuse:
-
-- `collectFromSources`
-- `openNormalizedRPCSources`
-- `requireMatchingSnapshots`
-- `proofutil`
-
-### 15.2 If Encoding or Proof Semantics Change
-
-The following must be checked together:
-
-- `proof/testdata/*.json`
-- `cmd/mkfixtures/*`
-- `cmd/mkfixtures/fixtures_golden_test.go`
-- `proof/*_verify_test.go`
-- `proof/*_sources_test.go`
-- `proof/anvil_e2e_test.go`
-
-### 15.3 If the CLI Changes
-
-The following must be checked together:
-
-- `cmd/ethproof/parse_*`
-- `cmd/ethproof/*_test.go`
-- `README.md`
-- `config.example.json`
-
-## 16. Summary
-
-The core ideas of this repository are:
-
-- keep proof correctness in `proof/`
-- isolate low-level encoding/trie/byte helpers in `internal/proofutil`
-- keep the CLI as a thin wrapper
-- build trust in live generation on “strict normalized consistency + local reconstruction/verification”
-
-As a result, future changes should prioritize preserving these four lines of architecture rather than locally reducing a few lines of code or abstracting for abstraction’s sake.
+Use the commands in [README.md](README.md#development). Maintenance rules are in [AGENTS.md](AGENTS.md).

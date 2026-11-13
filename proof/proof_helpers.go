@@ -45,7 +45,7 @@ func verifyAccountProof(stateRoot common.Hash, account common.Address, nodes []h
 	}
 
 	// Decode the proven account bytes and compare the decoded fields against the explicit claim
-	// carried in the package or source snapshot.
+	// carried in the proof package or RPC response.
 	var decoded types.StateAccount
 	if err := rlp.DecodeBytes(accountValue, &decoded); err != nil {
 		return nil, fmt.Errorf("decode account rlp: %w", err)

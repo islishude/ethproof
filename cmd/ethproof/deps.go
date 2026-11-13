@@ -7,23 +7,23 @@ import (
 )
 
 type commandDeps struct {
-	generateState       func(context.Context, proof.StateProofRequest) (*proof.StateProofPackage, error)
-	generateReceipt     func(context.Context, proof.ReceiptProofRequest) (*proof.ReceiptProofPackage, error)
-	generateTransaction func(context.Context, proof.TransactionProofRequest) (*proof.TransactionProofPackage, error)
-	verifyState         func(context.Context, *proof.StateProofPackage, proof.VerifyRPCRequest) error
-	verifyReceipt       func(context.Context, *proof.ReceiptProofPackage, *proof.ReceiptExpectations, proof.VerifyRPCRequest) error
-	verifyTransaction   func(context.Context, *proof.TransactionProofPackage, proof.VerifyRPCRequest) error
+	generateState       func(context.Context, string, proof.StateProofRequest) (*proof.StateProofPackage, error)
+	generateReceipt     func(context.Context, string, proof.ReceiptProofRequest) (*proof.ReceiptProofPackage, error)
+	generateTransaction func(context.Context, string, proof.TransactionProofRequest) (*proof.TransactionProofPackage, error)
+	verifyState         func(context.Context, *proof.StateProofPackage, string) error
+	verifyReceipt       func(context.Context, *proof.ReceiptProofPackage, *proof.ReceiptExpectations, string) error
+	verifyTransaction   func(context.Context, *proof.TransactionProofPackage, string) error
 	loadJSON            func(string, any) error
 	saveJSON            func(string, any) error
 }
 
 var cliDeps = commandDeps{
-	generateState:       proof.GenerateStateProof,
-	generateReceipt:     proof.GenerateReceiptProof,
-	generateTransaction: proof.GenerateTransactionProof,
-	verifyState:         proof.VerifyStateProofPackageAgainstRPCs,
-	verifyReceipt:       proof.VerifyReceiptProofPackageWithExpectationsAgainstRPCs,
-	verifyTransaction:   proof.VerifyTransactionProofPackageAgainstRPCs,
+	generateState:       proof.GenerateStateProofFromRPC,
+	generateReceipt:     proof.GenerateReceiptProofFromRPC,
+	generateTransaction: proof.GenerateTransactionProofFromRPC,
+	verifyState:         proof.VerifyStateProofPackageAgainstRPC,
+	verifyReceipt:       proof.VerifyReceiptProofPackageWithExpectationsAgainstRPC,
+	verifyTransaction:   proof.VerifyTransactionProofPackageAgainstRPC,
 	loadJSON:            proof.LoadJSON,
 	saveJSON:            proof.SaveJSON,
 }

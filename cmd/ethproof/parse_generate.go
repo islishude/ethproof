@@ -6,16 +6,19 @@ import (
 )
 
 type generateStateConfig struct {
+	RPCURL  string
 	Request proof.StateProofRequest
 	Out     string
 }
 
 type generateReceiptConfig struct {
+	RPCURL  string
 	Request proof.ReceiptProofRequest
 	Out     string
 }
 
 type generateTransactionConfig struct {
+	RPCURL  string
 	Request proof.TransactionProofRequest
 	Out     string
 }
@@ -23,10 +26,9 @@ type generateTransactionConfig struct {
 func parseGenerateStateArgs(args []string) (generateStateConfig, error) {
 	fs := newFlagSet("generate state")
 	configPath := fs.String("config", "", "config json file")
-	var rpcURLs multiStringFlag
-	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
+	var rpcURL singleRPCFlag
+	fs.Var(&rpcURL, "rpc", "Ethereum RPC URL")
 	var slotHexes multiStringFlag
-	minRPCs := fs.Int("min-rpcs", proof.DefaultMinRPCSources, "minimum distinct RPC sources required")
 	blockNumber := fs.Uint64("block", 0, "block number")
 	accountHex := fs.String("account", "", "20-byte 0x-prefixed account address")
 	fs.Var(&slotHexes, "slot", "1-64 digit 0x-prefixed storage slot key (repeatable)")
@@ -48,17 +50,17 @@ func parseGenerateStateArgs(args []string) (generateStateConfig, error) {
 		},
 		Out: mergeString(parseCtx.seen, "out", *out, "", "state.json"),
 	}
-	cfg.Request.RPCURLs, cfg.Request.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, nil, nil)
+	cfg.RPCURL = mergeString(parseCtx.seen, "rpc", rpcURL.value, "", "")
 	rawAccount := mergeString(parseCtx.seen, "account", *accountHex, "", "")
 	rawSlots := mergeStringSlice(parseCtx.seen, "slot", slotHexes, nil)
 	if section != nil {
-		cfg.Request.RPCURLs, cfg.Request.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, section.RPCs, section.MinRPCs)
+		cfg.RPCURL = mergeString(parseCtx.seen, "rpc", rpcURL.value, section.RPC, "")
 		cfg.Request.BlockNumber = mergeUint64(parseCtx.seen, "block", *blockNumber, section.Block)
 		rawAccount = mergeString(parseCtx.seen, "account", *accountHex, section.Account, "")
 		rawSlots = mergeStringSlice(parseCtx.seen, "slot", slotHexes, section.Slots)
 		cfg.Out = mergeString(parseCtx.seen, "out", *out, section.Out, "state.json")
 	}
-	if err := validateRPCInputs(cfg.Request.RPCURLs, cfg.Request.MinRPCSources, "generate state requires at least one RPC via --rpc or generate.state.rpcs in --config"); err != nil {
+	if err := validateRPCInput(cfg.RPCURL, "generate state requires an RPC via --rpc or generate.state.rpc in --config"); err != nil {
 		return generateStateConfig{}, err
 	}
 	if rawAccount == "" {
@@ -86,9 +88,8 @@ func parseGenerateStateArgs(args []string) (generateStateConfig, error) {
 func parseGenerateReceiptArgs(args []string) (generateReceiptConfig, error) {
 	fs := newFlagSet("generate receipt")
 	configPath := fs.String("config", "", "config json file")
-	var rpcURLs multiStringFlag
-	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
-	minRPCs := fs.Int("min-rpcs", proof.DefaultMinRPCSources, "minimum distinct RPC sources required")
+	var rpcURL singleRPCFlag
+	fs.Var(&rpcURL, "rpc", "Ethereum RPC URL")
 	txHashHex := fs.String("tx", "", "32-byte 0x-prefixed transaction hash")
 	logIndex := fs.Uint64("log-index", 0, "log index within receipt")
 	out := fs.String("out", "receipt.json", "output proof json")
@@ -109,15 +110,15 @@ func parseGenerateReceiptArgs(args []string) (generateReceiptConfig, error) {
 		},
 		Out: mergeString(parseCtx.seen, "out", *out, "", "receipt.json"),
 	}
-	cfg.Request.RPCURLs, cfg.Request.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, nil, nil)
+	cfg.RPCURL = mergeString(parseCtx.seen, "rpc", rpcURL.value, "", "")
 	rawTxHash := mergeString(parseCtx.seen, "tx", *txHashHex, "", "")
 	if section != nil {
-		cfg.Request.RPCURLs, cfg.Request.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, section.RPCs, section.MinRPCs)
+		cfg.RPCURL = mergeString(parseCtx.seen, "rpc", rpcURL.value, section.RPC, "")
 		cfg.Request.LogIndex = mergeUint64(parseCtx.seen, "log-index", *logIndex, section.LogIndex)
 		rawTxHash = mergeString(parseCtx.seen, "tx", *txHashHex, section.Tx, "")
 		cfg.Out = mergeString(parseCtx.seen, "out", *out, section.Out, "receipt.json")
 	}
-	if err := validateRPCInputs(cfg.Request.RPCURLs, cfg.Request.MinRPCSources, "generate receipt requires at least one RPC via --rpc or generate.receipt.rpcs in --config"); err != nil {
+	if err := validateRPCInput(cfg.RPCURL, "generate receipt requires an RPC via --rpc or generate.receipt.rpc in --config"); err != nil {
 		return generateReceiptConfig{}, err
 	}
 	if rawTxHash == "" {
@@ -134,9 +135,8 @@ func parseGenerateReceiptArgs(args []string) (generateReceiptConfig, error) {
 func parseGenerateTransactionArgs(args []string) (generateTransactionConfig, error) {
 	fs := newFlagSet("generate tx")
 	configPath := fs.String("config", "", "config json file")
-	var rpcURLs multiStringFlag
-	fs.Var(&rpcURLs, "rpc", "Ethereum RPC URL")
-	minRPCs := fs.Int("min-rpcs", proof.DefaultMinRPCSources, "minimum distinct RPC sources required")
+	var rpcURL singleRPCFlag
+	fs.Var(&rpcURL, "rpc", "Ethereum RPC URL")
 	txHashHex := fs.String("tx", "", "32-byte 0x-prefixed transaction hash")
 	out := fs.String("out", "tx.json", "output proof json")
 
@@ -153,14 +153,14 @@ func parseGenerateTransactionArgs(args []string) (generateTransactionConfig, err
 	cfg := generateTransactionConfig{
 		Out: mergeString(parseCtx.seen, "out", *out, "", "tx.json"),
 	}
-	cfg.Request.RPCURLs, cfg.Request.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, nil, nil)
+	cfg.RPCURL = mergeString(parseCtx.seen, "rpc", rpcURL.value, "", "")
 	rawTxHash := mergeString(parseCtx.seen, "tx", *txHashHex, "", "")
 	if section != nil {
-		cfg.Request.RPCURLs, cfg.Request.MinRPCSources = mergeRPCInputs(parseCtx.seen, rpcURLs, *minRPCs, section.RPCs, section.MinRPCs)
+		cfg.RPCURL = mergeString(parseCtx.seen, "rpc", rpcURL.value, section.RPC, "")
 		rawTxHash = mergeString(parseCtx.seen, "tx", *txHashHex, section.Tx, "")
 		cfg.Out = mergeString(parseCtx.seen, "out", *out, section.Out, "tx.json")
 	}
-	if err := validateRPCInputs(cfg.Request.RPCURLs, cfg.Request.MinRPCSources, "generate tx requires at least one RPC via --rpc or generate.tx.rpcs in --config"); err != nil {
+	if err := validateRPCInput(cfg.RPCURL, "generate tx requires an RPC via --rpc or generate.tx.rpc in --config"); err != nil {
 		return generateTransactionConfig{}, err
 	}
 	if rawTxHash == "" {

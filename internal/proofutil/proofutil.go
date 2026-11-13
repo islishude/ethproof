@@ -5,7 +5,6 @@ package proofutil
 import (
 	"bytes"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -63,16 +62,8 @@ func CloneChainID(v *uint256.Int) *uint256.Int {
 	return v.Clone()
 }
 
-// ChainIDString renders a chain ID for JSON-friendly consensus field output.
-func ChainIDString(v *uint256.Int) string {
-	if v == nil {
-		return "0"
-	}
-	return v.String()
-}
-
 // NormalizeHexNodeList decodes hex-encoded proof nodes and sorts them by byte value so that
-// equivalent proofs from different sources compare deterministically.
+// equivalent node sets produce deterministic proof output.
 func NormalizeHexNodeList(nodes []string) ([]hexutil.Bytes, error) {
 	out := make([]hexutil.Bytes, 0, len(nodes))
 	for _, node := range nodes {
@@ -198,15 +189,6 @@ func DecodeReceipt(raw []byte) (*types.Receipt, []byte, error) {
 		return nil, nil, err
 	}
 	return &receipt, common.CopyBytes(raw), nil
-}
-
-// CanonicalDigest hashes the JSON encoding of value for consensus comparison.
-func CanonicalDigest(value any) (common.Hash, error) {
-	b, err := json.Marshal(value)
-	if err != nil {
-		return common.Hash{}, err
-	}
-	return crypto.Keccak256Hash(b), nil
 }
 
 // BalanceHex renders a balance as an Ethereum quantity string.

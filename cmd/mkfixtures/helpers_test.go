@@ -2,76 +2,12 @@ package main
 
 import (
 	"bytes"
-	"slices"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/ethdb/memorydb"
 	"github.com/islishude/ethproof/internal/proofutil"
 )
-
-func TestCanonicalOfflineReceiptDigestsStable(t *testing.T) {
-	const txIndex = 0
-	header, txs, receipts, _, err := buildOfflineTransactionReceiptFixture()
-	if err != nil {
-		t.Fatalf("buildOfflineTransactionReceiptFixture: %v", err)
-	}
-
-	blockTransactions := make([]hexutil.Bytes, len(txs))
-	blockReceipts := make([]hexutil.Bytes, len(receipts))
-	for i := range txs {
-		blockTransactions[i], err = proofutil.EncodeTransaction(txs[i])
-		if err != nil {
-			t.Fatalf("EncodeTransaction(%d): %v", i, err)
-		}
-		blockReceipts[i], err = proofutil.EncodeReceipt(receipts[i])
-		if err != nil {
-			t.Fatalf("EncodeReceipt(%d): %v", i, err)
-		}
-	}
-
-	first, err := canonicalOfflineReceiptDigests(header, blockTransactions, blockReceipts, blockTransactions[txIndex], blockReceipts[txIndex], receipts[txIndex].Logs[0])
-	if err != nil {
-		t.Fatalf("canonicalOfflineReceiptDigests(first): %v", err)
-	}
-	second, err := canonicalOfflineReceiptDigests(header, blockTransactions, blockReceipts, blockTransactions[txIndex], blockReceipts[txIndex], receipts[txIndex].Logs[0])
-	if err != nil {
-		t.Fatalf("canonicalOfflineReceiptDigests(second): %v", err)
-	}
-	if !slices.Equal(first, second) {
-		t.Fatal("expected receipt digests to be stable")
-	}
-}
-
-func TestCanonicalOfflineStateDigestsStable(t *testing.T) {
-	fixtures, err := BuildOfflineFixtures()
-	if err != nil {
-		t.Fatalf("BuildOfflineFixtures: %v", err)
-	}
-
-	statePkg := fixtures.State
-	header := blockSnapshotHeader{
-		ChainID:          proofutil.CloneChainID(statePkg.Block.ChainID),
-		BlockNumber:      statePkg.Block.BlockNumber,
-		BlockHash:        statePkg.Block.BlockHash,
-		ParentHash:       statePkg.Block.ParentHash,
-		StateRoot:        statePkg.Block.StateRoot,
-		TransactionsRoot: statePkg.Block.TransactionsRoot,
-		ReceiptsRoot:     statePkg.Block.ReceiptsRoot,
-	}
-	first, err := canonicalOfflineStateDigests(header, statePkg.AccountRLP, statePkg.AccountProofNodes, statePkg.StorageProofs)
-	if err != nil {
-		t.Fatalf("canonicalOfflineStateDigests(first): %v", err)
-	}
-	second, err := canonicalOfflineStateDigests(header, statePkg.AccountRLP, statePkg.AccountProofNodes, statePkg.StorageProofs)
-	if err != nil {
-		t.Fatalf("canonicalOfflineStateDigests(second): %v", err)
-	}
-	if !slices.Equal(first, second) {
-		t.Fatal("expected state digests to be stable")
-	}
-}
 
 func TestDumpProofNodesSortsByKey(t *testing.T) {
 	db := memorydb.New()
@@ -96,7 +32,7 @@ func TestDumpProofNodesSortsByKey(t *testing.T) {
 
 func TestEncodingRoundTrip(t *testing.T) {
 	const txIndex = 0
-	header, txs, receipts, _, err := buildOfflineTransactionReceiptFixture()
+	header, txs, receipts, err := buildOfflineTransactionReceiptFixture()
 	if err != nil {
 		t.Fatalf("buildOfflineTransactionReceiptFixture: %v", err)
 	}
@@ -133,18 +69,5 @@ func TestEncodingRoundTrip(t *testing.T) {
 	}
 	if decodedReceipt.Logs[0].Address != common.HexToAddress("0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC") {
 		t.Fatalf("unexpected receipt log address: %s", decodedReceipt.Logs[0].Address)
-	}
-}
-
-func TestOfflineTransactionFieldsStable(t *testing.T) {
-	header, txs, _, _, err := buildOfflineTransactionReceiptFixture()
-	if err != nil {
-		t.Fatalf("buildOfflineTransactionReceiptFixture: %v", err)
-	}
-
-	first := offlineTransactionFields(txs[0].Hash(), 0, header)
-	second := offlineTransactionFields(txs[0].Hash(), 0, header)
-	if !slices.Equal(first, second) {
-		t.Fatal("expected transaction fields to be stable")
 	}
 }

@@ -22,7 +22,6 @@ func TestRunGenerateCommandsSuccess(t *testing.T) {
 			name: "state",
 			args: []string{
 				"--rpc", "http://127.0.0.1:8545",
-				"--min-rpcs", "1",
 				"--block", "12",
 				"--account", "0x1111111111111111111111111111111111111111",
 				"--slot", "0x01",
@@ -30,7 +29,7 @@ func TestRunGenerateCommandsSuccess(t *testing.T) {
 			},
 			run: runGenerateState,
 			install: func(deps *commandDeps, calls *generateCalls, save *saveCall) {
-				deps.generateState = func(_ context.Context, req proof.StateProofRequest) (*proof.StateProofPackage, error) {
+				deps.generateState = func(_ context.Context, rpcURL string, req proof.StateProofRequest) (*proof.StateProofPackage, error) {
 					calls.state = &req
 					return stubStateProofPackage(), nil
 				}
@@ -56,14 +55,13 @@ func TestRunGenerateCommandsSuccess(t *testing.T) {
 			name: "receipt",
 			args: []string{
 				"--rpc", "http://127.0.0.1:8545",
-				"--min-rpcs", "1",
 				"--tx", testHash02,
 				"--log-index", "3",
 				"--out", "receipt.json",
 			},
 			run: runGenerateReceipt,
 			install: func(deps *commandDeps, calls *generateCalls, save *saveCall) {
-				deps.generateReceipt = func(_ context.Context, req proof.ReceiptProofRequest) (*proof.ReceiptProofPackage, error) {
+				deps.generateReceipt = func(_ context.Context, rpcURL string, req proof.ReceiptProofRequest) (*proof.ReceiptProofPackage, error) {
 					calls.receipt = &req
 					return stubReceiptProofPackage(), nil
 				}
@@ -89,13 +87,12 @@ func TestRunGenerateCommandsSuccess(t *testing.T) {
 			name: "transaction",
 			args: []string{
 				"--rpc", "http://127.0.0.1:8545",
-				"--min-rpcs", "1",
 				"--tx", testHash03,
 				"--out", "tx.json",
 			},
 			run: runGenerateTransaction,
 			install: func(deps *commandDeps, calls *generateCalls, save *saveCall) {
-				deps.generateTransaction = func(_ context.Context, req proof.TransactionProofRequest) (*proof.TransactionProofPackage, error) {
+				deps.generateTransaction = func(_ context.Context, rpcURL string, req proof.TransactionProofRequest) (*proof.TransactionProofPackage, error) {
 					calls.transaction = &req
 					return stubTransactionProofPackage(), nil
 				}
@@ -145,18 +142,20 @@ func TestRunGenerateCommandsWrapErrors(t *testing.T) {
 		{
 			name: "state generate error",
 			run:  runGenerateState,
-			args: []string{"--rpc", "http://127.0.0.1:8545", "--min-rpcs", "1", "--block", "12", "--account", "0x1111111111111111111111111111111111111111", "--slot", "0x01"},
+			args: []string{"--rpc", "http://127.0.0.1:8545", "--block", "12", "--account", "0x1111111111111111111111111111111111111111", "--slot", "0x01"},
 			install: func(deps *commandDeps, err error) {
-				deps.generateState = func(context.Context, proof.StateProofRequest) (*proof.StateProofPackage, error) { return nil, err }
+				deps.generateState = func(context.Context, string, proof.StateProofRequest) (*proof.StateProofPackage, error) {
+					return nil, err
+				}
 			},
 			want: "generate state proof",
 		},
 		{
 			name: "receipt save error",
 			run:  runGenerateReceipt,
-			args: []string{"--rpc", "http://127.0.0.1:8545", "--min-rpcs", "1", "--tx", testHash02, "--log-index", "3"},
+			args: []string{"--rpc", "http://127.0.0.1:8545", "--tx", testHash02, "--log-index", "3"},
 			install: func(deps *commandDeps, err error) {
-				deps.generateReceipt = func(context.Context, proof.ReceiptProofRequest) (*proof.ReceiptProofPackage, error) {
+				deps.generateReceipt = func(context.Context, string, proof.ReceiptProofRequest) (*proof.ReceiptProofPackage, error) {
 					return stubReceiptProofPackage(), nil
 				}
 				deps.saveJSON = func(string, any) error { return err }
@@ -166,9 +165,9 @@ func TestRunGenerateCommandsWrapErrors(t *testing.T) {
 		{
 			name: "transaction generate error",
 			run:  runGenerateTransaction,
-			args: []string{"--rpc", "http://127.0.0.1:8545", "--min-rpcs", "1", "--tx", testHash03},
+			args: []string{"--rpc", "http://127.0.0.1:8545", "--tx", testHash03},
 			install: func(deps *commandDeps, err error) {
-				deps.generateTransaction = func(context.Context, proof.TransactionProofRequest) (*proof.TransactionProofPackage, error) {
+				deps.generateTransaction = func(context.Context, string, proof.TransactionProofRequest) (*proof.TransactionProofPackage, error) {
 					return nil, err
 				}
 			},
@@ -195,7 +194,7 @@ func TestRunGenerateCommandsWrapErrors(t *testing.T) {
 
 func TestRunMainGenerateRuntimeErrorWritesErrorLog(t *testing.T) {
 	withCLIDeps(t, func(deps *commandDeps) {
-		deps.generateTransaction = func(context.Context, proof.TransactionProofRequest) (*proof.TransactionProofPackage, error) {
+		deps.generateTransaction = func(context.Context, string, proof.TransactionProofRequest) (*proof.TransactionProofPackage, error) {
 			return nil, errors.New("boom")
 		}
 	})
@@ -205,7 +204,6 @@ func TestRunMainGenerateRuntimeErrorWritesErrorLog(t *testing.T) {
 		exit = runMain([]string{
 			"generate", "tx",
 			"--rpc", "http://127.0.0.1:8545",
-			"--min-rpcs", "1",
 			"--tx", testHash03,
 		})
 	})
@@ -220,7 +218,7 @@ func TestRunMainGenerateRuntimeErrorWritesErrorLog(t *testing.T) {
 
 func TestRunMainGenerateSuccessWritesReadableStatus(t *testing.T) {
 	withCLIDeps(t, func(deps *commandDeps) {
-		deps.generateTransaction = func(context.Context, proof.TransactionProofRequest) (*proof.TransactionProofPackage, error) {
+		deps.generateTransaction = func(context.Context, string, proof.TransactionProofRequest) (*proof.TransactionProofPackage, error) {
 			return stubTransactionProofPackage(), nil
 		}
 		deps.saveJSON = func(string, any) error { return nil }
@@ -231,7 +229,6 @@ func TestRunMainGenerateSuccessWritesReadableStatus(t *testing.T) {
 		exit = runMain([]string{
 			"generate", "tx",
 			"--rpc", "http://127.0.0.1:8545",
-			"--min-rpcs", "1",
 			"--tx", testHash03,
 			"--out", "tx.json",
 		})

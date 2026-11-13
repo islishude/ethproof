@@ -42,7 +42,7 @@ func runVerifyState(args []string) error {
 	if err := cliDeps.loadJSON(cfg.ProofPath, &pkg); err != nil {
 		return fmt.Errorf("read state proof json: %w", err)
 	}
-	if err := cliDeps.verifyState(ctx, &pkg, cfg.VerifyRequest); err != nil {
+	if err := cliDeps.verifyState(ctx, &pkg, cfg.RPCURL); err != nil {
 		return fmt.Errorf("verify state proof: %w", err)
 	}
 
@@ -69,7 +69,7 @@ func runVerifyReceipt(args []string) error {
 	if err := cliDeps.loadJSON(cfg.ProofPath, &pkg); err != nil {
 		return fmt.Errorf("read receipt proof json: %w", err)
 	}
-	if err := cliDeps.verifyReceipt(ctx, &pkg, cfg.Expectations, cfg.VerifyRequest); err != nil {
+	if err := cliDeps.verifyReceipt(ctx, &pkg, cfg.Expectations, cfg.RPCURL); err != nil {
 		return fmt.Errorf("verify receipt proof: %w", err)
 	}
 
@@ -95,7 +95,7 @@ func runVerifyTransaction(args []string) error {
 	if err := cliDeps.loadJSON(cfg.ProofPath, &pkg); err != nil {
 		return fmt.Errorf("read transaction proof json: %w", err)
 	}
-	if err := cliDeps.verifyTransaction(ctx, &pkg, cfg.VerifyRequest); err != nil {
+	if err := cliDeps.verifyTransaction(ctx, &pkg, cfg.RPCURL); err != nil {
 		return fmt.Errorf("verify transaction proof: %w", err)
 	}
 

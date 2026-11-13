@@ -7,18 +7,20 @@ import (
 )
 
 const usageText = `Usage:
-  ethproof generate state   [--config config.json] [--rpc URL ...] [--min-rpcs N] [--block N] [--account 0xADDR] [--slot 0xSLOT ...] [--out state.json]
-  ethproof generate receipt [--config config.json] [--rpc URL ...] [--min-rpcs N] [--tx 0xHASH] [--log-index N] [--out receipt.json]
-  ethproof generate tx      [--config config.json] [--rpc URL ...] [--min-rpcs N] [--tx 0xHASH] [--out tx.json]
+  ethproof generate state   [--config config.json] [--rpc URL] [--block N] [--account 0xADDR] [--slot 0xSLOT ...] [--out state.json]
+  ethproof generate receipt [--config config.json] [--rpc URL] [--tx 0xHASH] [--log-index N] [--out receipt.json]
+  ethproof generate tx      [--config config.json] [--rpc URL] [--tx 0xHASH] [--out tx.json]
   ethproof resolve slot     [--compiler-output path] [--contract name-or-source:name] [--var query] [--format auto|layout|artifact|build-info] [--out result.json]
 
-  ethproof verify state   [--config config.json] [--rpc URL ...] [--min-rpcs N] [--proof state.json]
-  ethproof verify receipt [--config config.json] [--rpc URL ...] [--min-rpcs N] [--proof receipt.json] [--expect-emitter 0xADDR] [--expect-topic 0xHASH] [--expect-data 0xDATA]
-  ethproof verify tx      [--config config.json] [--rpc URL ...] [--min-rpcs N] [--proof tx.json]
+  ethproof verify state   [--config config.json] [--rpc URL] [--proof state.json]
+  ethproof verify receipt [--config config.json] [--rpc URL] [--proof receipt.json] [--expect-emitter 0xADDR] [--expect-topic 0xHASH] [--expect-data 0xDATA]
+  ethproof verify tx      [--config config.json] [--rpc URL] [--proof tx.json]
 
 Options:
   -h, --help                  Show this help message.
 
+  --rpc accepts one non-empty URL and overrides the selected config section's rpc.
+  Verification requires its own RPC configuration; it does not reuse generate settings.
   --contract is required for artifact/build-info storage inputs and unsupported for raw layouts.
 `
 

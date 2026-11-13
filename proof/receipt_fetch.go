@@ -1,7 +1,6 @@
 package proof
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -15,64 +14,11 @@ import (
 	"github.com/islishude/ethproof/internal/proofutil"
 )
 
-func fetchReceiptSnapshot(ctx context.Context, source ReceiptSource, txHash common.Hash, logIndex uint64) (*receiptSnapshot, error) {
-	// Reuse the normalized transaction snapshot so receipt proof generation inherits the exact
-	// transaction bytes and block context that transaction proof generation would see.
-	data, err := fetchTransactionData(ctx, source, txHash)
-	if err != nil {
-		return nil, err
-	}
-	txSnapshot, receipt := data.snapshot, data.receipt
-	if logIndex >= uint64(len(receipt.Logs)) {
-		return nil, fmt.Errorf("log-index %d out of range (receipt has %d logs)", logIndex, len(receipt.Logs))
-	}
-	log := receipt.Logs[logIndex]
-	if log == nil {
-		return nil, fmt.Errorf("target receipt log %d is nil", logIndex)
-	}
-	if log.Removed {
-		return nil, fmt.Errorf("target receipt log %d is marked removed", logIndex)
-	}
-
-	// Encode the target receipt and then require it to match the same bytes recovered from the
-	// full block receipt list. With block-receipts RPC this cross-checks the point
-	// lookup; fallback reuses that receipt and later checks the reconstructed trie root.
-	receiptRLP, err := proofutil.EncodeReceipt(receipt)
-	if err != nil {
-		return nil, fmt.Errorf("encode target receipt: %w", err)
-	}
-	blockReceipts, err := fetchBlockReceipts(ctx, source, txSnapshot.Header.BlockHash, data.transactions, receipt)
-	if err != nil {
-		return nil, err
-	}
-	if !bytes.Equal(blockReceipts[txSnapshot.TxIndex], receiptRLP) {
-		return nil, fmt.Errorf("receipt bytes mismatch between block receipts and target receipt lookup")
-	}
-
-	// Persist the claimed event as simple address/topics/data fields so package verification does
-	// not depend on any geth-specific receipt representation.
-	return &receiptSnapshot{
-		Header:            txSnapshot.Header,
-		TxHash:            txHash,
-		TxIndex:           txSnapshot.TxIndex,
-		LogIndex:          logIndex,
-		TransactionRLP:    txSnapshot.TransactionRLP,
-		ReceiptRLP:        receiptRLP,
-		BlockTransactions: txSnapshot.BlockTransactions,
-		BlockReceipts:     blockReceipts,
-		Event: EventClaim{
-			Address: log.Address,
-			Topics:  append([]common.Hash(nil), log.Topics...),
-			Data:    proofutil.CanonicalBytes(log.Data),
-		},
-	}, nil
-}
-
 func fetchBlockReceipts(ctx context.Context, source ReceiptSource, blockHash common.Hash, transactions types.Transactions, target *types.Receipt) ([]hexutil.Bytes, error) {
 	receipts, err := source.BlockReceiptsByHash(ctx, blockHash)
 	if err != nil {
 		// Some providers do not implement eth_getBlockReceipts. Fall back to scanning each tx so
-		// receipt proof generation still works while remaining strict about normalized results.
+		// receipt proof generation still works while remaining strict about receipt contents.
 		if isRPCMethodNotFound(err) {
 			return fetchBlockReceiptsByTransactionScan(ctx, source, blockHash, transactions, target)
 		}
@@ -92,7 +38,7 @@ func fetchBlockReceipts(ctx context.Context, source ReceiptSource, blockHash com
 	return encodeAndValidateBlockReceipts(receipts, blockHash, len(transactions))
 }
 
-// Bound concurrent receipt requests per source, preserving transaction order in
+// Bound concurrent receipt requests to the node, preserving transaction order in
 // the result. The shared target receipt and block body were already fetched.
 const receiptScanConcurrency = 8
 

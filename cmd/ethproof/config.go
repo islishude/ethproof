@@ -27,8 +27,7 @@ type verifyConfigSections struct {
 }
 
 type generateStateConfigFile struct {
-	RPCs    []string `json:"rpcs"`
-	MinRPCs *int     `json:"minRpcs"`
+	RPC     string   `json:"rpc"`
 	Block   *uint64  `json:"block"`
 	Account string   `json:"account"`
 	Slots   []string `json:"slots"`
@@ -36,29 +35,25 @@ type generateStateConfigFile struct {
 }
 
 type generateReceiptConfigFile struct {
-	RPCs     []string `json:"rpcs"`
-	MinRPCs  *int     `json:"minRpcs"`
-	Tx       string   `json:"tx"`
-	LogIndex *uint64  `json:"logIndex"`
-	Out      string   `json:"out"`
+	RPC      string  `json:"rpc"`
+	Tx       string  `json:"tx"`
+	LogIndex *uint64 `json:"logIndex"`
+	Out      string  `json:"out"`
 }
 
 type generateTransactionConfigFile struct {
-	RPCs    []string `json:"rpcs"`
-	MinRPCs *int     `json:"minRpcs"`
-	Tx      string   `json:"tx"`
-	Out     string   `json:"out"`
+	RPC string `json:"rpc"`
+	Tx  string `json:"tx"`
+	Out string `json:"out"`
 }
 
 type verifyProofConfigFile struct {
-	RPCs    []string `json:"rpcs"`
-	MinRPCs *int     `json:"minRpcs"`
-	Proof   string   `json:"proof"`
+	RPC   string `json:"rpc"`
+	Proof string `json:"proof"`
 }
 
 type verifyReceiptConfigFile struct {
-	RPCs          []string `json:"rpcs"`
-	MinRPCs       *int     `json:"minRpcs"`
+	RPC           string   `json:"rpc"`
 	Proof         string   `json:"proof"`
 	ExpectEmitter string   `json:"expectEmitter"`
 	ExpectTopics  []string `json:"expectTopics"`
