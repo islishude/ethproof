@@ -35,7 +35,7 @@ func runVerifyState(args []string) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), verifyProofTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), verificationTimeout(cfg.Finality))
 	defer cancel()
 
 	var pkg proof.StateProofPackage
@@ -44,6 +44,10 @@ func runVerifyState(args []string) error {
 	}
 	if err := cliDeps.verifyState(ctx, &pkg, cfg.RPCURL); err != nil {
 		return fmt.Errorf("verify state proof: %w", err)
+	}
+
+	if err := verifyFinality(ctx, pkg.Block, cfg.RPCURL, cfg.Finality); err != nil {
+		return err
 	}
 
 	printStatusLine(
@@ -62,7 +66,7 @@ func runVerifyReceipt(args []string) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), verifyProofTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), verificationTimeout(cfg.Finality))
 	defer cancel()
 
 	var pkg proof.ReceiptProofPackage
@@ -71,6 +75,10 @@ func runVerifyReceipt(args []string) error {
 	}
 	if err := cliDeps.verifyReceipt(ctx, &pkg, cfg.Expectations, cfg.RPCURL); err != nil {
 		return fmt.Errorf("verify receipt proof: %w", err)
+	}
+
+	if err := verifyFinality(ctx, pkg.Block, cfg.RPCURL, cfg.Finality); err != nil {
+		return err
 	}
 
 	printStatusLine(
@@ -88,7 +96,7 @@ func runVerifyTransaction(args []string) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), verifyProofTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), verificationTimeout(cfg.Finality))
 	defer cancel()
 
 	var pkg proof.TransactionProofPackage
@@ -99,11 +107,38 @@ func runVerifyTransaction(args []string) error {
 		return fmt.Errorf("verify transaction proof: %w", err)
 	}
 
+	if err := verifyFinality(ctx, pkg.Block, cfg.RPCURL, cfg.Finality); err != nil {
+		return err
+	}
+
 	printStatusLine(
 		"verified transaction proof %s (block %d, tx %s)",
 		cfg.ProofPath,
 		pkg.Block.BlockNumber,
 		pkg.TxHash,
 	)
+	return nil
+}
+
+func verificationTimeout(cfg *proof.FinalityConfig) time.Duration {
+	if cfg == nil {
+		return verifyProofTimeout
+	}
+	if cfg.TimeoutSeconds == 0 {
+		return 5 * time.Minute
+	}
+	return time.Duration(cfg.TimeoutSeconds) * time.Second
+}
+func verifyFinality(ctx context.Context, block proof.BlockContext, rpc string, cfg *proof.FinalityConfig) error {
+	if cfg == nil {
+		return nil
+	}
+	anchor, err := cliDeps.verifyFinality(ctx, block, rpc, *cfg, func(event proof.FinalityTrustEvent) {
+		printStatusLine("accepted finalized checkpoint %s (slot %d, previous %s)", event.Root, event.Slot, event.PreviousRoot)
+	})
+	if err != nil {
+		return fmt.Errorf("verify consensus finality: %w", err)
+	}
+	printStatusLine("authenticated finalized execution block %d (%s)", anchor.BlockNumber, anchor.BlockHash)
 	return nil
 }

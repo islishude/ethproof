@@ -5,17 +5,20 @@ import (
 )
 
 type verifyStateConfig struct {
+	Finality  *proof.FinalityConfig
 	ProofPath string
 	RPCURL    string
 }
 
 type verifyReceiptConfig struct {
+	Finality     *proof.FinalityConfig
 	ProofPath    string
 	Expectations *proof.ReceiptExpectations
 	RPCURL       string
 }
 
 type verifyTransactionConfig struct {
+	Finality  *proof.FinalityConfig
 	ProofPath string
 	RPCURL    string
 }
@@ -28,6 +31,7 @@ func parseVerifyStateArgs(args []string) (verifyStateConfig, error) {
 }
 
 type verifyProofConfig struct {
+	Finality  *proof.FinalityConfig
 	ProofPath string
 	RPCURL    string
 }
@@ -35,6 +39,7 @@ type verifyProofConfig struct {
 func parseVerifyProofArgs(args []string, kind string, selectSection func(*cliConfig) *verifyProofConfigFile) (verifyProofConfig, error) {
 	fs := newFlagSet("verify " + kind)
 	configPath := fs.String("config", "", "config json file")
+	finality := fs.Bool("finality", false, "require consensus finality using finality configuration")
 	var rpcURL singleRPCFlag
 	fs.Var(&rpcURL, "rpc", "Ethereum RPC URL")
 	proofPath := fs.String("proof", kind+".json", "proof json file")
@@ -57,6 +62,14 @@ func parseVerifyProofArgs(args []string, kind string, selectSection func(*cliCon
 		cfg.ProofPath = mergeString(parseCtx.seen, "proof", *proofPath, section.Proof, kind+".json")
 		cfg.RPCURL = mergeString(parseCtx.seen, "rpc", rpcURL.value, section.RPC, "")
 	}
+	enabled := *finality
+	if !parseCtx.seen["finality"] && section != nil {
+		enabled = section.Finality
+	}
+	cfg.Finality, err = parseFinalityConfig(enabled, parseCtx.fileCfg)
+	if err != nil {
+		return verifyProofConfig{}, err
+	}
 	if err := validateRPCInput(cfg.RPCURL, "verify "+kind+" requires a separately configured RPC via --rpc or verify."+kind+".rpc in --config"); err != nil {
 		return verifyProofConfig{}, err
 	}
@@ -66,6 +79,7 @@ func parseVerifyProofArgs(args []string, kind string, selectSection func(*cliCon
 func parseVerifyReceiptArgs(args []string) (verifyReceiptConfig, error) {
 	fs := newFlagSet("verify receipt")
 	configPath := fs.String("config", "", "config json file")
+	finality := fs.Bool("finality", false, "require consensus finality using finality configuration")
 	var rpcURL singleRPCFlag
 	fs.Var(&rpcURL, "rpc", "Ethereum RPC URL")
 	proofPath := fs.String("proof", "receipt.json", "proof json file")
@@ -98,6 +112,14 @@ func parseVerifyReceiptArgs(args []string) (verifyReceiptConfig, error) {
 		rawData = mergeString(parseCtx.seen, "expect-data", *expectDataHex, section.ExpectData, "")
 		rawTopics = mergeStringSlice(parseCtx.seen, "expect-topic", topics, section.ExpectTopics)
 	}
+	enabled := *finality
+	if !parseCtx.seen["finality"] && section != nil {
+		enabled = section.Finality
+	}
+	cfg.Finality, err = parseFinalityConfig(enabled, parseCtx.fileCfg)
+	if err != nil {
+		return verifyReceiptConfig{}, err
+	}
 	if err := validateRPCInput(cfg.RPCURL, "verify receipt requires a separately configured RPC via --rpc or verify.receipt.rpc in --config"); err != nil {
 		return verifyReceiptConfig{}, err
 	}
@@ -114,4 +136,18 @@ func parseVerifyTransactionArgs(args []string) (verifyTransactionConfig, error) 
 		return cfg.Verify.Tx
 	})
 	return verifyTransactionConfig(cfg), err
+}
+
+func parseFinalityConfig(enabled bool, file *cliConfig) (*proof.FinalityConfig, error) {
+	if !enabled {
+		return nil, nil
+	}
+	if file == nil || file.Finality == nil {
+		return nil, newUsageError("--finality requires a top-level finality configuration")
+	}
+	cfg := *file.Finality
+	if err := proof.ValidateFinalityConfig(cfg); err != nil {
+		return nil, newUsageError("finality configuration: %v", err)
+	}
+	return &cfg, nil
 }

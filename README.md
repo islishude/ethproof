@@ -51,7 +51,76 @@ Generation writes proof JSON to the configured output path. Generation and verif
 | `AgainstBlockAnchor` | Local verification plus a match with a caller-trusted block anchor. |
 | `AgainstRPC` / `AgainstSource` | Local verification plus a match with a freshly fetched header from the configured endpoint. Used by CLI verification. |
 
-The caller establishes trust in an anchor or RPC. None of these APIs establishes Ethereum consensus finality. The deprecated `Verify*ProofPackage` names perform embedded-root verification only.
+The caller establishes trust in an anchor or RPC. These modes do not establish Ethereum consensus finality; the optional finality mode below adds that authentication. The deprecated `Verify*ProofPackage` names perform embedded-root verification only.
+
+## Consensus finality (optional)
+
+`--finality` adds a finalized-only Beacon light client inside the Go process:
+
+```bash
+./bin/ethproof verify tx --config config.json --finality
+./bin/ethproof verify receipt --config config.json --finality
+./bin/ethproof verify state --config config.json --finality
+```
+
+Configure the top-level `finality` object in [config.example.json](config.example.json):
+
+- `network`: `mainnet` or `sepolia`; it must match the proof and verification RPC chain ID.
+- `beaconRpc`: one Beacon API supporting light-client bootstrap, updates, and finality updates.
+- `checkpointRpcs`: 3–16 explicitly trusted, independently operated Beacon API endpoints on distinct hosts. All must answer genesis, finality-checkpoint, and header queries and confirm the selected checkpoint as canonical, finalized, and not execution-optimistic. No majority fallback is used. Distinct hosts alone do not guarantee independent operators.
+- `cacheDir`: optional local trusted-state directory; defaults to `os.UserCacheDir()/ethproof/finality/<network>/`.
+- `maxAncestry`: maximum number of execution parent headers to traverse, default 8192. This limits distance from the available finalized anchor, not a fixed wall-clock age.
+- `timeoutSeconds`: total finality-mode verification timeout, default 300 and maximum 86400.
+
+Set `verify.<kind>.finality` to `true` to enable it in configuration; `--finality=false` overrides it. Verification still requires its separately configured single execution RPC. Generation and proof JSON are unchanged. State proofs describe the finalized block's state, not necessarily the latest state.
+
+The client authenticates bootstrap, sync committees, BLS aggregate signatures, finality branches, and execution inclusion. It then checks execution-header hashes and ancestry before applying the existing MPT verification. It does not run an EVM, P2P node, RPC server, optimistic-head tracker, or forced-update path. The accepted finality has Ethereum sync-committee light-client security assumptions, not full-node consensus re-execution.
+
+**Checkpoint providers are an explicit external trust boundary.** On first use, the client chooses the earliest reported finalized checkpoint and asks every configured provider to confirm that exact root. The latest finalized roots need not match. The cached finalized header must be less than 24 hours old at startup; this is a conservative application policy, not a computed weak-subjectivity period. An expired cache automatically triggers a new multi-provider trust acquisition. Every provider must also confirm the old finalized root remains canonical/finalized; unavailable old history or any conflict stops recovery without overwriting the cache. The CLI reports each new trust acquisition. Initial and latest acquisition records are retained in the cache.
+
+The cache is locally trusted, locked, atomically replaced, and bound to the network/fork schedule and checkpoint-provider configuration. Do not import another party's cache as a proof. Corrupt caches or changed trust configurations fail explicitly: use a new `cacheDir` to deliberately establish a new trust context. A clock rollback that puts cached state in the future is rejected. Provider URLs and credentials are not stored in the cache or emitted in transport errors.
+
+Fork support is explicit: Capella, Deneb, Electra and Fulu are supported, including transitions. Other forks, including Gloas, fail closed; a network whose configured active fork has advanced beyond Fulu requires a future implementation update. Network fork schedules come from the pinned geth dependency. Historical execution blocks are supported only through the bounded parent-header chain. There is no portable offline finality-evidence format in this version.
+
+Library users can construct `NewFinalityClient(config, executionSource)` and call the three `Verify*ProofPackageAgainstFinality` APIs (receipt also has a `WithExpectations` variant). `FinalizedAnchor` exposes the authenticated target `BlockAnchor` for reuse. `NewFinalityClientWithDependencies` accepts custom Beacon/checkpoint sources, a local store, a clock and a trust-change callback; injected components remain caller-owned and must honor cancellation. The library is silent by default.
+
+An opt-in live smoke test uses the same configuration and a recent transaction proof:
+
+```bash
+ETH_PROOF_FINALITY_LIVE_CONFIG=/absolute/path/config.json go test -v ./proof -run '^TestFinalityLive$'
+```
+
+The default test suite uses pinned official SSZ proof vectors, historical Helios responses with real signatures, deterministic signed state-machine scenarios, and local HTTP servers. Anvil tests exercise execution-layer compatibility; they do not simulate PoS finality.
+
+## Local Reth + Lighthouse PoS E2E
+
+The isolated test project runs three Reth/Lighthouse pairs and 64 validators, with a separate genesis, chain ID `31337`, mainnet preset, Fulu from genesis, and 3-second slots. All HTTP ports bind to localhost; no public RPC credentials are used. The validator mnemonic and funded account keys are public development identities.
+
+```bash
+# Fresh network, real finality tests, then remove this project's containers/volumes:
+make pos-e2e-test
+
+# Keep the tested network running for inspection:
+POS_E2E_KEEP=1 make pos-e2e-test
+
+# Or manage a persistent local test network directly:
+make pos-e2e-up
+ETH_PROOF_REQUIRE_POS_E2E=1 go test -v -race ./proof -run '^TestPoSE2E$' -count=1 -timeout=17m
+make pos-e2e-down
+```
+
+`pos-e2e-up` starts services and exports generated network parameters into `bin/pos-testnet/network`; the test waits for readiness and finality. The test command resets **only this PoS project's** disposable state. Anvil and its ports are independent. Allow roughly 10–15 minutes for a fresh run, plus image downloads; the test deadline is 15 minutes. Logs from the managed test run are saved to `bin/pos-testnet/compose.log`, including on failure.
+
+| Service | Local endpoint |
+| --- | --- |
+| Reth execution RPC | `http://127.0.0.1:18545` |
+| Lighthouse 1 | `http://127.0.0.1:15052` |
+| Lighthouse 2 | `http://127.0.0.1:15053` |
+| Lighthouse 3 | `http://127.0.0.1:15054` |
+
+The test obtains checkpoint confirmation from three actual Beacon nodes, bootstraps the client, deploys the existing proof contract, rejects an unfinalized transaction, and verifies transaction/event/storage proofs after signed light-client updates advance finality. It also checks cache reuse after client restart. Unit tests additionally cover the spec-defined empty genesis finalized-header sentinel without treating it as an execution anchor. These nodes share one local operator and deterministic validator set; this tests the multi-source mechanics, not operator independence. Mainnet-preset sync committee periods are retained, so committee rotation remains covered by deterministic unit tests rather than this short E2E run.
+
+Private network parameters enter through an internal test constructor, loaded from the generated genesis state and fork configuration. The public API and CLI still accept only the pinned mainnet/Sepolia networks. The real PoS job runs separately in CI; `make ci` continues to run the faster offline and Anvil checks.
 
 ## Go API
 

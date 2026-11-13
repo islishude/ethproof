@@ -7,6 +7,7 @@ import (
 )
 
 type commandDeps struct {
+	verifyFinality      func(context.Context, proof.BlockContext, string, proof.FinalityConfig, func(proof.FinalityTrustEvent)) (proof.BlockAnchor, error)
 	generateState       func(context.Context, string, proof.StateProofRequest) (*proof.StateProofPackage, error)
 	generateReceipt     func(context.Context, string, proof.ReceiptProofRequest) (*proof.ReceiptProofPackage, error)
 	generateTransaction func(context.Context, string, proof.TransactionProofRequest) (*proof.TransactionProofPackage, error)
@@ -18,6 +19,7 @@ type commandDeps struct {
 }
 
 var cliDeps = commandDeps{
+	verifyFinality:      proof.VerifyBlockFinalityFromRPC,
 	generateState:       proof.GenerateStateProofFromRPC,
 	generateReceipt:     proof.GenerateReceiptProofFromRPC,
 	generateTransaction: proof.GenerateTransactionProofFromRPC,
