@@ -29,7 +29,7 @@ bindings:
 	sh ./scripts/generate_bindings.sh
 
 e2e-up:
-	docker compose up -d --wait anvil
+	docker compose up --quiet-pull -d --wait anvil
 
 e2e-down:
 	docker compose down -v
@@ -40,7 +40,7 @@ unit-test:
 e2e-test:
 	set -e; \
 		docker compose down; \
-		docker compose up -d --wait; \
+		docker compose up --quiet-pull -d --wait; \
 		trap 'docker compose down' EXIT; \
 	ETH_PROOF_REQUIRE_E2E=1 go test -v -race -count=1 ./proof -run TestAnvilE2E$$
 

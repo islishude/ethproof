@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 compose() { docker compose -f internal/e2e/pos/compose.yaml "$@"; }
 up() {
   mkdir -p bin/pos-testnet/network
-  compose up -d
+  compose up --quiet-pull -d
   compose cp genesis:/data/metadata/config.yaml bin/pos-testnet/network/config.yaml
   compose cp genesis:/data/metadata/genesis.ssz bin/pos-testnet/network/genesis.ssz
 }
