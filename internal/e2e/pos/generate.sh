@@ -10,6 +10,7 @@ export EL_AND_CL_MNEMONIC='test test test test test test test test test test tes
 export BEACON_STATIC_ENR=''
 export GLOAS_FORK_EPOCH=18446744073709551615 HEZE_FORK_EPOCH=18446744073709551615
 export BPO_1_EPOCH=18446744073709551615 BPO_2_EPOCH=18446744073709551615
+if [ "${POS_FORK:-fulu}" = gloas ]; then export GLOAS_FORK_EPOCH=0; fi
 if ! /work/entrypoint.sh all > /data/generation.log 2>&1; then
   tail -n 80 /data/generation.log >&2
   exit 1

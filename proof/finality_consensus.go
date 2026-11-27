@@ -34,7 +34,7 @@ var (
 
 func supportedFinalityFork(name string) bool {
 	switch name {
-	case "capella", "deneb", "electra", "fulu":
+	case "capella", "deneb", "electra", "fulu", "gloas":
 		return true
 	}
 	return false
@@ -44,6 +44,24 @@ func verifyFinalityHeader(h FinalityHeader, network *bp.ChainConfig) (common.Has
 	fork := network.ForkNameAtSlot(h.Beacon.Slot)
 	if !supportedFinalityFork(fork) {
 		return common.Hash{}, fmt.Errorf("%w: %s", ErrFinalityUnsupported, fork)
+	}
+	if h.ExecutionBlockHash != nil {
+		if len(h.Execution) != 0 || *h.ExecutionBlockHash == (common.Hash{}) {
+			return common.Hash{}, errors.New("invalid Gloas execution header")
+		}
+		// Gloas proves the bid's parent execution hash. Upgraded historical
+		// headers prove the payload block hash at their original slot's index.
+		index := bp.BodyIndexExecBlockHash(fork)
+		if len(h.ExecutionBranch) != branchDepth(bp.BodyIndexExecBlockHashGloas) {
+			return common.Hash{}, errors.New("invalid Gloas execution branch length")
+		}
+		if err := verifyFinalityBranch(h.Beacon.BodyRoot, index, h.ExecutionBranch, *h.ExecutionBlockHash, true); err != nil {
+			return common.Hash{}, fmt.Errorf("execution hash branch: %w", err)
+		}
+		return *h.ExecutionBlockHash, nil
+	}
+	if fork == "gloas" {
+		return common.Hash{}, errors.New("missing Gloas execution block hash")
 	}
 	if fork == "capella" {
 		// Later wire formats can upgrade a Capella header, but blob fields must stay zero.
@@ -64,7 +82,7 @@ func verifyFinalityHeader(h FinalityHeader, network *bp.ChainConfig) (common.Has
 		// can quote response data, including credentials echoed by a provider.
 		return common.Hash{}, errors.New("invalid execution header JSON")
 	}
-	if err := verifyFinalityBranch(h.Beacon.BodyRoot, 25, h.ExecutionBranch, common.Hash(payload.PayloadRoot()), false); err != nil {
+	if err := verifyFinalityBranch(h.Beacon.BodyRoot, bp.BodyIndexExecPayload, h.ExecutionBranch, common.Hash(payload.PayloadRoot()), false); err != nil {
 		return common.Hash{}, fmt.Errorf("execution branch: %w", err)
 	}
 	if payload.BlockHash() == (common.Hash{}) {
@@ -73,9 +91,11 @@ func verifyFinalityHeader(h FinalityHeader, network *bp.ChainConfig) (common.Has
 	return payload.BlockHash(), nil
 }
 
+func branchDepth(index uint64) int { return bits.Len64(index) - 1 }
+
 func verifyFinalityBranch(root common.Hash, index uint64, branch []common.Hash, leaf common.Hash, normalized bool) error {
-	depth := bits.Len64(index) - 1
-	if depth < 0 || len(branch) > 7 || (!normalized && len(branch) != depth) {
+	depth := branchDepth(index)
+	if depth < 0 || len(branch) > branchDepth(bp.StateIndexSyncCommitteeGloas) || (!normalized && len(branch) != depth) {
 		return errors.New("invalid Merkle branch length")
 	}
 	values := make(merkle.Values, len(branch))
@@ -86,6 +106,14 @@ func verifyFinalityBranch(root common.Hash, index uint64, branch []common.Hash, 
 		return merkle.VerifyNormalizedProof(root, index, values, merkle.Value(leaf))
 	}
 	return merkle.VerifyProof(root, index, values, merkle.Value(leaf))
+}
+
+// State branches in upgraded containers are padded to the wire fork's depth.
+func validStateBranchLength(header FinalityHeader, branch []common.Hash, index, electraIndex, gloasIndex uint64) bool {
+	if header.ExecutionBlockHash != nil {
+		return len(branch) == branchDepth(gloasIndex)
+	}
+	return len(branch) == branchDepth(index) || len(branch) == branchDepth(electraIndex)
 }
 
 func hasFinalityBranch(branch []common.Hash) bool {
@@ -111,6 +139,9 @@ func bootstrapFinality(b FinalityBootstrap, root common.Hash, now uint64, net *b
 		return nil, err
 	}
 	index := bp.StateIndexSyncCommittee(net.ForkNameAtSlot(b.Header.Beacon.Slot))
+	if !validStateBranchLength(b.Header, b.Branch, index, bp.StateIndexSyncCommitteeElectra, bp.StateIndexSyncCommitteeGloas) {
+		return nil, errors.New("invalid current sync committee branch length")
+	}
 	if err := verifyFinalityBranch(b.Header.Beacon.StateRoot, index, b.Branch, b.Committee.Root(), true); err != nil {
 		return nil, fmt.Errorf("bootstrap committee: %w", err)
 	}
@@ -166,8 +197,21 @@ func (s *finalityState) validateUpdate(u FinalityUpdate, now uint64, net *bp.Cha
 	return nil
 }
 
+func (u FinalityUpdate) checkBranchLengths(fork string) error {
+	if u.FinalityBranch != nil && !validStateBranchLength(u.Attested, u.FinalityBranch, bp.StateIndexFinalBlock(fork), bp.StateIndexFinalBlockElectra, bp.StateIndexFinalBlockGloas) {
+		return errors.New("invalid finality branch length")
+	}
+	if u.NextBranch != nil && !validStateBranchLength(u.Attested, u.NextBranch, bp.StateIndexNextSyncCommittee(fork), bp.StateIndexNextSyncCommitteeElectra, bp.StateIndexNextSyncCommitteeGloas) {
+		return errors.New("invalid next sync committee branch length")
+	}
+	return nil
+}
+
 func (s *finalityState) validateUpdateProofs(u FinalityUpdate, net *bp.ChainConfig) error {
 	fork := net.ForkNameAtSlot(u.Attested.Beacon.Slot)
+	if err := u.checkBranchLengths(fork); err != nil {
+		return err
+	}
 	if hasFinalityBranch(u.FinalityBranch) {
 		if u.Finalized == nil || u.Finalized.Beacon.Slot > u.Attested.Beacon.Slot {
 			return errors.New("invalid finalized slot")
@@ -189,7 +233,7 @@ func (s *finalityState) validateUpdateProofs(u FinalityUpdate, net *bp.ChainConf
 		if u.Finalized.Beacon.Slot == s.Finalized.Beacon.Slot && root != s.Finalized.Beacon.Hash() {
 			return ErrFinalityConflict
 		}
-	} else if u.Finalized != nil && u.Finalized.Beacon != (bt.Header{}) {
+	} else if u.Finalized != nil && !emptyFinalityHeader(*u.Finalized, fork) {
 		return errors.New("finalized header without proof")
 	}
 	if hasFinalityBranch(u.NextBranch) {
@@ -214,7 +258,11 @@ func (s *finalityState) validateUpdateProofs(u FinalityUpdate, net *bp.ChainConf
 // This sentinel is valid only inside an update's finalized-checkpoint proof.
 // verifyFinalityHeader still rejects it as a bootstrap or execution anchor.
 func emptyFinalityHeader(h FinalityHeader, fork string) bool {
-	if h.Beacon != (bt.Header{}) || len(h.ExecutionBranch) != 4 || hasFinalityBranch(h.ExecutionBranch) {
+	if h.ExecutionBlockHash != nil {
+		return h.Beacon == (bt.Header{}) && *h.ExecutionBlockHash == (common.Hash{}) && len(h.Execution) == 0 &&
+			len(h.ExecutionBranch) == branchDepth(bp.BodyIndexExecBlockHashGloas) && !hasFinalityBranch(h.ExecutionBranch)
+	}
+	if fork == "gloas" || h.Beacon != (bt.Header{}) || len(h.ExecutionBranch) != 4 || hasFinalityBranch(h.ExecutionBranch) {
 		return false
 	}
 	payload, err := bt.ExecutionHeaderFromJSON(fork, h.Execution)
@@ -289,10 +337,11 @@ func (h FinalityHeader) MarshalJSON() ([]byte, error) {
 		Body     common.Hash `json:"body_root"`
 	}
 	return json.Marshal(struct {
-		Beacon    header          `json:"beacon"`
-		Execution json.RawMessage `json:"execution"`
-		Branch    []common.Hash   `json:"execution_branch"`
-	}{header{strconv.FormatUint(h.Beacon.Slot, 10), strconv.FormatUint(h.Beacon.ProposerIndex, 10), h.Beacon.ParentRoot, h.Beacon.StateRoot, h.Beacon.BodyRoot}, h.Execution, h.ExecutionBranch})
+		Beacon             header          `json:"beacon"`
+		Execution          json.RawMessage `json:"execution,omitempty"`
+		ExecutionBlockHash *common.Hash    `json:"execution_block_hash,omitempty"`
+		Branch             []common.Hash   `json:"execution_branch"`
+	}{header{strconv.FormatUint(h.Beacon.Slot, 10), strconv.FormatUint(h.Beacon.ProposerIndex, 10), h.Beacon.ParentRoot, h.Beacon.StateRoot, h.Beacon.BodyRoot}, h.Execution, h.ExecutionBlockHash, h.ExecutionBranch})
 }
 
 // MarshalJSON preserves the decimal-string representation required by Beacon APIs.

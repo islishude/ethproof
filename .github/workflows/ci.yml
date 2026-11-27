@@ -64,6 +64,12 @@ jobs:
 
   pos-e2e-test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        fork: [fulu, gloas]
+    env:
+      POS_FORK: ${{ matrix.fork }}
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
@@ -74,5 +80,5 @@ jobs:
       - uses: actions/upload-artifact@v6
         if: failure()
         with:
-          name: pos-e2e-logs
-          path: bin/pos-testnet/compose.log
+          name: pos-e2e-${{ matrix.fork }}-logs
+          path: bin/pos-*/compose.log

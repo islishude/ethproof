@@ -105,12 +105,14 @@ type ReceiptExpectations struct {
 	Data    []byte
 }
 
-// FinalityHeader is a post-Capella Beacon API light-client header. Execution is
-// kept in its original JSON form so the cache preserves all fork-specific fields.
+// FinalityHeader carries the Beacon header and its execution proof. Gloas wire
+// headers supply ExecutionBlockHash, including when upgrading a historical slot.
+// Earlier wire versions supply the SSZ execution payload header as JSON.
 type FinalityHeader struct {
-	Beacon          bt.Header       `json:"beacon"`
-	Execution       json.RawMessage `json:"execution"`
-	ExecutionBranch []common.Hash   `json:"execution_branch"`
+	Beacon             bt.Header       `json:"beacon"`
+	Execution          json.RawMessage `json:"execution,omitempty"`
+	ExecutionBlockHash *common.Hash    `json:"execution_block_hash,omitempty"`
+	ExecutionBranch    []common.Hash   `json:"execution_branch"`
 }
 
 // FinalityBootstrap authenticates the starting sync committee against a trusted root.

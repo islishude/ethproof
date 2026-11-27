@@ -23,9 +23,18 @@ func TestPoSE2E(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Minute)
 	defer cancel()
-	const executionURL = "http://127.0.0.1:18545"
+	executionURL := "http://127.0.0.1:18545"
 	beaconURLs := []string{"http://127.0.0.1:15052", "http://127.0.0.1:15053", "http://127.0.0.1:15054"}
 	networkDir := filepath.Join("..", "bin", "pos-testnet", "network")
+	fork := os.Getenv("POS_FORK")
+	if fork == "" {
+		fork = "fulu"
+	}
+	if fork == "gloas" {
+		executionURL = "http://127.0.0.1:28545"
+		beaconURLs = []string{"http://127.0.0.1:25052", "http://127.0.0.1:25053", "http://127.0.0.1:25054"}
+		networkDir = filepath.Join("..", "bin", "pos-gloas", "network")
+	}
 	net, slotSeconds := loadPoSNetwork(t, networkDir)
 	source, err := openRPCSource(ctx, executionURL)
 	if err != nil {
@@ -64,6 +73,9 @@ func TestPoSE2E(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		if net.ForkNameAtSlot(b.Header.Beacon.Slot) != fork {
+			t.Fatalf("unexpected active fork at slot %d", b.Header.Beacon.Slot)
+		}
 		hash, err := verifyFinalityHeader(b.Header, net)
 		if err != nil {
 			return err
@@ -71,6 +83,9 @@ func TestPoSE2E(t *testing.T) {
 		header, err := source.HeaderByHash(ctx, hash)
 		if err != nil {
 			return err
+		}
+		if fork == "gloas" && (header.BlockAccessListHash == nil || header.SlotNumber == nil) {
+			return errors.New("waiting for Amsterdam execution header")
 		}
 		block, err := BlockContextFromHeader(big.NewInt(31337), header)
 		if err != nil {
@@ -97,8 +112,21 @@ func TestPoSE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state, err := GenerateStateProof(ctx, source, StateProofRequest{BlockNumber: scenario.blockNumber, Account: scenario.contractAddress, Slots: []common.Hash{scenario.mainlineSlot}})
+	state, err := GenerateStateProof(ctx, source, StateProofRequest{BlockNumber: tx.Block.BlockNumber, Account: scenario.contractAddress, Slots: []common.Hash{scenario.mainlineSlot}})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Block.BlockHash != tx.Block.BlockHash || receipt.Block.BlockHash != tx.Block.BlockHash {
+		t.Fatal("state, transaction and event proofs must share the same execution block")
+	}
+	if err := VerifyTransactionProofPackageAgainstSource(ctx, tx, source); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyStateProofPackageAgainstSource(ctx, state, source); err != nil {
+		t.Fatal(err)
+	}
+	expect := &ReceiptExpectations{Emitter: &scenario.contractAddress, Topics: scenario.eventTopics, Data: scenario.eventData}
+	if err := VerifyReceiptProofPackageWithExpectationsAgainstSource(ctx, receipt, expect, source); err != nil {
 		t.Fatal(err)
 	}
 	t.Run("reject_before_finality", func(t *testing.T) {
@@ -106,7 +134,7 @@ func TestPoSE2E(t *testing.T) {
 			t.Fatalf("expected ErrNotFinalized, got %v", err)
 		}
 	})
-	t.Logf("waiting for transaction block %d to finalize", scenario.blockNumber)
+	t.Logf("waiting for transaction block %d to finalize", tx.Block.BlockNumber)
 	waitPoS(t, ctx, func() error { _, err := client.FinalizedAnchor(ctx, tx.Block); return err })
 	after, err := client.load(ctx)
 	if err != nil {
@@ -122,7 +150,6 @@ func TestPoSE2E(t *testing.T) {
 		}
 	})
 	t.Run("receipt_event", func(t *testing.T) {
-		expect := &ReceiptExpectations{Emitter: &scenario.contractAddress, Topics: scenario.eventTopics, Data: scenario.eventData}
 		if err := VerifyReceiptProofPackageWithExpectationsAgainstFinality(ctx, receipt, expect, client); err != nil {
 			t.Fatal(err)
 		}

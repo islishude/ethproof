@@ -549,3 +549,31 @@ func TestFinalitySyncRefreshesClockAfterPeriodUpdates(t *testing.T) {
 		})
 	}
 }
+
+func TestAmsterdamAnchorHeaderHash(t *testing.T) {
+	c, _, _, _ := finalityClientFixture(t)
+	slot := uint64(24600)
+	bal := common.Hash{0x79, 0x28}
+	header := &types.Header{Number: big.NewInt(104), Difficulty: new(big.Int), BaseFee: big.NewInt(1),
+		WithdrawalsHash: new(common.Hash), BlobGasUsed: new(uint64), ExcessBlobGas: new(uint64), ParentBeaconRoot: new(common.Hash), RequestsHash: new(common.Hash),
+		BlockAccessListHash: &bal, SlotNumber: &slot}
+	hash := header.Hash()
+	c.execution.(*testFinalityExecution).headers[hash] = header
+	target, err := BlockContextFromHeader(c.chainID, header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := gloasTestHeader(slot+1, hash, c.network)
+	if _, err := c.executionAnchor(t.Context(), h, target); err != nil {
+		t.Fatal(err)
+	}
+	bal[0] ^= 1
+	if _, err := c.executionAnchor(t.Context(), h, target); err == nil {
+		t.Fatal("accepted altered block access list hash")
+	}
+	bal[0] ^= 1
+	slot++
+	if _, err := c.executionAnchor(t.Context(), h, target); err == nil {
+		t.Fatal("accepted altered slot number")
+	}
+}
