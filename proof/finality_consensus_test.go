@@ -19,7 +19,7 @@ import (
 func testFinalityNetwork() *bp.ChainConfig {
 	return (&bp.ChainConfig{GenesisTime: 100, GenesisValidatorsRoot: common.Hash{8}}).
 		AddFork("CAPELLA", 0, []byte{3, 0, 0, 0}).AddFork("DENEB", 1, []byte{4, 0, 0, 0}).
-		AddFork("ELECTRA", 256, []byte{5, 0, 0, 0}).AddFork("FULU", 512, []byte{6, 0, 0, 0})
+		AddFork("ELECTRA", 256, []byte{5, 0, 0, 0}).AddFork("FULU", 512, []byte{6, 0, 0, 0}).AddFork("GLOAS", 768, []byte{7, 0, 0, 0})
 }
 func finalityCommittee(t *testing.T, id byte) (*bt.SerializedSyncCommittee, *bls.SecretKey) {
 	t.Helper()
@@ -76,8 +76,18 @@ func finalityTree(leaves map[uint64]common.Hash) (common.Hash, func(uint64) []co
 	}
 	return node(1), branch
 }
+func gloasTestHeader(slot uint64, hash common.Hash, net *bp.ChainConfig) FinalityHeader {
+	index := bp.BodyIndexExecBlockHash(net.ForkNameAtSlot(slot))
+	root, branch := finalityTree(map[uint64]common.Hash{index: hash})
+	proof := make([]common.Hash, branchDepth(bp.BodyIndexExecBlockHashGloas)-branchDepth(index))
+	return FinalityHeader{Beacon: bt.Header{Slot: slot, BodyRoot: root}, ExecutionBlockHash: &hash, ExecutionBranch: append(proof, branch(index)...)}
+}
+
 func finalityTestHeader(t *testing.T, slot uint64, hash common.Hash, net *bp.ChainConfig) FinalityHeader {
 	t.Helper()
+	if net.ForkNameAtSlot(slot) == "gloas" {
+		return gloasTestHeader(slot, hash, net)
+	}
 	var object any
 	if net.ForkNameAtSlot(slot) == "capella" {
 		object = &capella.ExecutionPayloadHeader{BlockHash: [32]byte(hash), ExtraData: []byte{}}
@@ -117,6 +127,9 @@ func signFinalityUpdate(t *testing.T, u *FinalityUpdate, key *bls.SecretKey, cou
 func finalityTestUpdate(t *testing.T, att, fin uint64, next *bt.SerializedSyncCommittee, key *bls.SecretKey, net *bp.ChainConfig) FinalityUpdate {
 	t.Helper()
 	h := finalityTestHeader(t, fin, common.Hash{byte(fin), 9}, net)
+	if net.ForkNameAtSlot(att) == "gloas" {
+		h = gloasTestHeader(fin, common.Hash{byte(fin), 9}, net)
+	}
 	u := FinalityUpdate{Attested: finalityTestHeader(t, att, common.Hash{7}, net), Finalized: &h, Next: next, SignatureSlot: common.Decimal(att + 1)}
 	fork := net.ForkNameAtSlot(att)
 	leaves := map[uint64]common.Hash{bp.StateIndexFinalBlock(fork): h.Beacon.Hash()}
@@ -217,13 +230,32 @@ func TestFinalityCommitteeRotationAndForkBoundary(t *testing.T) {
 	if _, err := s.processUpdate(boundary, 16400, net); err != nil {
 		t.Fatal(err)
 	}
-	fourth, _ := finalityCommittee(t, 4)
+	fourth, k4 := finalityCommittee(t, 4)
 	u = finalityTestUpdate(t, 16450, 16416, fourth, k3, net)
 	if _, err := s.processUpdate(u, 16500, net); err != nil {
 		t.Fatal(err)
 	}
 	if *s.Current != *third || *s.Next != *fourth {
 		t.Fatal("Fulu committee rotation failed")
+	}
+	// Read the legacy cache representation, then accept a Gloas update
+	// carrying a finalized Fulu header upgraded to the new wire format.
+	encoded, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restarted finalityState
+	if err := json.Unmarshal(encoded, &restarted); err != nil {
+		t.Fatal(err)
+	}
+	fifth, _ := finalityCommittee(t, 5)
+	u = finalityTestUpdate(t, 24580, 24560, fifth, k4, net)
+	if changed, err := restarted.processUpdate(u, 24600, net); err != nil || !changed {
+		t.Fatalf("historical finalized header: %v", err)
+	}
+	u = finalityTestUpdate(t, 24640, 24608, fifth, k4, net)
+	if changed, err := restarted.processUpdate(u, 24700, net); err != nil || !changed || *restarted.Current != *fourth || *restarted.Next != *fifth {
+		t.Fatalf("Gloas committee rotation: %v", err)
 	}
 }
 func TestFinalityBootstrapRootAndCommittee(t *testing.T) {
@@ -298,7 +330,7 @@ func TestFinalityDenebTransitionAndUnknownFork(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	net.AddFork("GLOAS", 768, []byte{7, 0, 0, 0})
+	net.AddFork("FUTURE", 768, []byte{7, 0, 0, 0})
 	header := s.Finalized
 	header.Beacon.Slot = 768 * 32
 	if _, err := verifyFinalityHeader(header, net); !errors.Is(err, ErrFinalityUnsupported) {
@@ -307,7 +339,7 @@ func TestFinalityDenebTransitionAndUnknownFork(t *testing.T) {
 }
 
 func TestFinalityGenesisCheckpointOnlyLearnsCommittee(t *testing.T) {
-	for _, fork := range []string{"CAPELLA", "DENEB", "ELECTRA", "FULU"} {
+	for _, fork := range []string{"CAPELLA", "DENEB", "ELECTRA", "FULU", "GLOAS"} {
 		t.Run(fork, func(t *testing.T) {
 			net := (&bp.ChainConfig{GenesisTime: 100, GenesisValidatorsRoot: common.Hash{8}}).AddFork(fork, 0, []byte{3, 0, 0, 0})
 			committee, key := finalityCommittee(t, 1)
@@ -321,6 +353,9 @@ func TestFinalityGenesisCheckpointOnlyLearnsCommittee(t *testing.T) {
 				t.Fatal(err)
 			}
 			empty := FinalityHeader{Execution: execution, ExecutionBranch: make([]common.Hash, 4)}
+			if fork == "GLOAS" {
+				empty = FinalityHeader{ExecutionBlockHash: new(common.Hash), ExecutionBranch: make([]common.Hash, branchDepth(bp.BodyIndexExecBlockHashGloas))}
+			}
 			u := FinalityUpdate{Attested: finalityTestHeader(t, 40, common.Hash{1}, net), Finalized: &empty, Next: next, SignatureSlot: 41}
 			finalIndex := bp.StateIndexFinalBlock(net.ForkNameAtSlot(40))
 			nextIndex := bp.StateIndexNextSyncCommittee(net.ForkNameAtSlot(40))
@@ -346,7 +381,8 @@ func TestFinalityGenesisCheckpointOnlyLearnsCommittee(t *testing.T) {
 					case "beacon":
 						update.Finalized.Beacon.ParentRoot[0] = 1
 					case "execution":
-						update.Finalized.Execution = finalityTestHeader(t, 40, common.Hash{1}, net).Execution
+						bad := finalityTestHeader(t, 40, common.Hash{1}, net)
+						update.Finalized.Execution, update.Finalized.ExecutionBlockHash = bad.Execution, bad.ExecutionBlockHash
 					case "branch":
 						update.Finalized.ExecutionBranch[0][0] = 1
 					case "signature":
@@ -371,5 +407,38 @@ func TestFinalityGenesisCheckpointOnlyLearnsCommittee(t *testing.T) {
 				t.Fatal("accepted empty header as execution anchor")
 			}
 		})
+	}
+}
+
+func TestGloasHistoricalExecutionProof(t *testing.T) {
+	net := testFinalityNetwork()
+	for _, slot := range []uint64{16, 128, 8200, 16400, 24600} {
+		hash := common.Hash{7}
+		h := gloasTestHeader(slot, hash, net)
+		if got, err := verifyFinalityHeader(h, net); err != nil || got != hash {
+			t.Fatalf("slot %d: %v", slot, err)
+		}
+		h.ExecutionBranch[0][0] ^= 1
+		if _, err := verifyFinalityHeader(h, net); err == nil {
+			t.Fatalf("accepted modified branch at %d", slot)
+		}
+		h.ExecutionBranch = h.ExecutionBranch[1:]
+		if _, err := verifyFinalityHeader(h, net); err == nil {
+			t.Fatalf("accepted truncated branch at %d", slot)
+		}
+	}
+}
+
+func TestGloasUpdateWithoutFinalityRequiresEmptyHeader(t *testing.T) {
+	net := testFinalityNetwork()
+	state := finalityState{}
+	header := FinalityHeader{ExecutionBlockHash: new(common.Hash), ExecutionBranch: make([]common.Hash, branchDepth(bp.BodyIndexExecBlockHashGloas))}
+	u := FinalityUpdate{Attested: gloasTestHeader(24600, common.Hash{1}, net), Finalized: &header, FinalityBranch: make([]common.Hash, branchDepth(bp.StateIndexFinalBlockGloas))}
+	if err := state.validateUpdateProofs(u, net); err != nil {
+		t.Fatal(err)
+	}
+	header.ExecutionBlockHash[0] = 1
+	if err := state.validateUpdateProofs(u, net); err == nil {
+		t.Fatal("accepted execution hash without a finality proof")
 	}
 }

@@ -12,34 +12,18 @@ import (
 	"testing"
 
 	"github.com/attestantio/go-eth2-client/spec/capella"
+	"github.com/attestantio/go-eth2-client/spec/gloas"
+	bp "github.com/ethereum/go-ethereum/beacon/params"
+	bt "github.com/ethereum/go-ethereum/beacon/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/golang/snappy"
 	"gopkg.in/yaml.v3"
 )
 
 func TestFinalityOfficialExecutionProof(t *testing.T) {
-	var vector struct {
-		Leaf   string   `yaml:"leaf"`
-		Index  uint64   `yaml:"leaf_index"`
-		Branch []string `yaml:"branch"`
-	}
-	data, err := os.ReadFile("testdata/finality/spec/execution_proof.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = yaml.Unmarshal(data, &vector); err != nil {
-		t.Fatal(err)
-	}
-	data, err = os.ReadFile("testdata/finality/spec/execution_object.ssz_snappy")
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err = snappy.Decode(nil, data)
-	if err != nil {
-		t.Fatal(err)
-	}
+	vector, data := officialProofVector(t, "execution_proof.yaml", "execution_object.ssz_snappy")
 	var body capella.BeaconBlockBody
-	if err = body.UnmarshalSSZ(data); err != nil {
+	if err := body.UnmarshalSSZ(data); err != nil {
 		t.Fatal(err)
 	}
 	root, err := body.HashTreeRoot()
@@ -63,6 +47,61 @@ func TestFinalityOfficialExecutionProof(t *testing.T) {
 	branch[0][0] ^= 1
 	if err = verifyFinalityBranch(root, vector.Index, branch, leaf, false); err == nil {
 		t.Fatal("accepted corrupted official proof")
+	}
+}
+
+type officialMerkleProof struct {
+	Leaf   string   `yaml:"leaf"`
+	Index  uint64   `yaml:"leaf_index"`
+	Branch []string `yaml:"branch"`
+}
+
+func officialProofVector(t *testing.T, proofFile, objectFile string) (officialMerkleProof, []byte) {
+	t.Helper()
+	var proof officialMerkleProof
+	data, err := os.ReadFile("testdata/finality/spec/" + proofFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := yaml.Unmarshal(data, &proof); err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile("testdata/finality/spec/" + objectFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err = snappy.Decode(nil, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return proof, data
+}
+
+func TestGloasOfficialExecutionProof(t *testing.T) {
+	vector, data := officialProofVector(t, "gloas/proof.yaml", "gloas/object.ssz_snappy")
+	var body gloas.BeaconBlockBody
+	if err := body.UnmarshalSSZ(data); err != nil {
+		t.Fatal(err)
+	}
+	root, err := body.HashTreeRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bid := body.SignedExecutionPayloadBid.Message
+	parent, proposed := common.Hash(bid.ParentBlockHash), common.Hash(bid.BlockHash)
+	if vector.Index != bp.BodyIndexExecBlockHashGloas || common.HexToHash(vector.Leaf) != parent || parent == proposed {
+		t.Fatal("unexpected bid in official Gloas proof")
+	}
+	h := FinalityHeader{Beacon: bt.Header{Slot: 24600, BodyRoot: root}, ExecutionBlockHash: &parent}
+	for _, node := range vector.Branch {
+		h.ExecutionBranch = append(h.ExecutionBranch, common.HexToHash(node))
+	}
+	if got, err := verifyFinalityHeader(h, testFinalityNetwork()); err != nil || got != parent {
+		t.Fatalf("parent hash proof: %v", err)
+	}
+	h.ExecutionBlockHash = &proposed
+	if _, err := verifyFinalityHeader(h, testFinalityNetwork()); err == nil {
+		t.Fatal("accepted proposed execution hash")
 	}
 }
 
@@ -178,6 +217,7 @@ func TestFinalityHTTPRedactsDeferredExecutionErrors(t *testing.T) {
 			c, _, beacon, _ := finalityClientFixture(t)
 			b := beacon.b
 			b.Header = finalityTestHeader(t, test.slot, common.Hash{1}, c.network)
+			b.Branch = make([]common.Hash, branchDepth(bp.StateIndexSyncCommittee(c.network.ForkNameAtSlot(test.slot))))
 			var fields map[string]json.RawMessage
 			if err := json.Unmarshal(b.Header.Execution, &fields); err != nil {
 				t.Fatal(err)
@@ -199,10 +239,9 @@ func TestFinalityHTTPRedactsDeferredExecutionErrors(t *testing.T) {
 				t.Fatal(err)
 			}
 			decoded, err := source.Bootstrap(t.Context(), b.Header.Beacon.Hash())
-			if err != nil {
-				t.Fatalf("outer HTTP decoding failed before deferred validation: %v", err)
+			if err == nil {
+				_, err = bootstrapFinality(decoded, b.Header.Beacon.Hash(), test.slot+1, c.network)
 			}
-			_, err = bootstrapFinality(decoded, b.Header.Beacon.Hash(), test.slot+1, c.network)
 			if err == nil {
 				t.Fatal("accepted malformed execution payload")
 			}
@@ -225,5 +264,111 @@ func TestFinalityHTTPRequiresExplicitProviderFlags(t *testing.T) {
 	}
 	if _, err = s.CheckpointHeader(t.Context(), common.Hash{}); err == nil {
 		t.Fatal("accepted missing trust flags")
+	}
+}
+
+func TestGloasBootstrapAtFuluSlot(t *testing.T) {
+	net := testFinalityNetwork()
+	const slot = 16400
+	committee, _ := finalityCommittee(t, 1)
+	index := bp.StateIndexSyncCommittee(net.ForkNameAtSlot(slot))
+	root, branch := finalityTree(map[uint64]common.Hash{index: committee.Root()})
+	b := FinalityBootstrap{Header: gloasTestHeader(slot, common.Hash{1}, net), Committee: committee}
+	b.Header.Beacon.StateRoot = root
+	b.Branch = append(make([]common.Hash, branchDepth(bp.StateIndexSyncCommitteeGloas)-branchDepth(index)), branch(index)...)
+	env := finalityEnvelope[FinalityBootstrap]{Version: "gloas", Data: &b}
+	data, err := json.Marshal(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded finalityEnvelope[FinalityBootstrap]
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if err := decoded.check(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bootstrapFinality(*decoded.Data, b.Header.Beacon.Hash(), slot+1, net); err != nil {
+		t.Fatal(err)
+	}
+	decoded.Version = "fulu"
+	if err := decoded.check(); err == nil {
+		t.Fatal("accepted Gloas data labeled Fulu")
+	}
+	decoded.Version = "gloas"
+	decoded.Data.Branch[0][0] ^= 1
+	if _, err := bootstrapFinality(*decoded.Data, b.Header.Beacon.Hash(), slot+1, net); err == nil {
+		t.Fatal("accepted nonzero committee padding")
+	}
+	decoded.Data.Branch = decoded.Data.Branch[1:]
+	if err := decoded.check(); err == nil {
+		t.Fatal("accepted truncated committee branch")
+	}
+}
+
+func TestGloasUpdateRequiredFields(t *testing.T) {
+	net := testFinalityNetwork()
+	header := gloasTestHeader(24600, common.Hash{1}, net)
+	committee, _ := finalityCommittee(t, 1)
+	finality := FinalityUpdate{
+		Attested: header, Finalized: &header, FinalityBranch: make([]common.Hash, branchDepth(bp.StateIndexFinalBlockGloas)),
+	}
+	full := finality
+	full.Next = committee
+	full.NextBranch = make([]common.Hash, branchDepth(bp.StateIndexNextSyncCommitteeGloas))
+	for _, tc := range []struct {
+		name   string
+		full   bool
+		update FinalityUpdate
+		mutate func(*FinalityUpdate)
+	}{
+		{"full", true, full, nil},
+		{"finality only", false, finality, nil},
+		{"extra next committee", false, finality, func(u *FinalityUpdate) { u.Next = committee }},
+		{"extra next branch", false, finality, func(u *FinalityUpdate) { u.NextBranch = full.NextBranch }},
+		{"missing finalized header", false, finality, func(u *FinalityUpdate) { u.Finalized = nil }},
+		{"missing next committee", true, full, func(u *FinalityUpdate) { u.Next = nil }},
+		{"missing next branch", true, full, func(u *FinalityUpdate) { u.NextBranch = nil }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.mutate != nil {
+				tc.mutate(&tc.update)
+			}
+			envelope := finalityEnvelope[FinalityUpdate]{Version: "gloas", Data: &tc.update}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				var value any = envelope
+				if tc.full {
+					value = []any{envelope}
+				}
+				if err := json.NewEncoder(w).Encode(value); err != nil {
+					t.Error(err)
+				}
+			}))
+			defer server.Close()
+			source, err := NewBeaconFinalitySource(server.URL, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.full {
+				_, err = source.Updates(t.Context(), 3, 1)
+			} else {
+				_, err = source.FinalityUpdate(t.Context())
+			}
+			if (err != nil) != (tc.mutate != nil) {
+				t.Fatalf("decode: %v", err)
+			}
+		})
+	}
+}
+
+func TestLegacyExecutionWireFork(t *testing.T) {
+	net := testFinalityNetwork()
+	capella := finalityTestHeader(t, 16, common.Hash{1}, net)
+	deneb := finalityTestHeader(t, 128, common.Hash{2}, net)
+	if capella.matchesWireFork("deneb") || deneb.matchesWireFork("capella") {
+		t.Fatal("accepted payload fields from the wrong wire fork")
+	}
+	if !capella.matchesWireFork("capella") || !deneb.matchesWireFork("deneb") {
+		t.Fatal("rejected valid execution fields")
 	}
 }

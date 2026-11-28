@@ -1,12 +1,26 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")/.."
-compose() { docker compose -f internal/e2e/pos/compose.yaml "$@"; }
+export POS_FORK=${POS_FORK:-fulu}
+project=ethproof-pos-e2e
+out=bin/pos-testnet
+case "$POS_FORK" in
+  fulu) ;;
+  gloas)
+    project=ethproof-pos-gloas
+    out=bin/pos-gloas
+    export POS_RETH_TAG=v2.11.0 POS_GENESIS_TAG=6.2.10 POS_PORT_PREFIX=2
+    # Lighthouse commit 4cf72c3 serves Gloas light-client updates.
+    export POS_LIGHTHOUSE_TAG=latest-unstable@sha256:b215e5264b06a37afb509cb20029494bfde24a8a64dc9f5d30c17ca3288b9225
+    ;;
+  *) echo "unknown PoS fork: $POS_FORK" >&2; exit 2 ;;
+esac
+compose() { docker compose -p "$project" -f internal/e2e/pos/compose.yaml "$@"; }
 up() {
-  mkdir -p bin/pos-testnet/network
+  mkdir -p "$out/network"
   compose up --quiet-pull -d
-  compose cp genesis:/data/metadata/config.yaml bin/pos-testnet/network/config.yaml
-  compose cp genesis:/data/metadata/genesis.ssz bin/pos-testnet/network/genesis.ssz
+  compose cp genesis:/data/metadata/config.yaml "$out/network/config.yaml"
+  compose cp genesis:/data/metadata/genesis.ssz "$out/network/genesis.ssz"
 }
 case "${1:-}" in
   up) up ;;
@@ -17,11 +31,11 @@ case "${1:-}" in
     cleanup() {
       status=$?
       trap - EXIT
-      compose logs --no-color > bin/pos-testnet/compose.log 2>&1 || true
+      compose logs --no-color > "$out/compose.log" 2>&1 || true
       if [ "${POS_E2E_KEEP:-0}" != 1 ]; then compose down -v --remove-orphans || true; fi
       exit "$status"
     }
-    mkdir -p bin/pos-testnet
+    mkdir -p "$out"
     trap cleanup EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM

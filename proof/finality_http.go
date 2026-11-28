@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	bp "github.com/ethereum/go-ethereum/beacon/params"
 	bt "github.com/ethereum/go-ethereum/beacon/types"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -104,7 +105,43 @@ func (e finalityEnvelope[T]) check() error {
 	if e.Data == nil {
 		return errors.New("missing Beacon API data")
 	}
+	switch data := any(e.Data).(type) {
+	case *FinalityBootstrap:
+		if !data.Header.matchesWireFork(e.Version) || len(data.Branch) != branchDepth(bp.StateIndexSyncCommittee(e.Version)) {
+			return errors.New("bootstrap header does not match response version")
+		}
+	case *FinalityUpdate:
+		if len(data.FinalityBranch) != branchDepth(bp.StateIndexFinalBlock(e.Version)) ||
+			(data.NextBranch != nil && len(data.NextBranch) != branchDepth(bp.StateIndexNextSyncCommittee(e.Version))) {
+			return errors.New("update branch does not match response version")
+		}
+		if !data.Attested.matchesWireFork(e.Version) || data.Finalized == nil || !data.Finalized.matchesWireFork(e.Version) {
+			return errors.New("update header does not match response version")
+		}
+	}
 	return nil
+}
+
+// Historical headers may arrive in an upgraded container. Validate the wire
+// layout here; consensus verification selects the Merkle path from the slot.
+func (h FinalityHeader) matchesWireFork(version string) bool {
+	if version == "gloas" {
+		return h.ExecutionBlockHash != nil && len(h.Execution) == 0 && len(h.ExecutionBranch) == branchDepth(bp.BodyIndexExecBlockHashGloas)
+	}
+	if h.ExecutionBlockHash != nil || len(h.ExecutionBranch) != branchDepth(bp.BodyIndexExecPayload) {
+		return false
+	}
+	var blob *struct {
+		Used   *common.Decimal `json:"blob_gas_used"`
+		Excess *common.Decimal `json:"excess_blob_gas"`
+	}
+	if json.Unmarshal(h.Execution, &blob) != nil || blob == nil {
+		return false
+	}
+	if version == "capella" {
+		return blob.Used == nil && blob.Excess == nil
+	}
+	return blob.Used != nil && blob.Excess != nil
 }
 
 func (h *finalityHTTP) Bootstrap(ctx context.Context, root common.Hash) (FinalityBootstrap, error) {
@@ -135,6 +172,9 @@ func (h *finalityHTTP) Updates(ctx context.Context, period, count uint64) ([]Fin
 		if err := e.check(); err != nil {
 			return nil, err
 		}
+		if e.Data.Next == nil || e.Data.NextBranch == nil {
+			return nil, errors.New("missing committee fields in full light-client update")
+		}
 		out[i] = *e.Data
 	}
 	return out, nil
@@ -147,6 +187,9 @@ func (h *finalityHTTP) FinalityUpdate(ctx context.Context) (FinalityUpdate, erro
 	}
 	if err != nil {
 		return FinalityUpdate{}, err
+	}
+	if response.Data.Next != nil || response.Data.NextBranch != nil {
+		return FinalityUpdate{}, errors.New("unexpected committee fields in finality-only update")
 	}
 	return *response.Data, nil
 }

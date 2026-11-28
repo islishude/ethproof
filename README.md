@@ -80,7 +80,9 @@ The client authenticates bootstrap, sync committees, BLS aggregate signatures, f
 
 The cache is locally trusted, locked, atomically replaced, and bound to the network/fork schedule and checkpoint-provider configuration. Do not import another party's cache as a proof. Corrupt caches or changed trust configurations fail explicitly: use a new `cacheDir` to deliberately establish a new trust context. A clock rollback that puts cached state in the future is rejected. Provider URLs and credentials are not stored in the cache or emitted in transport errors.
 
-Fork support is explicit: Capella, Deneb, Electra and Fulu are supported, including transitions. Other forks, including Gloas, fail closed; a network whose configured active fork has advanced beyond Fulu requires a future implementation update. Network fork schedules come from the pinned geth dependency. Historical execution blocks are supported only through the bounded parent-header chain. There is no portable offline finality-evidence format in this version.
+The light client supports Capella through Gloas, including the Fulu → Gloas transition. On Gloas, the finalized beacon block authenticates the **parent execution hash** in its signed payload bid. The proposed payload can be verified once a later finalized anchor includes it in its execution ancestry. The existing state, transaction, and receipt commands accept Amsterdam blocks. The block hash commits to the Amsterdam header fields, including `blockAccessListHash` and `slotNumber`. [Gloas light-client specification](https://ethereum.github.io/consensus-specs/specs/gloas/light-client/sync-protocol/)
+
+Public activation follows the pinned geth v1.17.10 schedule. It includes Gloas on Sepolia at epoch 353024 and ends at Fulu on mainnet. Mainnet Gloas verification requires a dependency with the official activation schedule. Historical blocks remain subject to `maxAncestry`.
 
 Library users can construct `NewFinalityClient(config, executionSource)` and call the three `Verify*ProofPackageAgainstFinality` APIs (receipt also has a `WithExpectations` variant). `FinalizedAnchor` exposes the authenticated target `BlockAnchor` for reuse. `NewFinalityClientWithDependencies` accepts custom Beacon/checkpoint sources, a local store, a clock and a trust-change callback; injected components remain caller-owned and must honor cancellation. The library is silent by default.
 
@@ -94,11 +96,14 @@ The default test suite uses pinned official SSZ proof vectors, historical Helios
 
 ## Local Reth + Lighthouse PoS E2E
 
-The isolated test project runs three Reth/Lighthouse pairs and 64 validators, with a separate genesis, chain ID `31337`, mainnet preset, Fulu from genesis, and 3-second slots. All HTTP ports bind to localhost; no public RPC credentials are used. The validator mnemonic and funded account keys are public development identities.
+The isolated test project runs three Reth/Lighthouse pairs and 64 validators, with a separate genesis, chain ID `31337`, mainnet preset, Fulu or Gloas from genesis, and 3-second slots. All HTTP ports bind to localhost; no public RPC credentials are used. The validator mnemonic and funded account keys are public development identities.
 
 ```bash
 # Fresh network, real finality tests, then remove this project's containers/volumes:
 make pos-e2e-test
+
+# Test Gloas + Amsterdam in a separate Compose project:
+POS_FORK=gloas make pos-e2e-test
 
 # Keep the tested network running for inspection:
 POS_E2E_KEEP=1 make pos-e2e-test
@@ -109,14 +114,14 @@ ETH_PROOF_REQUIRE_POS_E2E=1 go test -v -race ./proof -run '^TestPoSE2E$' -count=
 make pos-e2e-down
 ```
 
-`pos-e2e-up` starts services and exports generated network parameters into `bin/pos-testnet/network`; the test waits for readiness and finality. The test command resets **only this PoS project's** disposable state. Anvil and its ports are independent. Allow roughly 10–15 minutes for a fresh run, plus image downloads; the test deadline is 15 minutes. Logs from the managed test run are saved to `bin/pos-testnet/compose.log`, including on failure.
+`pos-e2e-up` starts services and exports generated network parameters into `bin/pos-testnet/network`; the test waits for readiness and finality. The test command resets **only this PoS project's** disposable state. Anvil and its ports are independent. Allow roughly 10–15 minutes for a fresh run, plus image downloads; the test deadline is 15 minutes. Logs from the managed test run are saved to `bin/pos-testnet/compose.log`, including on failure. Use `POS_FORK=gloas` with the same up, test, and down commands for the Amsterdam network. Its generated parameters and logs live under `bin/pos-gloas/`. The Gloas scenario pins Reth v2.11.0, genesis generator 6.2.10, and the Lighthouse image built at commit `4cf72c3`, which serves the Gloas light-client API. Both networks configure Reth to serve historical state proofs within 256 blocks of the tip.
 
-| Service | Local endpoint |
-| --- | --- |
-| Reth execution RPC | `http://127.0.0.1:18545` |
-| Lighthouse 1 | `http://127.0.0.1:15052` |
-| Lighthouse 2 | `http://127.0.0.1:15053` |
-| Lighthouse 3 | `http://127.0.0.1:15054` |
+| Service | Fulu endpoint | Gloas endpoint |
+| --- | --- | --- |
+| Reth execution RPC | `http://127.0.0.1:18545` | `http://127.0.0.1:28545` |
+| Lighthouse 1 | `http://127.0.0.1:15052` | `http://127.0.0.1:25052` |
+| Lighthouse 2 | `http://127.0.0.1:15053` | `http://127.0.0.1:25053` |
+| Lighthouse 3 | `http://127.0.0.1:15054` | `http://127.0.0.1:25054` |
 
 The test obtains checkpoint confirmation from three actual Beacon nodes, bootstraps the client, deploys the existing proof contract, rejects an unfinalized transaction, and verifies transaction/event/storage proofs after signed light-client updates advance finality. It also checks cache reuse after client restart. Unit tests additionally cover the spec-defined empty genesis finalized-header sentinel without treating it as an execution anchor. These nodes share one local operator and deterministic validator set; this tests the multi-source mechanics, not operator independence. Mainnet-preset sync committee periods are retained, so committee rotation remains covered by deterministic unit tests rather than this short E2E run.
 
